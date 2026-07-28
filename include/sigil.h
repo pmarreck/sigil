@@ -62,6 +62,21 @@ int sigil_verify_envelope(const char *envelope,
                           size_t payload_out_cap,
                           size_t *payload_len_out);
 
+/* Render a public key as the one-line text form used by `.pub` files (a
+ * "sigil-pubkey-v1 " prefix followed by the printable-binary value). On
+ * SIGIL_ERR_BUFFER_TOO_SMALL, *out_len is the capacity required. */
+int sigil_public_key_to_text(const unsigned char *public_key,
+                             char *out,
+                             size_t out_cap,
+                             size_t *out_len);
+
+/* Parse a public-key file body. `public_key_out` needs sigil_public_key_len()
+ * bytes. Surrounding whitespace and a missing prefix are tolerated; anything
+ * that is not exactly a key is refused rather than truncated into one. */
+int sigil_public_key_from_text(const char *text,
+                               size_t text_len,
+                               unsigned char *public_key_out);
+
 /* Human-readable name for any code above. Never NULL, so it can be spliced
  * straight into an error message without a null check. */
 const char *sigil_strerror(int code);

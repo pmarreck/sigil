@@ -16,6 +16,7 @@ fail() {
 	FAIL=$((FAIL + 1))
 	printf '  \033[31mFAIL\033[0m %s\n' "$1"
 	[[ $# -gt 1 ]] && printf '       %s\n' "$2"
+	return 0
 }
 
 # assert_status <expected-code> <description> <cmd...>
@@ -24,11 +25,8 @@ assert_status() {
 	shift 2
 	"$@" >/dev/null 2>&1
 	local rc=$?
-	if [[ $rc -eq $expected ]]; then
-		pass "$desc"
-	else
-		fail "$desc" "expected exit $expected, got $rc"
-	fi
+	if [[ $rc -eq $expected ]]; then pass "$desc"
+	else fail "$desc" "expected exit $expected, got $rc"; fi
 }
 
 # assert_stdout_matches <regex> <description> <cmd...>
@@ -37,11 +35,8 @@ assert_stdout_matches() {
 	shift 2
 	local out
 	out=$("$@" 2>/dev/null)
-	if [[ "$out" =~ $re ]]; then
-		pass "$desc"
-	else
-		fail "$desc" "stdout did not match /$re/: ${out:0:200}"
-	fi
+	if [[ "$out" =~ $re ]]; then pass "$desc"
+	else fail "$desc" "stdout did not match /$re/: ${out:0:200}"; fi
 }
 
 # assert_stderr_matches <regex> <description> <cmd...>
@@ -50,11 +45,8 @@ assert_stderr_matches() {
 	shift 2
 	local err
 	err=$("$@" 2>&1 >/dev/null)
-	if [[ "$err" =~ $re ]]; then
-		pass "$desc"
-	else
-		fail "$desc" "stderr did not match /$re/: ${err:0:200}"
-	fi
+	if [[ "$err" =~ $re ]]; then pass "$desc"
+	else fail "$desc" "stderr did not match /$re/: ${err:0:200}"; fi
 }
 
 # assert_stdout_empty <description> <cmd...>
@@ -63,11 +55,8 @@ assert_stdout_empty() {
 	shift
 	local out
 	out=$("$@" 2>/dev/null)
-	if [[ -z "$out" ]]; then
-		pass "$desc"
-	else
-		fail "$desc" "expected empty stdout, got: ${out:0:200}"
-	fi
+	if [[ -z "$out" ]]; then pass "$desc"
+	else fail "$desc" "expected empty stdout, got: ${out:0:200}"; fi
 }
 
 echo "sigil CLI tests — binary: $SIGIL"
@@ -77,38 +66,254 @@ if [[ ! -x "$SIGIL" ]]; then
 	exit 1
 fi
 
+# Work in RAM, namespaced by PID so concurrent runs cannot collide.
+WORK="${TMPDIR:-/tmp}/sigil-cli-test-$$"
+mkdir -p "$WORK" || { echo "FATAL: cannot create $WORK" >&2; exit 1; }
+trap 'rm -rf "$WORK"' EXIT
+
 # ── Baseline conventions ────────────────────────────────────────────────────
 
 assert_status 0 "--help exits 0" "$SIGIL" --help
 assert_status 0 "-h exits 0" "$SIGIL" -h
 assert_status 0 "--about exits 0" "$SIGIL" --about
 
-# --about is ONE line, names the tool, its version, and the platform/arch.
 assert_stdout_matches '^sigil [0-9]+\.[0-9]+\.[0-9]+ .* \((linux|macos|windows|unknown)/(x86_64|aarch64|unknown)\)$' \
 	"--about is one line with version and platform/arch" "$SIGIL" --about
 
 about_lines=$("$SIGIL" --about 2>/dev/null | wc -l)
-if [[ "$about_lines" -eq 1 ]]; then
-	pass "--about emits exactly one line"
-else
-	fail "--about emits exactly one line" "got $about_lines lines"
-fi
+if [[ "$about_lines" -eq 1 ]]; then pass "--about emits exactly one line"
+else fail "--about emits exactly one line" "got $about_lines lines"; fi
 
 # Help goes to stdout when explicitly asked for — it is the requested output,
 # not a diagnostic. Usage-on-error goes to stderr instead (checked below).
 assert_stdout_matches 'Usage: sigil' "--help writes usage to stdout" "$SIGIL" --help
 
-# ── Error paths ─────────────────────────────────────────────────────────────
-
-# EX_USAGE (64) is the sysexits.h convention for a malformed invocation.
 assert_status 64 "no arguments exits 64 (EX_USAGE)" "$SIGIL"
 assert_status 64 "unknown command exits 64 (EX_USAGE)" "$SIGIL" definitely-not-a-command
-
 assert_stderr_matches 'unknown command' "unknown command explains itself on stderr" \
 	"$SIGIL" definitely-not-a-command
-assert_stdout_empty "unknown command writes nothing to stdout" \
-	"$SIGIL" definitely-not-a-command
+assert_stdout_empty "unknown command writes nothing to stdout" "$SIGIL" definitely-not-a-command
 assert_stdout_empty "no arguments writes nothing to stdout" "$SIGIL"
+
+# ── Fixtures: one key for the whole run (Argon2id is deliberately slow) ─────
+
+PW="$WORK/pw"
+printf 'correct horse battery staple' > "$PW"
+KEY="$WORK/mecha.key"
+PUB="$WORK/mecha.key.pub"
+
+if "$SIGIL" keygen --out "$KEY" --passphrase-file "$PW" >/dev/null 2>&1; then
+	pass "keygen writes a keyfile"
+else
+	fail "keygen writes a keyfile" "keygen failed; the rest of this suite cannot run"
+	echo ""; echo "$PASS passed, $FAIL failed"; exit 1
+fi
+
+[[ -s "$KEY" ]] && pass "keygen wrote a non-empty keyfile" || fail "keygen wrote a non-empty keyfile"
+[[ -s "$PUB" ]] && pass "keygen wrote <keyfile>.pub alongside it" || fail "keygen wrote <keyfile>.pub alongside it"
+
+if grep -q '"sigil":"secret-key-v1"' "$KEY"; then pass "the keyfile declares its format version"
+else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
+
+if grep -q '^sigil-pubkey-v1 ' "$PUB"; then pass "the public key file carries its prefix"
+else fail "the public key file carries its prefix" "$(head -c 120 "$PUB")"; fi
+
+# Overwriting a signing key destroys the only copy. That must take an explicit
+# --force, never a stray shell-history recall.
+assert_status 74 "keygen refuses to clobber an existing keyfile" \
+	"$SIGIL" keygen --out "$KEY" --passphrase-file "$PW"
+assert_stderr_matches 'refusing to overwrite' "keygen says why it refused" \
+	"$SIGIL" keygen --out "$KEY" --passphrase-file "$PW"
+assert_status 0 "--force allows the overwrite" \
+	"$SIGIL" keygen --out "$KEY" --passphrase-file "$PW" --force
+
+# --force rewrote the key, so re-derive everything that depends on it.
+assert_status 64 "keygen refuses an empty passphrase" \
+	"$SIGIL" keygen --out "$WORK/empty.key" --passphrase-file /dev/null
+
+# ── sign / verify round trip ────────────────────────────────────────────────
+
+DOC="$WORK/license.toml"
+cat > "$DOC" <<'TOML'
+email = "peter@example.com"
+issued = "2026-07-28"
+max_major = "1"
+offline_days = "365"
+product = "mecha-validate"
+v = "1"
+TOML
+ENV="$WORK/license.sigil"
+
+assert_status 0 "sign produces an envelope" \
+	"$SIGIL" sign "$DOC" --key "$KEY" --passphrase-file "$PW" --out "$ENV"
+
+if grep -q '"sigtype":"Ed25519"' "$ENV"; then pass "the envelope names its signature type"
+else fail "the envelope names its signature type" "$(head -c 200 "$ENV")"; fi
+
+# The whole point of printable-binary over base64: the payload stays readable.
+if grep -q 'mecha' "$ENV"; then pass "the payload is still human-scannable in the envelope"
+else fail "the payload is still human-scannable in the envelope" "$(head -c 200 "$ENV")"; fi
+
+assert_status 0 "verify accepts a genuine envelope" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB"
+
+# stdout is the authenticated payload, byte for byte, so it can be piped.
+"$SIGIL" verify "$ENV" --pubkey "$PUB" 2>/dev/null > "$WORK/out.toml"
+if cmp -s "$DOC" "$WORK/out.toml"; then pass "verify emits the exact payload on stdout"
+else fail "verify emits the exact payload on stdout" "$(diff "$DOC" "$WORK/out.toml" | head -5)"; fi
+
+assert_stderr_matches 'verified' "verify puts its status on stderr, not stdout" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB"
+
+# ── THE INVARIANT: the envelope is transport, and transport may be reshaped ──
+
+# Pretty-print, reorder and pad the JSON without touching the signed bytes.
+sed -e 's/^{//' -e 's/}$//' "$ENV" > "$WORK/inner"
+{ printf '{\n\n   '; cat "$WORK/inner"; printf '\n\n}\n'; } > "$WORK/roomy.sigil"
+assert_status 0 "reformatting the envelope does not break verification" \
+	"$SIGIL" verify "$WORK/roomy.sigil" --pubkey "$PUB"
+
+# CRLF, as a Windows editor would leave it.
+sed 's/$/\r/' "$ENV" > "$WORK/crlf.sigil"
+assert_status 0 "CRLF line endings do not break verification" \
+	"$SIGIL" verify "$WORK/crlf.sigil" --pubkey "$PUB"
+
+# ── Tampering ───────────────────────────────────────────────────────────────
+
+# The forgery that matters commercially: bump max_major to unlock paid majors.
+sed 's/max_major␣꞊␣ˮ1ˮ/max_major␣꞊␣ˮ9ˮ/' "$ENV" > "$WORK/forged.sigil"
+if cmp -s "$ENV" "$WORK/forged.sigil"; then
+	fail "the max_major forgery fixture actually edits the payload" \
+		"encoding changed; update the sed pattern"
+else
+	pass "the max_major forgery fixture actually edits the payload"
+	assert_status 1 "a forged max_major is rejected (exit 1)" \
+		"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB"
+	assert_stdout_empty "a rejected envelope yields no payload on stdout" \
+		"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB"
+fi
+
+# A different key must not verify this envelope.
+printf 'other' > "$WORK/pw2"
+"$SIGIL" keygen --out "$WORK/other.key" --passphrase-file "$WORK/pw2" >/dev/null 2>&1
+assert_status 1 "an envelope signed by another key is rejected" \
+	"$SIGIL" verify "$ENV" --pubkey "$WORK/other.key.pub"
+
+assert_status 1 "signing with the wrong passphrase is rejected (exit 1)" \
+	"$SIGIL" sign "$DOC" --key "$KEY" --passphrase-file "$WORK/pw2"
+
+# Handing verify the wrong kind of file must fail clearly, not confusingly.
+assert_status 64 "verify rejects a non-key passed to --pubkey" \
+	"$SIGIL" verify "$ENV" --pubkey "$DOC"
+
+# ── Path conventions ────────────────────────────────────────────────────────
+
+if "$SIGIL" verify - --pubkey "$PUB" < "$ENV" >/dev/null 2>&1; then
+	pass "'-' reads the envelope from stdin"
+else fail "'-' reads the envelope from stdin"; fi
+
+if "$SIGIL" verify @stdin --pubkey "$PUB" < "$ENV" >/dev/null 2>&1; then
+	pass "'@stdin' reads the envelope from stdin"
+else fail "'@stdin' reads the envelope from stdin"; fi
+
+"$SIGIL" verify "$ENV" --pubkey "$PUB" --out @stdout 2>/dev/null > "$WORK/at-stdout.toml"
+if cmp -s "$DOC" "$WORK/at-stdout.toml"; then pass "'@stdout' is accepted as an output path"
+else fail "'@stdout' is accepted as an output path"; fi
+
+# Paths with spaces, quoted at the call site — the realistic macOS case.
+SPACED="$WORK/a folder with spaces"
+mkdir -p "$SPACED"
+cp "$ENV" "$SPACED/my license.sigil"
+cp "$PUB" "$SPACED/my key.pub"
+assert_status 0 "paths containing spaces work" \
+	"$SIGIL" verify "$SPACED/my license.sigil" --pubkey "$SPACED/my key.pub"
+
+assert_status 66 "a missing input file exits 66 (EX_NOINPUT)" \
+	"$SIGIL" verify "$WORK/does-not-exist.sigil" --pubkey "$PUB"
+
+# ── Argument handling ───────────────────────────────────────────────────────
+
+assert_status 0 "options may precede the positional argument" \
+	"$SIGIL" verify --pubkey "$PUB" "$ENV"
+
+# Later arguments override earlier ones.
+assert_status 0 "a later --pubkey overrides an earlier one" \
+	"$SIGIL" verify "$ENV" --pubkey "$WORK/other.key.pub" --pubkey "$PUB"
+assert_status 1 "...and the override really is the one used" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB" --pubkey "$WORK/other.key.pub"
+
+assert_status 64 "an option with a missing value exits 64" \
+	"$SIGIL" verify "$ENV" --pubkey
+assert_status 64 "an unknown option exits 64" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB" --frobnicate
+assert_status 64 "verify without --pubkey exits 64" "$SIGIL" verify "$ENV"
+assert_status 64 "verify without an envelope exits 64" "$SIGIL" verify --pubkey "$PUB"
+assert_status 64 "an extra positional argument exits 64" \
+	"$SIGIL" verify "$ENV" "$ENV" --pubkey "$PUB"
+
+# Everything after `--` is a path, even if it looks like a switch.
+assert_status 66 "'--' stops switch parsing" \
+	"$SIGIL" verify --pubkey "$PUB" -- --pubkey
+
+# ── Output modes ────────────────────────────────────────────────────────────
+
+assert_stdout_matches '^\{"verified":true,"payload_bytes":[0-9]+\}$' \
+	"--json reports success as one JSON object" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB" --json
+assert_stdout_matches '^\{"verified":false,"code":-1,' \
+	"--json reports failure with a machine-readable code" \
+	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --json
+
+assert_stdout_empty "--quiet suppresses the payload" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet
+if [[ -z "$("$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>&1)" ]]; then
+	pass "--quiet suppresses status output too"
+else fail "--quiet suppresses status output too"; fi
+assert_status 0 "--quiet still reports success through the exit code" \
+	"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet
+assert_status 1 "--quiet still reports failure through the exit code" \
+	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --quiet
+
+# Not a terminal here, so colour is already off; --simple must also drop the
+# non-ASCII marks, for terminals and log scrapers that cannot cope.
+simple_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --simple 2>&1 >/dev/null)
+if [[ "$simple_err" == *"OK"* ]]; then pass "--simple uses ASCII marks"
+else fail "--simple uses ASCII marks" "$simple_err"; fi
+if LC_ALL=C grep -qP '[\x80-\xff]' <<<"$simple_err" 2>/dev/null; then
+	fail "--simple emits no non-ASCII bytes" "$simple_err"
+else pass "--simple emits no non-ASCII bytes"; fi
+
+# Piped output must never carry ANSI escapes even without --no-color.
+if [[ "$("$SIGIL" verify "$ENV" --pubkey "$PUB" 2>&1 >/dev/null)" == *$'\033'* ]]; then
+	fail "no ANSI escapes when stderr is not a terminal"
+else pass "no ANSI escapes when stderr is not a terminal"; fi
+assert_status 0 "--no-color is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-color
+assert_status 0 "--no-ansi is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-ansi
+
+# ── pubkey ──────────────────────────────────────────────────────────────────
+
+assert_stdout_matches '^sigil-pubkey-v1 ' "pubkey --key prints the text form" \
+	"$SIGIL" pubkey --key "$KEY"
+assert_stdout_matches '^[0-9a-f]{64}$' "pubkey --format hex prints 32 bytes of hex" \
+	"$SIGIL" pubkey --key "$KEY" --format hex
+assert_stdout_matches 'SIGIL_PUBLIC_KEY\[32\]' "pubkey --format c emits an embeddable C array" \
+	"$SIGIL" pubkey --key "$KEY" --format c
+assert_stdout_matches 'sigil_public_key: \[32\]u8' "pubkey --format zig emits an embeddable Zig array" \
+	"$SIGIL" pubkey --key "$KEY" --format zig
+assert_status 64 "pubkey rejects an unknown --format" \
+	"$SIGIL" pubkey --key "$KEY" --format base64
+
+# Reading the public key never needs the passphrase.
+if [[ "$("$SIGIL" pubkey --key "$KEY" --format hex 2>/dev/null)" == \
+      "$("$SIGIL" pubkey --pubkey "$PUB" --format hex 2>/dev/null)" ]]; then
+	pass "the keyfile and the .pub file agree on the key"
+else fail "the keyfile and the .pub file agree on the key"; fi
+
+# raw is exactly the key bytes — what an embedder wants to hash or memcmp.
+"$SIGIL" pubkey --key "$KEY" --format raw > "$WORK/raw.key" 2>/dev/null
+raw_size=$(wc -c < "$WORK/raw.key")
+if [[ "$raw_size" -eq 32 ]]; then pass "pubkey --format raw emits exactly 32 bytes"
+else fail "pubkey --format raw emits exactly 32 bytes" "got $raw_size"; fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 

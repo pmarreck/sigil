@@ -3,10 +3,15 @@ ver=1.2
 annotate=[
 	build = nix build wrapper -> zig-out/bin. --debug/--test switch optimize mode.
 	cli/main.c = The CLI, in C on purpose: C cannot @import the Zig core, so bypassing the FFI is inexpressible rather than merely discouraged.
+	docs/DESIGN.md = Envelope format, prior art, and the recorded revocation + key-custody decisions.
+	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
 	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
+	src/ffi_sign.zig = Signing C ABI in a SEPARATE libsigil_sign.a. Only place randomness lives. No secret ever crosses the boundary.
 	src/lib.zig = Importable Zig module root. Re-exports verify + envelope. Emits NO C symbols and needs no libc.
+	src/sign.zig = Signing core (pure): keyPairFromSeed, signPayload, seal, wrapKey/unwrapKey keyfile (Argon2id + XChaCha20-Poly1305). Never ships.
 	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
+	tests/test_no_signing_symbols = MFIC control: nm asserts libsigil.a contains no signing code. Verified to fail when violated.
 ]

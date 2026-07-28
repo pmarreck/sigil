@@ -37,6 +37,12 @@ pub const verifyEnvelope = envelope.verifyEnvelope;
 /// material: it cannot sign, only package.
 pub const writeEnvelope = envelope.write;
 
+// ── Public key files ────────────────────────────────────────────────────────
+
+pub const pubkey_prefix = envelope.pubkey_prefix;
+pub const publicKeyToText = envelope.publicKeyToText;
+pub const publicKeyFromText = envelope.publicKeyFromText;
+
 test {
     _ = core;
     _ = envelope;

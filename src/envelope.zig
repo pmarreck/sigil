@@ -126,10 +126,54 @@ pub fn write(
     );
 }
 
+// ── Public key files ────────────────────────────────────────────────────────
+
+/// Leading token of a public-key file. Its job is to make a mis-passed file
+/// (an envelope, a keyfile, a screenshot of one) fail loudly and immediately
+/// rather than turn into 32 bytes of nonsense and a confusing BadSignature.
+pub const pubkey_prefix = "sigil-pubkey-v1 ";
+
+/// Render a public key as a one-line file body. Same printable-binary
+/// representation the keyfile and the envelope use, so there is exactly one
+/// way a key ever appears as text.
+pub fn publicKeyToText(
+    allocator: std.mem.Allocator,
+    public_key: *const [public_key_len]u8,
+) WriteError![]u8 {
+    const encoded = try pb.encode(allocator, public_key, .{});
+    defer allocator.free(encoded);
+    return std.mem.concat(allocator, u8, &.{ pubkey_prefix, encoded, "\n" });
+}
+
+/// Parse a public-key file body. Tolerates surrounding whitespace and a missing
+/// prefix (so a bare encoded key still works), but refuses anything that does
+/// not decode to exactly `public_key_len` bytes.
+pub fn publicKeyFromText(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) (EnvelopeError || std.mem.Allocator.Error)![public_key_len]u8 {
+    var body = std.mem.trim(u8, text, " \t\r\n");
+    if (std.mem.startsWith(u8, body, std.mem.trim(u8, pubkey_prefix, " "))) {
+        body = std.mem.trim(u8, body[std.mem.trim(u8, pubkey_prefix, " ").len..], " \t\r\n");
+    }
+    if (body.len == 0) return EnvelopeError.MalformedEncoding;
+
+    const decoded = try decodeField(allocator, body);
+    defer allocator.free(decoded);
+    if (decoded.len != public_key_len) return EnvelopeError.MalformedEncoding;
+
+    var out: [public_key_len]u8 = undefined;
+    @memcpy(&out, decoded);
+    return out;
+}
+
 /// printable-binary decode that keeps allocation failure distinguishable from
 /// malformed input — collapsing them would report a transient OOM as a forged
 /// license, which is exactly the wrong thing to tell a paying customer.
-fn decodeField(allocator: std.mem.Allocator, encoded: []const u8) VerifyEnvelopeError![]u8 {
+fn decodeField(
+    allocator: std.mem.Allocator,
+    encoded: []const u8,
+) (EnvelopeError || std.mem.Allocator.Error)![]u8 {
     return pb.decode(allocator, encoded, .{}) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return EnvelopeError.MalformedEncoding;
@@ -396,6 +440,54 @@ test "an empty payload round-trips" {
     const got = try verifyEnvelope(a, env, &kp.public_key.toBytes());
     defer a.free(got);
     try testing.expectEqualStrings("", got);
+}
+
+test "a public key round-trips through its text form" {
+    const a = testing.allocator;
+    const kp = try testKey(core.test_seed_a);
+    const pk = kp.public_key.toBytes();
+
+    const text = try publicKeyToText(a, &pk);
+    defer a.free(text);
+    try testing.expect(std.mem.startsWith(u8, text, pubkey_prefix));
+    try testing.expectEqual(@as(u8, '\n'), text[text.len - 1]);
+
+    try testing.expectEqualSlices(u8, &pk, &(try publicKeyFromText(a, text)));
+}
+
+test "public key text parsing tolerates formatting but not the wrong thing" {
+    const a = testing.allocator;
+    const kp = try testKey(core.test_seed_a);
+    const pk = kp.public_key.toBytes();
+
+    const text = try publicKeyToText(a, &pk);
+    defer a.free(text);
+    const bare = std.mem.trim(u8, text[pubkey_prefix.len..], " \t\r\n");
+
+    // Formatting noise a human or an editor might introduce.
+    const tolerated = [_][]const u8{
+        text,
+        std.mem.trim(u8, text, "\n"),
+        bare,
+    };
+    for (tolerated) |t| {
+        const padded = try std.mem.concat(a, u8, &.{ "  \t", t, "\r\n\n" });
+        defer a.free(padded);
+        try testing.expectEqualSlices(u8, &pk, &(try publicKeyFromText(a, padded)));
+    }
+
+    // Anything that is not a 32-byte key must be refused, not truncated or
+    // padded into one. Passing the wrong file is the realistic mistake here.
+    const sig = try kp.sign("x", null);
+    const env = try write(a, "x", &sig.toBytes());
+    defer a.free(env);
+
+    const rejected = [_][]const u8{ "", "   \n", "sigil-pubkey-v1 ", bare[0..8], env };
+    for (rejected) |r| {
+        _ = publicKeyFromText(a, r) catch continue;
+        std.debug.print("publicKeyFromText accepted something that is not a key: {s}\n", .{r});
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "MFIC: printable-binary output needs no JSON escaping, swept over every byte" {

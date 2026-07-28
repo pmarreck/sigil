@@ -82,6 +82,49 @@ export fn sigil_verify_envelope(
     return SIGIL_OK;
 }
 
+/// Render a public key as the one-line text form used by `.pub` files.
+/// On SIGIL_ERR_BUFFER_TOO_SMALL, `*out_len` is the capacity required.
+export fn sigil_public_key_to_text(
+    public_key: ?[*]const u8,
+    out: ?[*]u8,
+    out_cap: usize,
+    out_len: ?*usize,
+) c_int {
+    const k = public_key orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const n = out_len orelse return SIGIL_ERR_NULL_ARGUMENT;
+
+    const text = sigil.publicKeyToText(
+        std.heap.c_allocator,
+        k[0..sigil.public_key_len],
+    ) catch |e| return errorToCode(e);
+    defer std.heap.c_allocator.free(text);
+
+    n.* = text.len;
+    if (text.len > out_cap) return SIGIL_ERR_BUFFER_TOO_SMALL;
+    if (out == null) return SIGIL_ERR_NULL_ARGUMENT;
+    @memcpy(out.?[0..text.len], text);
+    return SIGIL_OK;
+}
+
+/// Parse a public-key file body into `public_key_out`, which must have room for
+/// sigil_public_key_len() bytes. Tolerates surrounding whitespace and a missing
+/// prefix; refuses anything that is not exactly a key.
+export fn sigil_public_key_from_text(
+    text: ?[*]const u8,
+    text_len: usize,
+    public_key_out: ?[*]u8,
+) c_int {
+    const t = text orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const out = public_key_out orelse return SIGIL_ERR_NULL_ARGUMENT;
+
+    const pk = sigil.publicKeyFromText(
+        std.heap.c_allocator,
+        t[0..text_len],
+    ) catch |e| return errorToCode(e);
+    @memcpy(out[0..pk.len], &pk);
+    return SIGIL_OK;
+}
+
 export fn sigil_version() [*:0]const u8 {
     return "0.1.0";
 }

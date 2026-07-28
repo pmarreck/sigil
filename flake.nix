@@ -168,11 +168,14 @@
             pname = "${pname}-test-cli";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ pkgs.bash pkgs.coreutils ];
+            nativeBuildInputs = with pkgs; [
+              bash coreutils gnugrep gnused diffutils
+            ];
             dontConfigure = true;
             dontFixup = true;
             buildPhase = ''
               export SIGIL_BIN=${self.packages.${system}.default}/bin/sigil
+              export TMPDIR=''${TMPDIR:-/tmp}
               bash ./tests/cli/test_cli
             '';
             installPhase = ''
