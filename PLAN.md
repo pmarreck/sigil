@@ -93,3 +93,123 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       66 missing input, 74 I/O). `keygen` refuses to clobber an existing key
       without `--force` and confirms an interactively typed passphrase.
       66 CLI tests. — 2026-07-28 08:55 EST
+
+## Post-review remediation (2026-07-28 deep-code-review, 5 agents)
+
+Full findings: `CODE_REVIEW.md`. Every item below was reproduced by building,
+linking, running or disassembling — none are speculative.
+
+- [x] `./test` masked-pipeline guard; `./build` never installed
+      `libsigil_sign.a`; nm status masked (twice — the second layer was `exit`
+      inside a command substitution). `tests/test_harness_guards` pins it.
+      — 2026-07-28 12:20 EDT
+- [x] `tests/test_lint`: SC2312 gate for Bash + clang-tidy for C, each with a
+      specificity corpus proving the gate still bites. 19 sites triaged.
+      — 2026-07-28 12:20 EDT
+- [x] `grep -P '[\x80-\xff]'` matched code points, not bytes — the `--simple`
+      check could not see ✓. — 2026-07-28 12:20 EDT
+
+### Critical, still open
+
+- [ ] **Custody control is false-green (F1/C2).** Two agents independently
+      shipped working Ed25519 signers while it reported 19/0. It greps 4 names
+      + 5 stems; `export fn sigil_mint` matched none, and a C program linking
+      only `libsigil.a` minted RFC 8032 vector 1. **Fix: invert to an
+      allowlist** — set equality between `nm` exports and header declarations,
+      plus a negative control on the private-key primitives
+      (`Edwards25519.mul`, `scalar.reduce64`). A denylist is incomplete by
+      construction.
+- [ ] **The importable Zig module has zero coverage (F2).** `b.addModule` emits
+      no binary for `nm`. Adding `pub const` re-exports left the archive
+      byte-identical and a Zig consumer minted a signature. This is the
+      *sanctioned* path — the sibling-Zig exception lets Validate/Rotshield
+      import the module directly. Needs a source-level `@import`-closure
+      assertion or a negative compile test.
+- [ ] **`libsigil.a` cannot be linked by a customer (C1).** Two independent
+      causes, both confirmed with stock gcc 15.3.0: (a) non-PIC archive vs
+      default-PIE gcc; (b) unresolved `roundq`/`__divtf3`/`__multf3`/… from
+      `std/json/static.zig:771` f128 parsing. **DECISION PENDING** — safe
+      (`bundle_compiler_rt` + PIC) vs bold (drop `std.json` for a purpose-built
+      envelope parser; the envelope has no numbers, and the normalization
+      feature must live there anyway). Einstein leans bold.
+- [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
+      `sigil verify --help` → `unknown option`, exit 64.
+- [ ] **`verify` reports transient OOM as a forged license** — collapses every
+      FFI code to exit 1. `envelope.zig:170` documents avoiding exactly this;
+      `sign` already discriminates.
+
+### High, still open
+
+- [ ] **Delete the `public` field from the keyfile.** Splice confirmed: an
+      attacker's `public` field makes `sigil pubkey` print the attacker's key
+      with no passphrase — and that is the command README tells you to run to
+      get the key you embed in the shipped product. The field is redundant
+      (`keygen` already writes a sibling `.pub`). Deleting it makes the bug
+      inexpressible rather than forbidden; `pubkey` must then derive from the
+      decrypted secret. Peter: "Mechanically force it to be computed!"
+- [ ] **C conformance binary exercising `sigil_verify`** (Peter's ask). The raw
+      primitive currently ships with no C consumer. Compile it with **stock
+      cc**, not `zig cc`, so it also mechanically gates C1 — `zig build`
+      supplies compiler-rt silently, which is why nobody noticed.
+- [ ] Keyfile written 0644 under default umask + TOCTOU in the clobber probe.
+      One `open(..., O_CREAT|O_EXCL, 0600)` fixes both.
+- [ ] `--json` emits invalid JSON (unescaped `"` from `sigil_strerror`).
+- [ ] `--quiet` discards the authenticated payload and exits 0, contradicting
+      both `--help` and README. The CLI test pins the wrong contract.
+- [ ] **The suite cannot detect FFI leaks** — proven by mutation: deleting
+      `defer c_allocator.free(payload)` still gives 124/124. The FFI hardcodes
+      `c_allocator`, so `testing.allocator` never covers it.
+- [ ] `zig-pkg/` (95 files, 1.2 MB) is tracked in git despite `.gitignore:41`,
+      which is why `zigDepsHash` is inert — the committed copy compiles.
+- [ ] Passphrases silently truncated at 1023 chars on the prompt path only,
+      producing an unopenable key reported as "wrong passphrase".
+- [ ] `MALFORMED_ENCODING` unreachable for `data`/`sig` — corrupt files are
+      reported as forgeries, the exact support failure the docstring names.
+- [ ] `--json` implemented only by `verify`; `pubkey --out` silently ignored
+      for hex/c/zig (the README's own embedding workflow).
+- [ ] No test for a bad public key. All-zero/small-order *are* rejected, but
+      only by upstream Zig, unpinned, and misclassified as `BadSignature`.
+
+### Feature: envelope normalization (Peter, 2026-07-28)
+
+Make verification survive transport mangling — email wrapping, `>` quote
+prefixes, arbitrary injected junk.
+
+Proven safe by exhaustion: encoding all 256 byte values yields exactly 256
+distinct code points, and **none** is ASCII whitespace; `>`, `<`, `\` and `"`
+are all remapped to lookalikes too. So stripping is a filter over an allowlist
+*derived from the codec*, not a hand-written denylist.
+
+Security argument: normalization runs BEFORE verification and the signature
+covers the *decoded* bytes, so a normalization bug can only cause a false
+rejection, never a false acceptance. Availability risk, not authenticity risk.
+
+- [ ] Stage 1 (pre-parse): strip `\t\n\r` and space from the whole envelope.
+      JSON-safe and value-safe. Fixes hard-wrapping.
+- [ ] Stage 2 (post-parse, per value): strip any code point outside the
+      256-symbol alphabet from `data` and `sig`. Fixes `>` prefixes.
+- [ ] Default on, with a stderr warning when normalization changed something.
+- [ ] Constraint to enforce: stage 1 is only safe while every envelope field is
+      printable-binary or a fixed token. Reject unknown fields.
+
+### Deferred / ideas
+
+- [ ] **Mutation-test the suite.** It has never been mutation-tested; the FFI
+      leak gap was found that way and is unlikely to be the only one. Every
+      surviving mutant names an invalid region of the suite.
+- [ ] **Elixir: NIF + pure-Elixir sigil, tested differentially** (Peter's idea,
+      2026-07-28). Ed25519 is already in `:crypto` (OTP 24+), so a pure version
+      is ~100 lines once printable-binary decode is ported. The differential
+      suite is the point: an oracle causally independent of the Zig. Zigler
+      handles NIF build integration, and Zig cross-compilation solves the
+      historic "NIFs are miserable to deploy" problem — which is itself the
+      story worth telling in that community. Candidate libs chosen by ecosystem
+      *gap*: z7z (absent), printable_binary (no equivalent), validate (absent),
+      sigil. Scheduler discipline differs per lib: short/hot → plain NIF,
+      long-running → dirty CPU-bound schedulers.
+- [ ] Envelope malleability is broader than documented (JSON `\u` escapes,
+      alternate printable-binary encodings). Not a forgery, but the envelope
+      must never be used as an identifier. Documentation fix.
+- [ ] `verify.zig:43` uses cofactored verification; `verifyStrict` is the
+      cofactorless alternative. Undocumented and untested. Matters only if
+      sigil ever verifies a third-party key.
