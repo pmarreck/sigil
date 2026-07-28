@@ -1,0 +1,38 @@
+# Zig build artifacts
+.zig-cache/
+zig-out/
+zig-cache/
+
+# Nix
+result
+result-*
+.direnv/
+
+# Editor files
+*.swp
+*~
+
+# Build artifacts
+*.o
+*.a
+
+# macOS
+.DS_Store
+
+# Semantic search
+.codescan/
+.serena/
+
+# LLM inbox (inter-project messages, not project content)
+inbox/
+
+# Agent briefs — symlinks into the Obsidian vault, useless to a cloner
+AGENTS.md
+CLAUDE.md
+ZIG_RECENT_API_CHANGES*
+
+# NEVER commit a private signing key. The whole security model of sigil is that
+# this file lives on exactly one machine and is never distributed.
+*.sigil-secret
+*.sk
+secret_key

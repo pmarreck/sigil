@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# CLI surface tests for sigil.
+#
+# NOT `set -e`: most of these tests deliberately invoke the binary in ways that
+# must return non-zero, and errexit would abort the run on the first such
+# (correct) exit code. `set -u` alone gives undefined-variable protection.
+set -u
+
+SIGIL="${SIGIL_BIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/zig-out/bin/sigil}"
+
+PASS=0
+FAIL=0
+
+pass() { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  \033[31mFAIL\033[0m %s\n' "$1"
+	[[ $# -gt 1 ]] && printf '       %s\n' "$2"
+}
+
+# assert_status <expected-code> <description> <cmd...>
+assert_status() {
+	local expected="$1" desc="$2"
+	shift 2
+	"$@" >/dev/null 2>&1
+	local rc=$?
+	if [[ $rc -eq $expected ]]; then
+		pass "$desc"
+	else
+		fail "$desc" "expected exit $expected, got $rc"
+	fi
+}
+
+# assert_stdout_matches <regex> <description> <cmd...>
+assert_stdout_matches() {
+	local re="$1" desc="$2"
+	shift 2
+	local out
+	out=$("$@" 2>/dev/null)
+	if [[ "$out" =~ $re ]]; then
+		pass "$desc"
+	else
+		fail "$desc" "stdout did not match /$re/: ${out:0:200}"
+	fi
+}
+
+# assert_stderr_matches <regex> <description> <cmd...>
+assert_stderr_matches() {
+	local re="$1" desc="$2"
+	shift 2
+	local err
+	err=$("$@" 2>&1 >/dev/null)
+	if [[ "$err" =~ $re ]]; then
+		pass "$desc"
+	else
+		fail "$desc" "stderr did not match /$re/: ${err:0:200}"
+	fi
+}
+
+# assert_stdout_empty <description> <cmd...>
+assert_stdout_empty() {
+	local desc="$1"
+	shift
+	local out
+	out=$("$@" 2>/dev/null)
+	if [[ -z "$out" ]]; then
+		pass "$desc"
+	else
+		fail "$desc" "expected empty stdout, got: ${out:0:200}"
+	fi
+}
+
+echo "sigil CLI tests — binary: $SIGIL"
+
+if [[ ! -x "$SIGIL" ]]; then
+	echo "FATAL: sigil binary not found or not executable at $SIGIL" >&2
+	exit 1
+fi
+
+# ── Baseline conventions ────────────────────────────────────────────────────
+
+assert_status 0 "--help exits 0" "$SIGIL" --help
+assert_status 0 "-h exits 0" "$SIGIL" -h
+assert_status 0 "--about exits 0" "$SIGIL" --about
+
+# --about is ONE line, names the tool, its version, and the platform/arch.
+assert_stdout_matches '^sigil [0-9]+\.[0-9]+\.[0-9]+ .* \((linux|macos|windows|unknown)/(x86_64|aarch64|unknown)\)$' \
+	"--about is one line with version and platform/arch" "$SIGIL" --about
+
+about_lines=$("$SIGIL" --about 2>/dev/null | wc -l)
+if [[ "$about_lines" -eq 1 ]]; then
+	pass "--about emits exactly one line"
+else
+	fail "--about emits exactly one line" "got $about_lines lines"
+fi
+
+# Help goes to stdout when explicitly asked for — it is the requested output,
+# not a diagnostic. Usage-on-error goes to stderr instead (checked below).
+assert_stdout_matches 'Usage: sigil' "--help writes usage to stdout" "$SIGIL" --help
+
+# ── Error paths ─────────────────────────────────────────────────────────────
+
+# EX_USAGE (64) is the sysexits.h convention for a malformed invocation.
+assert_status 64 "no arguments exits 64 (EX_USAGE)" "$SIGIL"
+assert_status 64 "unknown command exits 64 (EX_USAGE)" "$SIGIL" definitely-not-a-command
+
+assert_stderr_matches 'unknown command' "unknown command explains itself on stderr" \
+	"$SIGIL" definitely-not-a-command
+assert_stdout_empty "unknown command writes nothing to stdout" \
+	"$SIGIL" definitely-not-a-command
+assert_stdout_empty "no arguments writes nothing to stdout" "$SIGIL"
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+
+echo ""
+echo "$PASS passed, $FAIL failed"
+exit $(( FAIL > 0 ? 1 : 0 ))

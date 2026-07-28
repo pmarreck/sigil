@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Build sigil.
+# Defaults to ReleaseFast via `nix build` (sandboxed, deterministic).
+# `./build --debug` for a debug build (uses bare zig build inside the dev shell).
+set -uo pipefail
+
+run() { "$@" || { echo "FAILED: $*" >&2; exit 1; }; }
+
+optimize="ReleaseFast"
+if [[ "${1:-}" == "--debug" ]]; then
+	optimize="Debug"
+	shift
+elif [[ "${1:-}" == "--test" ]]; then
+	optimize="ReleaseSafe"
+	shift
+fi
+
+if [[ "$optimize" != "ReleaseFast" ]]; then
+	# Non-release builds use zig directly (local dev only).
+	run nix develop -c zig build "-Doptimize=$optimize" "$@"
+elif command -v nix >/dev/null 2>&1; then
+	run nix build "$@"
+	mkdir -p zig-out/bin zig-out/lib
+	run install -m755 result/bin/sigil zig-out/bin/sigil
+	[[ -e result/lib/libsigil.a ]] && run install -m644 result/lib/libsigil.a zig-out/lib/libsigil.a
+else
+	run zig build "-Doptimize=$optimize" "$@"
+fi
