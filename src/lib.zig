@@ -47,3 +47,5 @@ test {
     _ = core;
     _ = envelope;
 }
+
+pub const sign = @import("sign.zig");

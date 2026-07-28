@@ -12,9 +12,16 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] Mechatron Prime CI onboarding (`.mechatron-prime/targets` + badge).
-      Note: CI was HALTED with a queue of 11 as of 2026-07-27 — a non-green
-      badge may not be ours.
+- [ ] **Mechatron Prime webhook — needs Peter.** Everything else is done: the
+      repo is public at github.com/pmarreck/sigil (branch `yolo`),
+      `.mechatron-prime/targets` lists four attributes each verified to build,
+      and the README carries the canonical badge. The provisioner reads the
+      shared secret through `sudo`, which an agent cannot supply, so the live
+      run is Peter's. Dry run confirmed exactly one action: `CREATE
+      pmarreck/sigil`. Admission was HALTED overnight but went `running` at
+      2026-07-28 17:46Z and the queue is empty, so the first build should go
+      straight through. `/badges/sigil.json` 404s until then — expected, not a
+      failure.
 
 ## Next
 
