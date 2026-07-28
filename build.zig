@@ -47,6 +47,24 @@ pub fn build(b: *std.Build) void {
 	});
 	b.installArtifact(lib);
 
+	// -- Signing library, kept SEPARATE from libsigil.a. The products link the
+	//    verifier only, so a shipped binary does not contain the code to mint a
+	//    license. tests/test_no_signing_symbols holds that to account with nm. --
+	const sign_ffi_mod = b.createModule(.{
+		.root_source_file = b.path("src/ffi_sign.zig"),
+		.target = target,
+		.optimize = optimize,
+		.link_libc = true,
+	});
+	sign_ffi_mod.addImport("printable_binary", pb_mod);
+
+	const sign_lib = b.addLibrary(.{
+		.name = "sigil_sign",
+		.linkage = .static,
+		.root_module = sign_ffi_mod,
+	});
+	b.installArtifact(sign_lib);
+
 	// -- C CLI: deliberately C, so it CANNOT @import the Zig core and must
 	//    dogfood the FFI boundary that Validate and Rotshield will use. --
 	const cli_mod = b.createModule(.{
@@ -61,6 +79,7 @@ pub fn build(b: *std.Build) void {
 	cli_mod.addIncludePath(b.path("include"));
 	const cli = b.addExecutable(.{ .name = "sigil", .root_module = cli_mod });
 	cli_mod.linkLibrary(lib);
+	cli_mod.linkLibrary(sign_lib);
 	b.installArtifact(cli);
 
 	const run_cmd = b.addRunArtifact(cli);
@@ -89,9 +108,31 @@ pub fn build(b: *std.Build) void {
 	ffi_test_mod.addImport("printable_binary", pb_mod);
 	const ffi_tests = b.addTest(.{ .root_module = ffi_test_mod });
 
+	// The signing core. Deliberately NOT reachable from src/lib.zig: keeping it
+	// out of the importable module is what makes "a product cannot sign" a fact
+	// about the linker rather than a rule someone has to remember.
+	const sign_test_mod = b.createModule(.{
+		.root_source_file = b.path("src/sign.zig"),
+		.target = target,
+		.optimize = optimize,
+	});
+	sign_test_mod.addImport("printable_binary", pb_mod);
+	const sign_tests = b.addTest(.{ .root_module = sign_test_mod });
+
+	const sign_ffi_test_mod = b.createModule(.{
+		.root_source_file = b.path("src/ffi_sign.zig"),
+		.target = target,
+		.optimize = optimize,
+		.link_libc = true,
+	});
+	sign_ffi_test_mod.addImport("printable_binary", pb_mod);
+	const sign_ffi_tests = b.addTest(.{ .root_module = sign_ffi_test_mod });
+
 	const test_step = b.step("test", "Run unit tests");
 	test_step.dependOn(&b.addRunArtifact(core_tests).step);
 	test_step.dependOn(&b.addRunArtifact(ffi_tests).step);
+	test_step.dependOn(&b.addRunArtifact(sign_tests).step);
+	test_step.dependOn(&b.addRunArtifact(sign_ffi_tests).step);
 
 	// Build the test binaries without running them. Nix builds need this: the
 	// libc-linked test binary carries an FHS dynamic-linker path that does not
@@ -100,4 +141,6 @@ pub fn build(b: *std.Build) void {
 	const test_compile_step = b.step("test-compile", "Compile test binaries without running them");
 	test_compile_step.dependOn(&core_tests.step);
 	test_compile_step.dependOn(&ffi_tests.step);
+	test_compile_step.dependOn(&sign_tests.step);
+	test_compile_step.dependOn(&sign_ffi_tests.step);
 }

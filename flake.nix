@@ -140,6 +140,27 @@
             '';
           };
 
+          # The architecture invariant that keeps "a product cannot sign" true:
+          # nm reads the shipped artifact rather than our intentions about it.
+          # Linux-only — the assertion is about symbol tables, and the parsing
+          # here assumes ELF naming.
+          test-symbols = pkgs.stdenvNoCC.mkDerivation {
+            pname = "${pname}-test-symbols";
+            inherit version;
+            src = ./.;
+            nativeBuildInputs = [ pkgs.bash pkgs.binutils pkgs.gawk pkgs.gnugrep ];
+            dontConfigure = true;
+            dontFixup = true;
+            buildPhase = ''
+              export SIGIL_LIBDIR=${self.packages.${system}.default}/lib
+              bash ./tests/test_no_signing_symbols
+            '';
+            installPhase = ''
+              mkdir -p $out
+              echo "symbol separation holds" > $out/result
+            '';
+          };
+
           # The CLI surface, exercised through the installed binary. The CLI is
           # C on purpose (it cannot @import the Zig core), so this check is also
           # the only end-to-end proof that the C ABI actually links and works.

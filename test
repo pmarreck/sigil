@@ -50,6 +50,11 @@ echo "Building (ReleaseFast)..."
 # which run_suite's grep can pick up.
 run_suite "Zig Unit Tests" "nix develop -c zig build test --summary all 2>&1"
 
+# Architecture invariant: the shipping verifier contains no signing code.
+if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then
+	run_suite "Symbol Separation" "nix develop -c bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
+fi
+
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
 if [[ -f "$SCRIPT_DIR/tests/cli/test_cli" ]]; then

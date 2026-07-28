@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Architecture invariant, checked mechanically.
+#
+# CLAIM: a product that links libsigil.a cannot mint a license, because the code
+# to sign is not in the binary.
+#
+# That claim is worth exactly as much as its enforcement. build.zig currently
+# puts the signing FFI in a separate library, but one absent-minded
+# `ffi_mod.addImport` — or moving a single `export fn` between files — would
+# quietly fold signing into the shipping verifier, and every test in the suite
+# would still pass. `nm` is the independent oracle: it reads the artifact, not
+# our intentions about it.
+#
+# Not `set -e`: the greps below are expected to fail (that IS the passing case).
+set -u
+
+LIBDIR="${SIGIL_LIBDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/zig-out/lib}"
+NM="${NM:-nm}"
+
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
+fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [[ $# -gt 1 ]] && printf '       %s\n' "$2"; }
+
+verifier="$LIBDIR/libsigil.a"
+signer="$LIBDIR/libsigil_sign.a"
+
+echo "symbol separation — libdir: $LIBDIR"
+
+for f in "$verifier" "$signer"; do
+	if [[ ! -f "$f" ]]; then
+		echo "FATAL: $f not found; run ./build first" >&2
+		exit 1
+	fi
+done
+
+# Defined text symbols only. On Mach-O these carry a leading underscore, so the
+# patterns below tolerate one.
+defined_symbols() { "$NM" --defined-only "$1" 2>/dev/null | awk '$2 == "T" || $2 == "t" { print $3 }'; }
+
+verifier_syms=$(defined_symbols "$verifier")
+signer_syms=$(defined_symbols "$signer")
+
+# The verifier must define the whole verification surface...
+for sym in sigil_verify sigil_verify_envelope sigil_strerror sigil_version \
+	sigil_signature_len sigil_public_key_len; do
+	if grep -qE "^_?${sym}$" <<<"$verifier_syms"; then
+		pass "libsigil.a defines $sym"
+	else
+		fail "libsigil.a defines $sym" "missing — the shipping verifier is incomplete"
+	fi
+done
+
+# ...and NONE of the signing surface. This is the assertion that matters.
+for sym in sigil_keygen sigil_seal sigil_sign_strerror sigil_keyfile_public_key; do
+	if grep -qE "^_?${sym}$" <<<"$verifier_syms"; then
+		fail "libsigil.a does NOT define $sym" \
+			"signing code has leaked into the library products ship"
+	else
+		pass "libsigil.a does not define $sym"
+	fi
+done
+
+# Belt and braces: no symbol containing these stems, in case something is
+# renamed rather than removed.
+for stem in keygen wrapKey unwrapKey argon2 Argon2; do
+	if grep -qi "$stem" <<<"$verifier_syms"; then
+		fail "libsigil.a has no '$stem' symbol" \
+			"$(grep -i "$stem" <<<"$verifier_syms" | head -3 | tr '\n' ' ')"
+	else
+		pass "libsigil.a has no '$stem' symbol"
+	fi
+done
+
+# And the signer really does carry what the CLI needs.
+for sym in sigil_keygen sigil_seal sigil_keyfile_public_key sigil_sign_strerror; do
+	if grep -qE "^_?${sym}$" <<<"$signer_syms"; then
+		pass "libsigil_sign.a defines $sym"
+	else
+		fail "libsigil_sign.a defines $sym" "missing"
+	fi
+done
+
+echo ""
+echo "$PASS passed, $FAIL failed"
+exit $(( FAIL > 0 ? 1 : 0 ))
