@@ -80,10 +80,15 @@ Peter generates every key.
 email = "..."
 issued = "2026-07-27"
 max_major = "1"
+offline_days = "365"
 order = "pdl_01J8XYZ"
 product = "mecha-validate"
 v = "1"
 ```
+
+`offline_days` is data rather than a constant in two codebases so the window can
+be widened for a customer with a genuinely air-gapped machine without shipping a
+new build. See the revocation section below for what consumes it.
 
 `max_major` makes the commercial rule (same major = free upgrade, major bump =
 paid) a property of the data rather than server logic.
@@ -93,11 +98,65 @@ paid) a property of the data rather than server logic.
 Add when a second consumer actually needs it; it will be additive via `v=2`, not
 a rewrite. If money ever enters a payload, use integer minor-units, never float.
 
-## Open question
+## Revocation — decided 2026-07-28 (Peter)
 
-Revocation. Offline verification cannot revoke. Options: short-dated licenses,
-an opportunistically-fetched revocation list, or accept no revocation (what most
-indie desktop software does). Decide deliberately rather than by default.
+**Online re-check on update, plus a one-year offline window.** Concretely, the
+app must successfully confirm a license online when *either* trigger fires:
+
+1. the running version changed (any major **or** minor bump — updating already
+   requires the network, so this is free), or
+2. `offline_days` (365) have passed since the last successful confirmation.
+
+Between triggers the app is fully offline. This is revocation-by-reconfirmation
+rather than a downloaded denylist: refunds and chargebacks take effect at the
+customer's next confirmation instead of immediately.
+
+**None of this is sigil's code.** sigil verifies signatures; the policy lives in
+Mecha Validate and Mecha Rotshield, and the state it needs (`last_confirmed`,
+`installed_version`) is app state, not license content. What sigil contributes
+is that the confirmation *response* is itself a sigil envelope — a short-dated
+signed attestation — so the reply cannot be spoofed by anything a customer can
+point their hosts file at, and no second verification mechanism is needed.
+
+Three failure modes to get right, because all three are easy to get wrong and
+both products will share the mistake:
+
+- **The offline clock is attacker-controlled.** A local system clock can be set
+  backwards to extend the window indefinitely. Keep a monotonic high-water mark
+  — the latest date ever observed — and never let effective "now" move backwards
+  from it. This does not make the clock trustworthy, it just removes the
+  free win.
+- **"Cannot reach the server" is not "revoked."** Fail *open* on network
+  failure, TLS failure, timeout and 5xx; fail *closed* only on an authenticated
+  response that explicitly says revoked. Inverting this bricks paid software the
+  first time a DNS provider has a bad afternoon.
+- **A sustained inability to confirm still needs an answer.** After the offline
+  window lapses and confirmation keeps failing, degrade with visible warnings
+  over a grace period rather than locking out at the stroke of midnight. The
+  grace length is an app-level knob.
+
+Accepted cost, stated plainly: a refunded customer keeps working software for up
+to `offline_days`. That is the price of not phoning home, and it is the right
+trade at this price point.
+
+## Key custody — decided 2026-07-28 (Peter)
+
+**The secret key lives in a passphrase-encrypted keyfile** (Argon2id →
+XChaCha20-Poly1305, both from Zig std, so no new dependency). The realistic
+threat is not a burglar; it is a backup, a synced folder, or a stray `tar` that
+carries the key somewhere it was never meant to go. Encryption at rest makes
+every one of those copies inert.
+
+The separation is structural, not advisory:
+
+- `libsigil.a` — verification only. This is what Mecha Validate and Mecha
+  Rotshield link.
+- `libsigil_sign.a` — key generation, passphrase wrapping, signing. Only the
+  `sigil` CLI links it.
+
+A product that links the verifier **cannot sign**, because the code to do so is
+not in the binary. That is a property of the linker rather than a rule someone
+has to remember, which is the whole point.
 
 ## Build shape (Peter's standard)
 

@@ -28,13 +28,19 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 - [ ] `PROJECT_OVERVIEW.md` once the CLI surface settles.
 - [ ] Benchmark gate (`./bm`) once verification is on a hot path anywhere.
 
-## Open questions (do NOT decide alone)
+## Decided (see docs/DESIGN.md for the full reasoning)
 
-- [ ] **Revocation.** Offline verification cannot revoke. Options: short-dated
-      licenses, an opportunistically-fetched revocation list, or accepting no
-      revocation (what most indie desktop software does). Peter decides.
-      Blocks the payload's final field set (`expires` exists only if we pick
-      short-dating).
+- [x] **Revocation:** online re-check whenever the version changes (major or
+      minor) plus a one-year offline window (`offline_days` in the payload).
+      The policy lives in the products, not in sigil; the confirmation response
+      is itself a short-dated sigil envelope so it cannot be spoofed. Three
+      guardrails written down: monotonic clock high-water mark, fail-open on
+      network error / fail-closed only on an explicit revoked response, and a
+      grace period rather than a midnight lockout. — 2026-07-28 08:35 EST
+- [x] **Key custody:** passphrase-encrypted keyfile (Argon2id +
+      XChaCha20-Poly1305, both Zig std). Signing code lives in a separate
+      `libsigil_sign.a`, so a product linking only `libsigil.a` physically
+      cannot sign. — 2026-07-28 08:35 EST
 
 ## Explicitly deferred (agreed over-engineering)
 
