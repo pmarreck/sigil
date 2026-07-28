@@ -153,6 +153,7 @@
             dontFixup = true;
             buildPhase = ''
               export SIGIL_LIBDIR=${self.packages.${system}.default}/lib
+              export SIGIL_FIXTUREDIR=${self.packages.${system}.default}/test-fixtures
               bash ./tests/test_no_signing_symbols
             '';
             installPhase = ''

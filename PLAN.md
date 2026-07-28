@@ -18,8 +18,6 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## Next
 
-- [ ] `README.md` with the pitch (human-scannable payload, whitespace-immune,
-      zero-dependency verifier) and the CI badge.
 - [ ] `PROJECT_OVERVIEW.md`.
 - [ ] Hand Mecha Validate and Mecha Rotshield an integration note: link
       `libsigil.a` only, embed the key via `sigil pubkey --format c|zig`, and
@@ -85,7 +83,14 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       only randomness) built into a separate `libsigil_sign.a`. No secret ever
       crosses the FFI — `sigil_seal` takes keyfile + passphrase and returns a
       finished envelope. `tests/test_no_signing_symbols` enforces the split
-      with `nm`, and was confirmed to actually fail when violated. — 2026-07-28 08:50 EST
+      with `nm`. — 2026-07-28 08:50 EST
+      **Correction (2026-07-28 16:35 EDT):** this entry originally claimed the
+      control "was confirmed to actually fail when violated." That was true only
+      of the one class demonstrated — deleting the library separation — and it
+      was written as though it covered the claim generally. It did not: a
+      renamed export and a Zig-module re-export both walked past it. A red-green
+      demo proves a control *can* fire; it never proves it fires on everything
+      the control claims to cover. See the allowlist entry below.
 - [x] CLI: `verify` / `sign` / `keygen` / `pubkey`, with `-`/`@stdin`,
       `@stdout`/`@stderr`, `--json`, `--quiet`, `--simple`, `--no-color`,
       `--` terminator, later-args-override-earlier, spaces in paths, Windows
@@ -108,23 +113,27 @@ linking, running or disassembling — none are speculative.
       — 2026-07-28 12:20 EDT
 - [x] `grep -P '[\x80-\xff]'` matched code points, not bytes — the `--simple`
       check could not see ✓. — 2026-07-28 12:20 EDT
+- [x] **Custody control inverted from denylist to allowlist (F1/F2/C2).**
+      Both bypasses reproduced first, then fixed, then re-confirmed:
+      *(a)* `export fn sigil_mint` — old control 19 passed/0 failed while a C
+      program linking only `libsigil.a` minted RFC 8032 vector 1 byte-for-byte;
+      *(b)* `pub const sign = @import("sign.zig")` in lib.zig — archive stayed
+      byte-identical, so `nm` saw nothing.
+      Three layers now: set equality between the archive's C ABI exports and
+      `include/sigil.h` declarations; a cryptographic oracle on the two
+      primitives only signing reaches (`Edwards25519.mul`, `scalar.reduce64`,
+      determined by diffing symbol tables, not guessed) each paired with a
+      positive assertion against `libsigil_sign.a` as its specificity corpus;
+      and the verification surface intact so shrinking the archive is not an
+      out. `src/module_probe.zig` forces codegen of the importable module's
+      public surface so the same oracle reaches the sanctioned sibling-Zig
+      path. Verified: (a) → 3 failures, (b) → 2 failures, clean → 21/0.
+      The crypto oracle survives an adversary who also edits the header.
+      — 2026-07-28 16:35 EDT
+- [x] `zig-pkg/` untracked (95 files, 1.2 MB). Build confirmed still green with
+      no committed copy, so `zigDepsHash` is doing real work. — 2026-07-28 16:35 EDT
 
 ### Critical, still open
-
-- [ ] **Custody control is false-green (F1/C2).** Two agents independently
-      shipped working Ed25519 signers while it reported 19/0. It greps 4 names
-      + 5 stems; `export fn sigil_mint` matched none, and a C program linking
-      only `libsigil.a` minted RFC 8032 vector 1. **Fix: invert to an
-      allowlist** — set equality between `nm` exports and header declarations,
-      plus a negative control on the private-key primitives
-      (`Edwards25519.mul`, `scalar.reduce64`). A denylist is incomplete by
-      construction.
-- [ ] **The importable Zig module has zero coverage (F2).** `b.addModule` emits
-      no binary for `nm`. Adding `pub const` re-exports left the archive
-      byte-identical and a Zig consumer minted a signature. This is the
-      *sanctioned* path — the sibling-Zig exception lets Validate/Rotshield
-      import the module directly. Needs a source-level `@import`-closure
-      assertion or a negative compile test.
 - [ ] **`libsigil.a` cannot be linked by a customer (C1).** Two independent
       causes, both confirmed with stock gcc 15.3.0: (a) non-PIC archive vs
       default-PIE gcc; (b) unresolved `roundq`/`__divtf3`/`__multf3`/… from
@@ -159,8 +168,6 @@ linking, running or disassembling — none are speculative.
 - [ ] **The suite cannot detect FFI leaks** — proven by mutation: deleting
       `defer c_allocator.free(payload)` still gives 124/124. The FFI hardcodes
       `c_allocator`, so `testing.allocator` never covers it.
-- [ ] `zig-pkg/` (95 files, 1.2 MB) is tracked in git despite `.gitignore:41`,
-      which is why `zigDepsHash` is inert — the committed copy compiles.
 - [ ] Passphrases silently truncated at 1023 chars on the prompt path only,
       producing an unopenable key reported as "wrong passphrase".
 - [ ] `MALFORMED_ENCODING` unreachable for `data`/`sig` — corrupt files are

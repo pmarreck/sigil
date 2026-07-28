@@ -9,6 +9,7 @@ annotate=[
 	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
 	src/ffi_sign.zig = Signing C ABI in a SEPARATE libsigil_sign.a. Only place randomness lives. No secret ever crosses the boundary.
 	src/lib.zig = Importable Zig module root. Re-exports verify + envelope. Emits NO C symbols and needs no libc.
+	src/module_probe.zig = Test fixture (not shipped): forces codegen of the importable Zig module so nm can inspect the sanctioned sibling-Zig consumer path.
 	src/sign.zig = Signing core (pure): keyPairFromSeed, signPayload, seal, wrapKey/unwrapKey keyfile (Argon2id + XChaCha20-Poly1305). Never ships.
 	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.

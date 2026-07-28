@@ -4,45 +4,62 @@
 # CLAIM: a product that links libsigil.a cannot mint a license, because the code
 # to sign is not in the binary.
 #
-# That claim is worth exactly as much as its enforcement. build.zig currently
-# puts the signing FFI in a separate library, but one absent-minded
-# `ffi_mod.addImport` — or moving a single `export fn` between files — would
-# quietly fold signing into the shipping verifier, and every test in the suite
-# would still pass. `nm` is the independent oracle: it reads the artifact, not
-# our intentions about it.
+# This control was previously a DENYLIST — four forbidden names and five
+# forbidden substrings. It reported "19 passed, 0 failed" on an archive that
+# minted RFC 8032 test vector 1 byte-for-byte, because `export fn sigil_mint`
+# matched none of its patterns and dead-code elimination kept Argon2 out of the
+# picture entirely. A denylist is incomplete by construction: it only ever
+# catches the violations someone already imagined.
 #
-# Not `set -e`: the greps below are expected to fail (that IS the passing case).
+# It is now an ALLOWLIST, in three layers:
+#
+#   A. Set equality between the archive's C ABI exports and the functions
+#      declared in include/sigil.h. Anything smuggled in is a symbol nobody
+#      declared, whatever it is called.
+#   B. A negative control on the Ed25519 primitives that only SIGNING reaches
+#      — an oracle derived from the cryptography rather than from our naming.
+#      Paired with a positive assertion that those same symbols ARE present in
+#      libsigil_sign.a, so the absence check cannot pass by matching nothing.
+#   C. The verification surface is all still there, so "shrink the archive
+#      until it passes" is not an available shortcut.
+#
+# Not `set -e`: several greps below are expected to fail (that IS the passing
+# case).
 set -u
 
-LIBDIR="${SIGIL_LIBDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/zig-out/lib}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBDIR="${SIGIL_LIBDIR:-$ROOT/zig-out/lib}"
+FIXTUREDIR="${SIGIL_FIXTUREDIR:-$ROOT/zig-out/test-fixtures}"
+HEADER="${SIGIL_HEADER:-$ROOT/include/sigil.h}"
 NM="${NM:-nm}"
 
 PASS=0
 FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
-fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [[ $# -gt 1 ]] && printf '       %s\n' "$2"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  \033[31mFAIL\033[0m %s\n' "$1"
+	[[ $# -gt 1 ]] && printf '       %s\n' "$2"
+	return 0
+}
 
 verifier="$LIBDIR/libsigil.a"
 signer="$LIBDIR/libsigil_sign.a"
+probe="$FIXTUREDIR/libsigil_module_probe.a"
 
-echo "symbol separation — libdir: $LIBDIR"
+echo "custody control — libdir: $LIBDIR"
 
-for f in "$verifier" "$signer"; do
+for f in "$verifier" "$signer" "$HEADER" "$probe"; do
 	if [[ ! -f "$f" ]]; then
 		echo "FATAL: $f not found; run ./build first" >&2
 		exit 1
 	fi
 done
 
-# Defined text symbols only. On Mach-O these carry a leading underscore, so the
-# patterns below tolerate one.
-#
 # `$NM` is checked SEPARATELY from the awk that filters it. Piping directly
 # would mask nm's exit status behind awk's, so a dead or wrong-arch nm would
-# yield an empty symbol list — and every "must NOT contain a signing symbol"
-# assertion below would pass vacuously, certifying an archive nobody read.
-# The positive assertions already catch this, but defence should not depend on
-# another check happening to be present.
+# yield an empty symbol list and every "must NOT contain" assertion below would
+# pass vacuously, certifying an archive nobody read.
 defined_symbols() {
 	local raw
 	if ! raw=$("$NM" --defined-only "$1" 2>/dev/null); then
@@ -52,51 +69,169 @@ defined_symbols() {
 	awk '$2 == "T" || $2 == "t" { print $3 }' <<<"$raw"
 }
 
+# The C ABI is exactly the undotted global text symbols: every Zig-internal
+# symbol carries a module-qualified name with a '.' in it. Mach-O prefixes an
+# underscore, so strip one if present.
+#
+# Takes an already-read symbol list rather than a path, and checks each stage
+# separately. Piped, `grep -v` returning 1 (every symbol dotted — a plausible
+# toolchain change) would be swallowed by `sort`, leaving an empty C ABI set
+# that satisfies every equality below.
+c_abi_exports() {
+	local stripped undotted
+	stripped=$(sed 's/^_//' <<<"$1")
+	if ! undotted=$(grep -v '\.' <<<"$stripped"); then
+		echo "FATAL: no undotted global text symbols; the C ABI set would be empty" >&2
+		exit 1
+	fi
+	sort -u <<<"$undotted"
+}
+
+# Declarations in the header start at column 0 with a return type; comments
+# start with '/' or whitespace and #defines with '#', so anchoring to a
+# lowercase letter picks out declarations and nothing else.
+#
+# Each stage is checked separately rather than piped. A pipeline would report
+# only the LAST command's status, so an unreadable header would yield an empty
+# declaration set — and set equality against an empty set succeeds. That is the
+# precise failure mode this whole control exists to prevent, one level up.
+header_functions() {
+	local decls names
+	if ! decls=$(grep -E '^[a-z]' "$HEADER"); then
+		echo "FATAL: no declarations found in $HEADER; the allowlist would be empty" >&2
+		exit 1
+	fi
+	if ! names=$(grep -oE 'sigil_[a-z0-9_]+' <<<"$decls"); then
+		echo "FATAL: no sigil_* names in $HEADER; the allowlist would be empty" >&2
+		exit 1
+	fi
+	sort -u <<<"$names"
+}
+
 # `|| exit 1` is REQUIRED, not decorative: defined_symbols runs inside a command
 # substitution, which is a subshell, so its `exit 1` ends only that subshell.
-# Without propagating the status here the script would continue with an empty
-# symbol list and every "must NOT contain" assertion would pass vacuously —
-# the exact class of bug this control exists to catch, one level up.
 verifier_syms=$(defined_symbols "$verifier") || exit 1
+verifier_abi=$(c_abi_exports "$verifier_syms") || exit 1
 signer_syms=$(defined_symbols "$signer") || exit 1
+probe_syms=$(defined_symbols "$probe") || exit 1
+declared=$(header_functions)
 
-# The verifier must define the whole verification surface...
+# ── Layer 0: the extractors actually found something ────────────────────────
+#
+# Every assertion below is a set comparison, and two empty sets compare equal.
+# A typo in an extractor would otherwise turn this whole file green.
+
+declared_count=$(grep -c . <<<"$declared")
+abi_count=$(grep -c . <<<"$verifier_abi")
+
+if [[ "$declared_count" -ge 6 ]]; then
+	pass "the header parser found $declared_count declarations"
+else
+	fail "the header parser found $declared_count declarations" \
+		"expected at least 6; the extractor is broken, so every set below is vacuous"
+fi
+if [[ "$abi_count" -ge 6 ]]; then
+	pass "the symbol reader found $abi_count C ABI exports"
+else
+	fail "the symbol reader found $abi_count C ABI exports" \
+		"expected at least 6; the extractor is broken, so every set below is vacuous"
+fi
+
+# ── Layer A: set equality, exports vs header ────────────────────────────────
+
+undeclared=$(comm -23 <(printf '%s\n' "$verifier_abi") <(printf '%s\n' "$declared"))
+missing=$(comm -13 <(printf '%s\n' "$verifier_abi") <(printf '%s\n' "$declared"))
+
+if [[ -z "$undeclared" ]]; then
+	pass "libsigil.a exports nothing that include/sigil.h does not declare"
+else
+	# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+	fail "libsigil.a exports nothing that include/sigil.h does not declare" \
+		"undeclared export(s): $(tr '\n' ' ' <<<"$undeclared")"
+fi
+
+if [[ -z "$missing" ]]; then
+	pass "every function include/sigil.h declares is actually exported"
+else
+	# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+	fail "every function include/sigil.h declares is actually exported" \
+		"declared but absent: $(tr '\n' ' ' <<<"$missing")"
+fi
+
+# ── Layer B: the cryptographic oracle ───────────────────────────────────────
+#
+# Verification and signing use overlapping Ed25519 machinery, so most symbols
+# say nothing. These three do. Signing multiplies the base point by a SECRET
+# scalar (Edwards25519.mul), encodes the resulting point R (toBytes), and
+# reduces a 64-byte SHA-512 digest into a scalar (scalar.reduce64).
+# Verification needs none of them — it uses the double-scalar sliding-window
+# path (slide/add/dbl) and Scalar.fromBytes.
+#
+# Determined empirically, not guessed: these are exactly the symbols that
+# appeared when a working signer was added to the archive.
+SIGNING_ONLY=(
+	'crypto.25519.edwards25519.Edwards25519.mul'
+	'crypto.25519.scalar.reduce64'
+)
+
+for sym in "${SIGNING_ONLY[@]}"; do
+	# Positive half FIRST — the specificity corpus. If these patterns cannot
+	# find the symbol in the library that certainly signs, then their absence
+	# from the verifier means nothing at all.
+	if grep -qxF "$sym" <<<"$signer_syms"; then
+		pass "the oracle can see '${sym##*.}' where signing definitely happens"
+	else
+		fail "the oracle can see '${sym##*.}' where signing definitely happens" \
+			"not found in libsigil_sign.a — the pattern is stale, so the check below is vacuous"
+	fi
+
+	if grep -qxF "$sym" <<<"$verifier_syms"; then
+		fail "libsigil.a contains no '${sym##*.}' (signing-only primitive)" \
+			"present — the shipping archive can compute a signature"
+	else
+		pass "libsigil.a contains no '${sym##*.}' (signing-only primitive)"
+	fi
+
+	# The SANCTIONED sibling-Zig path. `b.addModule` emits no binary, so nm was
+	# blind to it: a review added `pub const` re-exports to lib.zig, left
+	# libsigil.a byte-identical, and minted a signature from a Zig consumer.
+	# src/module_probe.zig forces codegen of the module's whole public surface
+	# so the same oracle reaches it.
+	if grep -qxF "$sym" <<<"$probe_syms"; then
+		fail "@import(\"sigil\") cannot reach '${sym##*.}' (signing-only primitive)" \
+			"present — a Zig consumer importing the module can compute a signature"
+	else
+		pass "@import(\"sigil\") cannot reach '${sym##*.}' (signing-only primitive)"
+	fi
+done
+
+# The probe must be a real compiled artifact, not the empty archive an
+# unreferenced static library produces. Its first version had two symbols and
+# would have certified anything.
+probe_count=$(grep -c . <<<"$probe_syms")
+if [[ "$probe_count" -ge 8 ]]; then
+	pass "the module probe compiled $probe_count symbols (not a vacuous archive)"
+else
+	fail "the module probe compiled $probe_count symbols (not a vacuous archive)" \
+		"expected at least 8; dead-code elimination emptied it, so the two checks above are meaningless"
+fi
+
+# ── Layer C: the verification surface is intact ─────────────────────────────
+#
+# Without this, deleting code until the sets match would pass.
+
 for sym in sigil_verify sigil_verify_envelope sigil_strerror sigil_version \
 	sigil_signature_len sigil_public_key_len; do
-	if grep -qE "^_?${sym}$" <<<"$verifier_syms"; then
+	if grep -qxF "$sym" <<<"$verifier_abi"; then
 		pass "libsigil.a defines $sym"
 	else
 		fail "libsigil.a defines $sym" "missing — the shipping verifier is incomplete"
 	fi
 done
 
-# ...and NONE of the signing surface. This is the assertion that matters.
-for sym in sigil_keygen sigil_seal sigil_sign_strerror sigil_keyfile_public_key; do
-	if grep -qE "^_?${sym}$" <<<"$verifier_syms"; then
-		fail "libsigil.a does NOT define $sym" \
-			"signing code has leaked into the library products ship"
-	else
-		pass "libsigil.a does not define $sym"
-	fi
-done
-
-# Belt and braces: no symbol containing these stems, in case something is
-# renamed rather than removed.
-for stem in keygen wrapKey unwrapKey argon2 Argon2; do
-	if grep -qi "$stem" <<<"$verifier_syms"; then
-		# SC2312 deliberate: diagnostic text built only on the failure path,
-		# where the assertion has already been decided by the `grep -qi` above.
-		# shellcheck disable=SC2312
-		fail "libsigil.a has no '$stem' symbol" \
-			"$(grep -i "$stem" <<<"$verifier_syms" | head -3 | tr '\n' ' ')"
-	else
-		pass "libsigil.a has no '$stem' symbol"
-	fi
-done
-
 # And the signer really does carry what the CLI needs.
 for sym in sigil_keygen sigil_seal sigil_keyfile_public_key sigil_sign_strerror; do
-	if grep -qE "^_?${sym}$" <<<"$signer_syms"; then
+	if grep -qxE "_?${sym}" <<<"$signer_syms"; then
 		pass "libsigil_sign.a defines $sym"
 	else
 		fail "libsigil_sign.a defines $sym" "missing"

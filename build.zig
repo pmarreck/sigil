@@ -73,6 +73,26 @@ pub fn build(b: *std.Build) void {
 	});
 	b.installArtifact(sign_lib);
 
+	// -- Module probe: a TEST FIXTURE, not a deliverable. `b.addModule` emits no
+	//    binary, so the custody control could not see the sanctioned sibling-Zig
+	//    consumer path at all. This forces codegen of the module's whole public
+	//    surface so `nm` has an artifact to inspect. Installed under
+	//    test-fixtures/ so it can never be mistaken for something to ship. --
+	const probe_mod = b.createModule(.{
+		.root_source_file = b.path("src/module_probe.zig"),
+		.target = target,
+		.optimize = optimize,
+	});
+	probe_mod.addImport("sigil", core_mod);
+	const probe = b.addLibrary(.{
+		.name = "sigil_module_probe",
+		.linkage = .static,
+		.root_module = probe_mod,
+	});
+	b.getInstallStep().dependOn(&b.addInstallArtifact(probe, .{
+		.dest_dir = .{ .override = .{ .custom = "test-fixtures" } },
+	}).step);
+
 	// -- C CLI: deliberately C, so it CANNOT @import the Zig core and must
 	//    dogfood the FFI boundary that Validate and Rotshield will use. --
 	const cli_mod = b.createModule(.{

@@ -32,6 +32,15 @@ elif command -v nix >/dev/null 2>&1; then
 			|| { echo "FAILED: nix build produced no result/lib/$lib" >&2; exit 1; }
 		run install -m644 "result/lib/$lib" "zig-out/lib/$lib"
 	done
+	# The module probe is a TEST FIXTURE, not a deliverable — hence its own
+	# directory. It is the only artifact through which nm can see the
+	# importable Zig module, so a missing one is a blind control, not a
+	# cosmetic gap. Fail loudly rather than skipping.
+	mkdir -p zig-out/test-fixtures
+	[[ -e result/test-fixtures/libsigil_module_probe.a ]] \
+		|| { echo "FAILED: nix build produced no module probe" >&2; exit 1; }
+	run install -m644 result/test-fixtures/libsigil_module_probe.a \
+		zig-out/test-fixtures/libsigil_module_probe.a
 else
 	run zig build "-Doptimize=$optimize" "$@"
 fi

@@ -1,9 +1,0 @@
-The Emscripten/WASI CLI cannot open an arbitrary host file path under wazero's
-default sandbox. Benchmark adapters must redirect each generated input file to
-stdin and pass `-d` after wazero's `--` separator for decode.
-
-On the Thelio Nix host, the Cosmopolitan APE reports `Exec format error` when
-launched directly from the development environment, but works when invoked with
-a minimal `env -i` PATH/HOME/TMPDIR—matching `test/printable-binary-ape-wrapper`.
-Use that clean-environment adapter for APE benchmarks so the executable itself,
-rather than Nix development-shell state, is measured.
