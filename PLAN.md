@@ -133,14 +133,13 @@ linking, running or disassembling — none are speculative.
 - [x] `zig-pkg/` untracked (95 files, 1.2 MB). Build confirmed still green with
       no committed copy, so `zigDepsHash` is doing real work. — 2026-07-28 16:35 EDT
 
+- [x] **`libsigil.a` linkable by a customer (C1).** Fixed in `b5cfb87` by the
+      bold route: `std.json` dropped for a purpose-built parser, plus PIC.
+      Re-confirmed 2026-07-28 16:40 EDT — stock gcc 15.3.0 (not `zig cc`)
+      links and runs against the archive, now 512,956 bytes, down from
+      949,604. `tests/test_c_conformance` gates it, 12 assertions.
+
 ### Critical, still open
-- [ ] **`libsigil.a` cannot be linked by a customer (C1).** Two independent
-      causes, both confirmed with stock gcc 15.3.0: (a) non-PIC archive vs
-      default-PIE gcc; (b) unresolved `roundq`/`__divtf3`/`__multf3`/… from
-      `std/json/static.zig:771` f128 parsing. **DECISION PENDING** — safe
-      (`bundle_compiler_rt` + PIC) vs bold (drop `std.json` for a purpose-built
-      envelope parser; the envelope has no numbers, and the normalization
-      feature must live there anyway). Einstein leans bold.
 - [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
       `sigil verify --help` → `unknown option`, exit 64.
 - [ ] **`verify` reports transient OOM as a forged license** — collapses every
