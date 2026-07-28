@@ -1,14 +1,19 @@
 .{
-	.name = .sigil,
-	.version = "0.1.0",
-	.minimum_zig_version = "0.15.2",
-	.dependencies = .{},
-	.paths = .{
-		"build.zig",
-		"build.zig.zon",
-		"src",
-		"include",
-		"cli",
-	},
-	.fingerprint = 0x83ddf5b3a2ac2a01,
+    .name = .sigil,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .printable_binary = .{
+            .url = "https://github.com/pmarreck/printable-binary/archive/3f697d53f447144e9ba1b73c4217b382f32b4d62.tar.gz",
+            .hash = "printable_binary-1.0.0-SdPiyhUVGgBTC3HbDM1G40As8Rv-pXtMfx5nIzmSRF6f",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+        "cli",
+    },
+    .fingerprint = 0x83ddf5b3a2ac2a01,
 }

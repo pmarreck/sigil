@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Fuzz test for printable_binary
+# Tests encoding/decoding of large random binary data with seeded reproducibility
+#
+# Features:
+# - Deterministic pseudo-random data generation using xxhash32 PRNG
+# - Reproducible tests via seed values (auto-generated or user-provided)
+# - Configurable test size via TEST_SIZE_MB environment variable
+# - Fast generation using LuaJIT-based prng utility (MB/sec vs slow bash loops)
+# - Perfect round-trip verification with hash checking
+# - Cross-platform deterministic results
+#
+# Usage:
+#   ./fuzz_test                    # Run with auto-generated seed
+#   ./fuzz_test --seed=12345       # Run with specific seed for reproduction
+#   TEST_SIZE_MB=5 ./fuzz_test     # Run with larger dataset
+#
+# Environment Variables:
+#   IMPLEMENTATION_TO_TEST         # Path to binary to test (default: ../zig-out/bin/printable-binary)
+#   TEST_SIZE_MB                   # Size of test data in MB (default: 1)
+#
+# Requirements:
+#   - LuaJIT (for prng utility)
+#   - prng utility in ../utils/prng
+
+set -e
+
+# Parse command line arguments for seed
+SEED=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --seed=*)
+            SEED="${1#*=}"
+            shift
+            ;;
+        --seed)
+            SEED="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--seed=NUMBER]"
+            exit 1
+            ;;
+    esac
+done
+
+# Note: if no seed provided, prng will auto-generate one
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Auto-detect the correct path based on script location
+SCRIPT_DIR="$(dirname "$0")"
+# Default to the Zig implementation (reference build); override with IMPLEMENTATION_TO_TEST.
+DEFAULT_IMPLEMENTATION="$SCRIPT_DIR/../zig-out/bin/printable-binary"
+SCRIPT="${IMPLEMENTATION_TO_TEST:-$DEFAULT_IMPLEMENTATION}"
+echo "==> Implementation under test: $SCRIPT" >&2
+if [ ! -e "$SCRIPT" ] && ! command -v "$SCRIPT" >/dev/null 2>&1; then
+  echo "    (not found — run 'zig build' first, or set IMPLEMENTATION_TO_TEST=<path>)" >&2
+fi
+TEST_SIZE_MB="${TEST_SIZE_MB:-1}"
+TEST_SIZE_BYTES=$((TEST_SIZE_MB * 1024 * 1024))
+
+echo -e "${BLUE}=== PrintableBinary Fuzz Test Suite ===${NC}"
+echo -e "${YELLOW}Testing implementation: $SCRIPT${NC}"
+if [ -n "$SEED" ]; then
+    echo -e "${YELLOW}Using seed: $SEED${NC}"
+    echo -e "Testing with ${TEST_SIZE_MB}MB of seeded pseudo-random data..."
+    echo -e "${BLUE}To reproduce this test, run: $0 --seed=$SEED${NC}"
+else
+    echo -e "${YELLOW}Using auto-generated seed${NC}"
+    echo -e "Testing with ${TEST_SIZE_MB}MB of pseudo-random data..."
+    echo -e "${BLUE}Seed will be displayed after generation for reproduction${NC}"
+fi
+
+# Use base64 encoding to handle binary data in shell variables (no disk I/O)
+# Cleanup function
+cleanup() {
+    rm -f /tmp/fuzz_stderr.$$
+}
+trap cleanup EXIT
+
+# Generate seeded pseudo-random data using prng utility
+echo -e "${YELLOW}Generating ${TEST_SIZE_MB}MB of seeded pseudo-random data...${NC}"
+
+# Check if prng utility exists
+PRNG_UTIL="$SCRIPT_DIR/../utils/prng"
+if [ ! -x "$PRNG_UTIL" ]; then
+    echo -e "${RED}Error: prng utility not found at $PRNG_UTIL${NC}"
+    echo -e "Please ensure the prng utility is built and executable."
+    exit 1
+fi
+
+# Generate random data and store as base64 (handles binary data in shell variables)
+echo -e "${YELLOW}Generating ${TEST_SIZE_MB}MB of pseudo-random data and calculating hash...${NC}"
+if [ -n "$SEED" ]; then
+    RANDOM_DATA_B64=$("$PRNG_UTIL" --seed="$SEED" --bytes="$TEST_SIZE_BYTES" 2>/dev/null | base64)
+else
+    # Capture stderr for auto-generated seed
+    RANDOM_DATA_B64=$("$PRNG_UTIL" --bytes="$TEST_SIZE_BYTES" 2>/tmp/fuzz_stderr.$$ | base64)
+    GENERATED_SEED=$(grep "Auto-generated seed:" /tmp/fuzz_stderr.$$ | sed 's/.*seed: \([0-9]*\).*/\1/' || echo "unknown")
+    rm -f /tmp/fuzz_stderr.$$
+fi
+ORIGINAL_HASH=$(echo "$RANDOM_DATA_B64" | base64 -d | shasum -a 256 | cut -d ' ' -f 1)
+echo "Original hash: $ORIGINAL_HASH"
+
+# Encode the data using process substitution (no temp files)
+echo -e "${YELLOW}Encoding data...${NC}"
+ENCODED_OUTPUT=$(echo "$RANDOM_DATA_B64" | base64 -d | $SCRIPT 2>/dev/null)
+ENCODED_SIZE=$(echo -n "$ENCODED_OUTPUT" | wc -c)
+ENCODED_SIZE_MB=$(echo "scale=2; $ENCODED_SIZE / (1024*1024)" | bc)
+echo "Encoded ${TEST_SIZE_MB} MB"
+echo "Encoded size: ${ENCODED_SIZE_MB} MB (${ENCODED_SIZE} bytes)"
+
+# Calculate compression ratio
+RATIO=$(echo "scale=2; $ENCODED_SIZE / $TEST_SIZE_BYTES" | bc)
+echo "Encoding ratio: ${RATIO}x"
+
+# Decode the data using process substitution
+echo -e "${YELLOW}Decoding data...${NC}"
+DECODED_HASH=$(echo -n "$ENCODED_OUTPUT" | $SCRIPT -d 2>/dev/null | shasum -a 256 | cut -d ' ' -f 1)
+DECODED_SIZE=$(echo -n "$ENCODED_OUTPUT" | $SCRIPT -d 2>/dev/null | wc -c)
+DECODED_SIZE_MB=$(echo "scale=2; $DECODED_SIZE / (1024*1024)" | bc)
+echo "Decoded ${DECODED_SIZE_MB} MB"
+
+# Verify the round-trip by comparing hashes
+if [ "$ORIGINAL_HASH" = "$DECODED_HASH" ]; then
+    echo -e "Verification: ${GREEN}PASS${NC} - Perfect round-trip"
+    echo -e "Hash verification: ${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL - Data corruption detected${NC}"
+    echo "Original size: $TEST_SIZE_BYTES bytes"
+    echo "Decoded size: $DECODED_SIZE bytes"
+    echo -e "Hash verification: ${RED}FAIL${NC}"
+    echo "Original hash: $ORIGINAL_HASH"
+    echo "Decoded hash:  $DECODED_HASH"
+
+    echo -e "\n${YELLOW}DEBUG: First few bytes comparison:${NC}"
+    echo "Original (first 50 bytes):"
+    echo "$RANDOM_DATA_B64" | base64 -d | head -c 50 | hexdump -C
+    echo "Decoded (first 50 bytes):"
+    echo -n "$ENCODED_OUTPUT" | $SCRIPT -d 2>/dev/null | head -c 50 | hexdump -C
+    exit 1
+fi
+
+echo -e "\n${GREEN}All fuzz tests passed!${NC}"
+if [ -n "$SEED" ]; then
+    echo -e "${BLUE}Seed used: $SEED (save this for reproduction)${NC}"
+else
+    echo -e "${BLUE}Auto-generated seed: $GENERATED_SEED (use --seed=$GENERATED_SEED to reproduce)${NC}"
+fi
+exit 0

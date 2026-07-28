@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# utf16to8 — transcode UTF-16 on stdin to UTF-8 on stdout (a thin iconv wrapper).
+#
+# A leading BOM is auto-detected, used to pick endianness, and stripped. If there
+# is no BOM, little-endian is assumed (ARM/x86_64 default); override with --le/--be.
+#
+#   utf16to8 < file.utf16 | printable-binary -d     # auto-detect BOM, else LE
+#   utf16to8 --be < file.utf16be | printable-binary -d
+set -euo pipefail
+
+endian=LE
+forced=0
+for arg in "$@"; do
+  case "$arg" in
+    --le) endian=LE; forced=1 ;;
+    --be) endian=BE; forced=1 ;;
+    -h|--help)
+      echo "usage: utf16to8 [--le|--be]   (UTF-16 stdin -> UTF-8 stdout; BOM auto-detected, else LE)"
+      exit 0 ;;
+    *) echo "utf16to8: unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+
+skip=0
+bom="$(head -c 2 "$tmp" | xxd -p 2>/dev/null || true)"
+case "$bom" in
+  fffe) skip=2; [ "$forced" -eq 1 ] || endian=LE ;;
+  feff) skip=2; [ "$forced" -eq 1 ] || endian=BE ;;
+esac
+
+tail -c "+$((skip + 1))" "$tmp" | iconv -f "UTF-16$endian" -t UTF-8

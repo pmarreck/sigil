@@ -12,10 +12,6 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] The envelope: parse `{"data":…,"sigtype":"Ed25519","sig":…}`, decode both
-      printable-binary values, verify over the decoded `data` bytes, only then
-      hand the payload back. Import `printable_binary`'s Zig module directly
-      (sibling exception — it already dogfoods its own C FFI).
 - [ ] CLI surface: `sigil verify <file> --pubkey <path>` plus the brief's
       conventions (`-`/`@stdin`, `--json`, stderr for metadata, later args
       override earlier).
@@ -27,7 +23,8 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       badge may not be ours.
 - [ ] `sigil keygen` / `sigil sign` — **design key custody first.** The private
       key must never ship. Signing must be separable from verifying so the
-      products embed only the verifier.
+      products embed only the verifier. Plan: signing lives in its own static
+      lib so a product that links only `libsigil.a` physically cannot sign.
 - [ ] `PROJECT_OVERVIEW.md` once the CLI surface settles.
 - [ ] Benchmark gate (`./bm`) once verification is on a hot path anywhere.
 
@@ -56,3 +53,11 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 - [x] git repo on branch `yolo`, commit-msg hook, `.gitignore`. — 2026-07-27 22:30 EST
 - [x] `flake.nix` (Zig 0.16.0 pinned via zig-overlay) with real `checks.*`:
       `build`, `test`, `test-cli`; `./build` and `./test` runners. — 2026-07-27 22:35 EST
+- [x] Split the C ABI out of the importable module (`src/ffi.zig` is the static
+      library's root; `src/lib.zig` emits no `sigil_*` symbols and needs no
+      libc). Two test roots, so `zig build test` fails loudly if the verifier
+      ever picks up a libc dependency an embedder would inherit. — 2026-07-27 22:35 EST
+- [x] The envelope: parse, decode both printable-binary values, verify over the
+      decoded `data` bytes, hand back only authenticated payload. Strict on
+      duplicate keys, tolerant of unknown fields. `sigil_verify_envelope` +
+      `sigil_strerror` across the FFI. 55 tests green. — 2026-07-27 22:45 EST

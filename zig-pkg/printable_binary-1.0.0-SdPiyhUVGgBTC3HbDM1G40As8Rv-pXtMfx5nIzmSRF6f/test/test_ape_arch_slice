@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Verifies that the Cosmopolitan APE binary includes an Apple Silicon / aarch64 slice.
+# This is a lightweight string check so we don't need qemu or a macOS runner.
+
+set -euo pipefail
+
+SCRIPT_PATH="${1:?Usage: $0 /path/to/printable-binary-ape.com}"
+
+if [[ ! -x "$SCRIPT_PATH" ]]; then
+  echo "FAIL: $SCRIPT_PATH is not executable"
+  exit 1
+fi
+
+# The modern fat APE produced by cosmocc >= 3.x includes an embedded
+# `.aarch64.elf` payload alongside the x86_64 one. Earlier toolchains
+# don't add that payload. We key off that marker because it is part of
+# the loader script and doesn't rely on platform-specific tooling.
+if strings -a "$SCRIPT_PATH" | grep -F ".aarch64.elf" >/dev/null; then
+  echo "PASS: $SCRIPT_PATH embeds an Apple Silicon/aarch64 slice"
+else
+  echo "FAIL: $SCRIPT_PATH appears to be x86_64-only (no .aarch64.elf payload marker found)"
+  exit 1
+fi

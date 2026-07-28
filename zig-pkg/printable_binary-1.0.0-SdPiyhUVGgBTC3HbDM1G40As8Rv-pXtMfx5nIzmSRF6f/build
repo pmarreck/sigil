@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+# Build script for PrintableBinary using Nix
+# All dependencies are managed by Nix for reproducible, portable builds
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+usage() {
+    echo "Usage: $0 [target...]"
+    echo ""
+    echo "Targets:"
+    echo "  all       Build all targets (native, zig, wasm, ape) - default"
+    echo "  native    Build native C binary"
+    echo "  zig       Build Zig binary"
+    echo "  wasm      Build WebAssembly module"
+    echo "  ape       Build Actually Portable Executable"
+    echo "  test      Run tests against all built implementations"
+    echo "  clean     Remove build artifacts from bin/"
+    echo ""
+    echo "Examples:"
+    echo "  $0              # Build all targets"
+    echo "  $0 native zig   # Build native C and Zig"
+    echo "  $0 native ape   # Build native and APE"
+    echo "  $0 test         # Build all and run tests"
+    echo ""
+    echo "Built artifacts are copied into bin/"
+}
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $*"
+}
+
+log_success() {
+    echo -e "${GREEN}[OK]${NC} $*"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $*"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $*"
+}
+
+check_nix() {
+    if ! command -v nix &> /dev/null; then
+        log_error "Nix is not installed. Please install Nix first:"
+        echo "  curl -L https://nixos.org/nix/install | sh"
+        exit 1
+    fi
+
+    # Check if flakes are enabled
+    if ! nix flake --help &> /dev/null 2>&1; then
+        log_error "Nix flakes are not enabled. Add to ~/.config/nix/nix.conf:"
+        echo "  experimental-features = nix-command flakes"
+        exit 1
+    fi
+}
+
+build_native() {
+    log_info "Building native C binary..."
+    if nix build .#printableBinaryNative -o result-native 2>&1; then
+        mkdir -p bin
+        cp -f result-native/bin/printable-binary-c bin/
+        cp -f result-native/bin/character_map.txt bin/ 2>/dev/null || true
+        chmod +x bin/printable-binary-c
+        log_success "Native binary: bin/printable-binary-c"
+    else
+        log_error "Native build failed"
+        return 1
+    fi
+}
+
+build_zig() {
+    log_info "Building Zig binary..."
+    if nix build .#printableBinaryZig -o result-zig 2>&1; then
+        mkdir -p bin
+        cp -f result-zig/bin/printable-binary bin/
+        cp -f result-zig/bin/character_map.txt bin/ 2>/dev/null || true
+        chmod +x bin/printable-binary
+        log_success "Zig binary: bin/printable-binary"
+    else
+        log_error "Zig build failed"
+        return 1
+    fi
+}
+
+build_wasm() {
+    log_info "Building WebAssembly module..."
+    if nix build .#printableBinaryWasm -o result-wasm 2>&1; then
+        mkdir -p bin
+        cp -f result-wasm/bin/printable-binary.wasm bin/
+        cp -f result-wasm/bin/character_map.txt bin/ 2>/dev/null || true
+        log_success "WASM module: bin/printable-binary.wasm"
+    else
+        log_error "WASM build failed"
+        return 1
+    fi
+}
+
+build_ape() {
+    log_info "Building Actually Portable Executable..."
+
+    # On Linux, use pure nix build
+    # On macOS/darwin, cosmocc needs system tools, so use nix develop + make
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        if nix build .#printableBinaryApe -o result-ape 2>&1; then
+            mkdir -p bin
+            cp -f result-ape/bin/printable-binary-ape.com bin/
+            cp -f result-ape/bin/character_map.txt bin/ 2>/dev/null || true
+            chmod +x bin/printable-binary-ape.com
+            log_success "APE binary: bin/printable-binary-ape.com"
+        else
+            log_error "APE build failed"
+            return 1
+        fi
+    else
+        # macOS/darwin: use cosmocc directly with clean environment
+        log_info "On darwin, using cosmocc with clean environment..."
+        # Get cosmocc path from nix develop, then run it with cleaned environment
+        local cosmocc_path
+        cosmocc_path=$(nix develop -c bash -c 'which cosmocc' 2>/dev/null | tail -1)
+        if [[ -z "$cosmocc_path" || ! -x "$cosmocc_path" ]]; then
+            log_error "Could not find cosmocc in nix develop environment"
+            return 1
+        fi
+
+        mkdir -p bin
+        # Run cosmocc with minimal environment to avoid include path pollution
+        if env -i PATH="/usr/bin:/bin:$(dirname "$cosmocc_path")" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+            "$cosmocc_path" -O3 -DNDEBUG -I. -o bin/printable-binary-ape.com src/printable_binary.c 2>&1; then
+            chmod +x bin/printable-binary-ape.com
+            log_success "APE binary: bin/printable-binary-ape.com"
+        else
+            log_error "APE build failed"
+            return 1
+        fi
+    fi
+}
+
+build_all() {
+    log_info "Building all targets..."
+
+    # Build native, zig, and wasm via nix (works on all platforms)
+    if nix build .#default -o result 2>&1; then
+        mkdir -p bin
+        cp -f result/bin/printable-binary-c bin/ 2>/dev/null || true
+        cp -f result/bin/printable-binary bin/ 2>/dev/null || true
+        cp -f result/bin/printable-binary.wasm bin/ 2>/dev/null || true
+        cp -f result/bin/printable-binary-ape.com bin/ 2>/dev/null || true
+        cp -f result/bin/character_map.txt bin/ 2>/dev/null || true
+        chmod +x bin/printable-binary-c bin/printable-binary 2>/dev/null || true
+        if [[ "$(uname -s)" == "Linux" ]]; then
+            log_success "Native C, Zig, WASM, and APE built successfully"
+        else
+            log_success "Native C, Zig, and WASM built successfully"
+        fi
+    else
+        log_error "Build failed"
+        return 1
+    fi
+
+    # Build APE (platform-specific handling)
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        # On darwin, APE isn't in default package; build separately
+        log_info "Building APE separately for darwin..."
+        build_ape || log_warn "APE build failed (optional on darwin)"
+    else
+        chmod +x bin/printable-binary-ape.com 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "Built artifacts:"
+    ls -la bin/printable-binary bin/printable-binary-c bin/printable-binary.wasm bin/printable-binary-ape.com bin/printable-binary-luajit 2>/dev/null || true
+}
+
+run_tests() {
+    log_info "Running CLI tests (single test suite for all implementations)..."
+    local failed=0
+
+    # Test Lua implementation (original)
+    if [[ -x bin/printable-binary-luajit ]]; then
+        log_info "Testing Lua implementation..."
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit ./test/test; then
+            log_success "Lua tests passed"
+        else
+            log_error "Lua tests failed"
+            failed=1
+        fi
+    fi
+
+    # Test native C implementation
+    if [[ -x bin/printable-binary-c ]]; then
+        log_info "Testing native C implementation..."
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-c ./test/test; then
+            log_success "Native C tests passed"
+        else
+            log_error "Native C tests failed"
+            failed=1
+        fi
+    fi
+
+    # Test Zig implementation
+    if [[ -x bin/printable-binary ]]; then
+        log_info "Testing Zig implementation..."
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary ./test/test; then
+            log_success "Zig tests passed"
+        else
+            log_error "Zig tests failed"
+            failed=1
+        fi
+    fi
+
+    # Test WASM via wazero wrapper
+    if [[ -f bin/printable-binary.wasm ]]; then
+        log_info "Testing WASM implementation..."
+        # Create a wrapper script for the test harness
+        local wasm_wrapper=$(mktemp)
+        cat > "$wasm_wrapper" << 'WASM_EOF'
+#!/usr/bin/env bash
+exec nix develop -c wazero run bin/printable-binary.wasm "$@" 2>/dev/null
+WASM_EOF
+        chmod +x "$wasm_wrapper"
+        if IMPLEMENTATION_TO_TEST="$wasm_wrapper" ./test/test 2>/dev/null; then
+            log_success "WASM tests passed"
+        else
+            log_warn "WASM tests inconclusive (may need wazero in path)"
+        fi
+        rm -f "$wasm_wrapper"
+    fi
+
+    if [[ $failed -eq 0 ]]; then
+        echo ""
+        log_success "All tests passed!"
+    else
+        echo ""
+        log_error "Some tests failed"
+        return 1
+    fi
+}
+
+clean() {
+    log_info "Cleaning build artifacts..."
+    rm -f result result-native result-wasm result-ape 2>/dev/null || true
+    rm -f bin/printable-binary bin/printable-binary-c bin/printable-binary.wasm bin/printable-binary-ape.com 2>/dev/null || true
+    log_success "Cleaned"
+}
+
+# Main
+check_nix
+
+if [[ $# -eq 0 ]]; then
+    build_all
+    exit $?
+fi
+
+for target in "$@"; do
+    case "$target" in
+        all)
+            build_all
+            ;;
+        native)
+            build_native
+            ;;
+        zig)
+            build_zig
+            ;;
+        wasm)
+            build_wasm
+            ;;
+        ape)
+            build_ape
+            ;;
+        test)
+            build_all
+            run_tests
+            ;;
+        clean)
+            clean
+            ;;
+        -h|--help|help)
+            usage
+            exit 0
+            ;;
+        *)
+            log_error "Unknown target: $target"
+            usage
+            exit 1
+            ;;
+    esac
+done

@@ -1,0 +1,56 @@
+**/.claude/settings.local.json
+.DS_Store
+**/.DS_Store
+.ape-*
+
+# Compiled binaries (non-APE)
+bin/printable-binary-c
+bin/printable-binary.wasm
+/.emscripten_cache/
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local Cosmopolitan toolchain cache (large download)
+.cosmocc/
+.direnv/
+
+# build detritus
+**/*.elf
+**/*.dbg
+a.out
+zig-out
+bin/*
+.zig-cache
+ZIG_RECENT_API_CHANGES*.md
+
+# Nix result symlinks
+result*
+.serena
+
+# benchmark results
+bm/results
+
+# anything else
+ZIG_0.15_TO_0.16_MIGRATION.md
+!bin/utf8to16
+!bin/utf16to8
+AGENTS*.md
+CLAUDE*.md
+# Local convenience symlink to ~/dotfiles (external target — must not be committed
+# into a published repo; broke the GitHub Pages build as a dangling symlink).
+jj_cheatsheet.md
+
+# Inter-LLM coordination notes (LLMsend) — transient/local, never tracked
+inbox/
+
+# Rust build artifacts
+/rust/target/
+
+# Elixir build artifacts (~PB sigil demo)
+elixir/_build/
+elixir/deps/
+elixir/.elixir_ls/
+elixir/*.ez

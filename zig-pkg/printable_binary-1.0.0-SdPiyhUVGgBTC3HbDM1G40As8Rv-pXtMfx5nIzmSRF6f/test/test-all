@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Meta test runner - tests all implementations and accumulates results
+# Exit code is the total number of failed implementations
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+TOTAL_FAILURES=0
+IMPLEMENTATIONS_TESTED=0
+IMPLEMENTATIONS_PASSED=0
+
+test_implementation() {
+    local name="$1"
+    local binary="$2"
+
+    if [[ ! -x "$binary" ]]; then
+        echo -e "${YELLOW}SKIP${NC}: $name - binary not found at $binary"
+        return 0
+    fi
+
+    echo -e "\n${BLUE}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}Testing: $name${NC}"
+    echo -e "${BLUE}Binary:  $binary${NC}"
+    echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}\n"
+
+    IMPLEMENTATIONS_TESTED=$((IMPLEMENTATIONS_TESTED + 1))
+
+    if IMPLEMENTATION_TO_TEST="$binary" ./test/test; then
+        echo -e "\n${GREEN}✓ $name: ALL TESTS PASSED${NC}"
+        IMPLEMENTATIONS_PASSED=$((IMPLEMENTATIONS_PASSED + 1))
+        return 0
+    else
+        echo -e "\n${RED}✗ $name: TESTS FAILED${NC}"
+        TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
+        return 1
+    fi
+}
+
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}    PrintableBinary Multi-Implementation Test Suite${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+
+# Test each implementation
+test_implementation "Zig (canonical)" "./result/bin/printable-binary" || true
+test_implementation "LuaJIT (legacy)" "./bin/printable-binary-luajit" || true
+test_implementation "Node.js" "./bin/printable-binary-node.js" || true
+test_implementation "C (standalone)" "./result/bin/printable-binary-c" || true
+
+# WASM via wazero wrapper (if available)
+if [[ -f bin/printable-binary.wasm ]]; then
+    # Create temporary wrapper script
+    WASM_WRAPPER=$(mktemp)
+    cat > "$WASM_WRAPPER" << 'EOF'
+#!/usr/bin/env bash
+exec nix develop -c wazero run bin/printable-binary.wasm "$@" 2>/dev/null
+EOF
+    chmod +x "$WASM_WRAPPER"
+
+    # Check if wazero is available
+    if nix develop -c which wazero >/dev/null 2>&1; then
+        test_implementation "WASM (via wazero)" "$WASM_WRAPPER" || true
+    else
+        echo -e "${YELLOW}SKIP${NC}: WASM - wazero not available"
+    fi
+    rm -f "$WASM_WRAPPER"
+fi
+
+# APE if available
+if [[ -x bin/printable-binary-ape.com ]]; then
+    test_implementation "APE (portable)" "./bin/printable-binary-ape.com" || true
+fi
+
+# Summary
+echo -e "\n${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}                     TEST SUMMARY${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "Implementations tested: ${IMPLEMENTATIONS_TESTED}"
+echo -e "Implementations passed: ${GREEN}${IMPLEMENTATIONS_PASSED}${NC}"
+echo -e "Implementations failed: ${RED}${TOTAL_FAILURES}${NC}"
+
+if [[ $TOTAL_FAILURES -eq 0 ]]; then
+    echo -e "\n${GREEN}✓ ALL IMPLEMENTATIONS PASSED ALL TESTS${NC}"
+else
+    echo -e "\n${RED}✗ ${TOTAL_FAILURES} IMPLEMENTATION(S) FAILED${NC}"
+fi
+
+exit $TOTAL_FAILURES

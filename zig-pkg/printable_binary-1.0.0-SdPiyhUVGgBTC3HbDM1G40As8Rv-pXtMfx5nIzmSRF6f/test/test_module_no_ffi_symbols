@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Falsifiable regression test (MFIC: nm is an independent oracle we did not author).
+#
+# Invariant: importing the `printable_binary` Zig MODULE must emit ZERO `pb_*`
+# C symbols. The C ABI belongs ONLY to the FFI-root static library. Two copies
+# of printable_binary in one static (musl) link — e.g. a direct dep plus blip's
+# vendored instance — otherwise collide on `duplicate symbol: pb_*` under ld.lld
+# (this blocked difz). This test reproduces the leak via a real module consumer
+# and asserts:
+#   1. the module-consumer archive defines NO pb_* symbols, AND
+#   2. the FFI static library still DOES (the C ABI was not lost).
+#
+# Progress -> stdout; failures -> stderr; exit code = number of fails.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+ZIG="${ZIG:-zig}"
+fails=0
+
+# Locate an nm: prefer plain nm (binutils), fall back to llvm-nm.
+NM=""
+for cand in nm llvm-nm; do
+	if command -v "$cand" >/dev/null 2>&1; then NM="$cand"; break; fi
+done
+if [ -z "$NM" ]; then
+	echo "Error: need 'nm' or 'llvm-nm' to inspect symbols" >&2
+	exit 1
+fi
+
+echo "=== FFI symbol-leak test (nm = $NM) ==="
+
+# Count DEFINED pb_* symbols in an archive (uppercase type letter = external/defined;
+# also accept lowercase local defs). 'U' (undefined) is excluded by the type class.
+count_defined_pb() {
+	"$NM" "$1" 2>/dev/null | grep -E '^[0-9a-fA-F]* [TtDdRrBb] pb_' | wc -l | tr -d ' '
+}
+
+echo "Building module-consumer static lib (zig build consumer-lib)..."
+if ! "$ZIG" build consumer-lib >/tmp/pb_consumer_build.log 2>&1; then
+	echo "✗ failed to build consumer-lib:" >&2
+	cat /tmp/pb_consumer_build.log >&2
+	exit 1
+fi
+
+echo "Building FFI static lib (zig build)..."
+if ! "$ZIG" build >/tmp/pb_lib_build.log 2>&1; then
+	echo "✗ failed to build lib:" >&2
+	cat /tmp/pb_lib_build.log >&2
+	exit 1
+fi
+
+CONSUMER_A="zig-out/lib/libmodule_consumer.a"
+FFI_A="zig-out/lib/libprintable_binary.a"
+
+for a in "$CONSUMER_A" "$FFI_A"; do
+	if [ ! -f "$a" ]; then
+		echo "✗ expected archive not found: $a" >&2
+		((fails++))
+	fi
+done
+
+if [ "$fails" -eq 0 ]; then
+	consumer_pb=$(count_defined_pb "$CONSUMER_A")
+	ffi_pb=$(count_defined_pb "$FFI_A")
+
+	# (1) The importable module must not leak any pb_* C symbols.
+	if [ "$consumer_pb" -eq 0 ]; then
+		echo "✓ module consumer defines 0 pb_* symbols"
+	else
+		echo "✗ module consumer leaks $consumer_pb pb_* C symbols (the C ABI must live only in the FFI root):" >&2
+		"$NM" "$CONSUMER_A" 2>/dev/null | grep -E '^[0-9a-fA-F]* [TtDdRrBb] pb_' >&2
+		((fails++))
+	fi
+
+	# (2) The FFI static library must still export the C ABI.
+	if [ "$ffi_pb" -gt 0 ]; then
+		echo "✓ FFI static lib defines $ffi_pb pb_* symbols (C ABI intact)"
+	else
+		echo "✗ FFI static lib defines no pb_* symbols — the C ABI was lost" >&2
+		((fails++))
+	fi
+fi
+
+if [ "$fails" -eq 0 ]; then
+	echo "All FFI symbol-leak checks passed"
+else
+	echo "$fails FFI symbol-leak check(s) failed" >&2
+fi
+exit "$fails"

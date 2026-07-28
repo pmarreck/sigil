@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Build every compiled PrintableBinary distribution, including the Linux APE.
+
+set -u
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$script_dir/build" all

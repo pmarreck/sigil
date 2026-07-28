@@ -1,0 +1,1617 @@
+#!/usr/bin/env bash
+# Master test script for printable_binary
+# Runs all test suites
+
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Path to the printable_binary script (can be overridden with IMPLEMENTATION_TO_TEST)
+# Auto-detect the correct path based on script location
+SCRIPT_DIR="$(dirname "$0")"
+DEFAULT_IMPLEMENTATION="$SCRIPT_DIR/../bin/printable-binary-luajit"
+SCRIPT="${IMPLEMENTATION_TO_TEST:-$DEFAULT_IMPLEMENTATION}"
+
+# Fail early if the implementation doesn't exist
+if [ ! -x "$SCRIPT" ]; then
+    echo -e "${RED}Error: Implementation not found or not executable: $SCRIPT${NC}"
+    exit 1
+fi
+
+# Detect interpreter requirements only when testing the Lua/Node scripts
+SHEBANG=$(head -n 1 "$SCRIPT" 2>/dev/null || echo "")
+if echo "$SHEBANG" | grep -qi "luajit"; then
+    if ! command -v luajit >/dev/null 2>&1; then
+        echo -e "${RED}Error: luajit is required to run $SCRIPT but was not found in PATH.${NC}"
+        exit 1
+    fi
+elif echo "$SHEBANG" | grep -qi "node"; then
+    if ! command -v node >/dev/null 2>&1; then
+        echo -e "${RED}Error: node is required to run $SCRIPT but was not found in PATH.${NC}"
+        exit 1
+    fi
+fi
+
+# Create temp files for testing
+TMP_BINARY=$(mktemp)
+TMP_ENCODED=$(mktemp)
+TMP_DECODED=$(mktemp)
+TMP_MAPPINGS=$(mktemp)
+TMP_MAPPINGS_JSON=$(mktemp)
+TMP_MAPPINGS_CSV=$(mktemp)
+TMP_STATS_STDERR=$(mktemp)
+TMP_ENCODED_WITH_WHITESPACE=$(mktemp)
+
+# Cleanup function
+cleanup() {
+    rm -f "$TMP_BINARY" "$TMP_ENCODED" "$TMP_DECODED" \
+          "$TMP_MAPPINGS" "$TMP_MAPPINGS_JSON" "$TMP_MAPPINGS_CSV" \
+          "$TMP_STATS_STDERR" "$TMP_ENCODED_WITH_WHITESPACE"
+}
+trap cleanup EXIT
+
+echo -e "${BLUE}=== PrintableBinary Test Suite ===${NC}"
+echo -e "${YELLOW}Testing implementation: $SCRIPT${NC}"
+
+###############################################################################
+# BASIC FUNCTIONALITY TESTS
+###############################################################################
+
+echo -e "\n${YELLOW}Running basic functionality tests...${NC}"
+
+# Test 1: Simple ASCII roundtrip
+echo -e "${BLUE}Test #1: Simple ASCII roundtrip${NC}"
+TEST_STRING="Hello, World!"
+echo -n "$TEST_STRING" > "$TMP_BINARY"
+$SCRIPT "$TMP_BINARY" > "$TMP_ENCODED"
+$SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Original: $(xxd -p "$TMP_BINARY")"
+    echo "Decoded: $(xxd -p "$TMP_DECODED")"
+    exit 1
+fi
+
+# Test 2: Space character encoding
+echo -e "${BLUE}Test #2: Space encoding${NC}"
+printf ' ' > "$TMP_BINARY"
+ENCODED=$($SCRIPT "$TMP_BINARY")
+if [[ "$ENCODED" == "␣" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: ␣"
+    echo "Got: $ENCODED"
+    exit 1
+fi
+
+# Test 2b: Angle brackets use lookalike glyphs
+echo -e "${BLUE}Test #2b: Angle bracket lookalikes${NC}"
+printf '<>' > "$TMP_BINARY"
+ENCODED=$($SCRIPT "$TMP_BINARY")
+if [[ "$ENCODED" == "˂˃" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: ˂˃"
+    echo "Got: $ENCODED"
+    exit 1
+fi
+
+# Capture help output (used by Tests 7, 7b, 7c)
+HELP_OUTPUT=$($SCRIPT --help 2>&1)
+
+# Test 2c: Spaces passthrough option
+echo -e "${BLUE}Test #2c: Spaces passthrough option${NC}"
+printf 'A B  C' > "$TMP_BINARY"
+ENCODED=$($SCRIPT --spaces "$TMP_BINARY")
+if [[ "$ENCODED" == "A B  C" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: A B  C"
+    echo "Got: $ENCODED"
+    exit 1
+fi
+DECODED=$($SCRIPT --spaces -d <<<"A B  C")
+if [[ "$DECODED" == "A B  C" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected decoded: A B  C"
+    echo "Got: $DECODED"
+    exit 1
+fi
+
+# Test 2d: Spaces option still decodes ␣ as space
+echo -e "${BLUE}Test #2d: Spaces decode ␣ + literal spaces${NC}"
+DECODED=$($SCRIPT --spaces -d <<<"A␣B C")
+if [[ "$DECODED" == "A B C" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected decoded: A B C"
+    echo "Got: $DECODED"
+    exit 1
+fi
+
+# Test 2e: --spaces with --strip-whitespace strips newlines/tabs but keeps spaces
+echo -e "${BLUE}Test #2e: Spaces + strip-whitespace strips newlines/tabs${NC}"
+DECODED=$($SCRIPT --spaces --strip-whitespace -d <<< $'A B\nC\tD\rE')
+if [[ "$DECODED" == "A BCDE" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected decoded: A BCDE"
+    echo "Got: $DECODED"
+    exit 1
+fi
+
+# Test 2f: Spaces option warns about indentation (only relevant with strip-whitespace)
+echo -e "${BLUE}Test #2f: Spaces warns about indentation${NC}"
+$SCRIPT --spaces --strip-whitespace -d <<< $'A\n  B' >/dev/null 2>"$TMP_STATS_STDERR"
+if grep -q "Warning: spaces after newline" "$TMP_STATS_STDERR"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected warning about spaces after newline"
+    echo "Got: $(cat "$TMP_STATS_STDERR")"
+    exit 1
+fi
+
+# Test 3: Quotes and backslashes
+echo -e "${BLUE}Test #3: Quotes and backslashes roundtrip${NC}"
+printf '\"\\\n' > "$TMP_BINARY"
+$SCRIPT "$TMP_BINARY" > "$TMP_ENCODED"
+$SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Original: $(xxd -p "$TMP_BINARY")"
+    echo "Decoded: $(xxd -p "$TMP_DECODED")"
+    exit 1
+fi
+
+# Test 4: Control characters
+echo -e "${BLUE}Test #4: Control characters roundtrip${NC}"
+# Create a file with control characters
+printf '\000\001\002\003\004' > "$TMP_BINARY"
+$SCRIPT "$TMP_BINARY" > "$TMP_ENCODED"
+$SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Original: $(xxd -p "$TMP_BINARY")"
+    echo "Encoded: $(xxd -p "$TMP_ENCODED")"
+    echo "Decoded: $(xxd -p "$TMP_DECODED")"
+    exit 1
+fi
+
+# Test 5: Full binary roundtrip (all 256 bytes)
+echo -e "${BLUE}Test #5: Full binary roundtrip (all 256 bytes)${NC}"
+# Create a file with all 256 possible byte values
+> "$TMP_BINARY"
+for i in {0..255}; do
+    printf "\\$(printf '%03o' $i)" >> "$TMP_BINARY"
+done
+$SCRIPT "$TMP_BINARY" > "$TMP_ENCODED"
+$SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Binary file roundtrip failed."
+    # Find first mismatch
+    xxd "$TMP_BINARY" > "${TMP_BINARY}.hex"
+    xxd "$TMP_DECODED" > "${TMP_DECODED}.hex"
+    diff -u "${TMP_BINARY}.hex" "${TMP_DECODED}.hex" | head -n 20
+    exit 1
+fi
+
+# Test 5b: Buffer stack/heap boundary roundtrip
+# Regression: C buffer_init uses a 4096-byte stack buffer; read_file must not
+# realloc() that stack pointer. Exactly 4096 bytes is the crash boundary.
+echo -e "${BLUE}Test #5b: Buffer boundary roundtrip (4095/4096/4097/8192 bytes)${NC}"
+BOUNDARY_OK=1
+for sz in 4095 4096 4097 8192; do
+    head -c "$sz" /dev/zero | tr '\0' 'Z' > "$TMP_BINARY"
+    if ! $SCRIPT "$TMP_BINARY" > "$TMP_ENCODED" 2>/dev/null; then BOUNDARY_OK=0; echo "encode crashed at size $sz"; break; fi
+    if ! $SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED" 2>/dev/null; then BOUNDARY_OK=0; echo "decode crashed at size $sz"; break; fi
+    if ! cmp -s "$TMP_BINARY" "$TMP_DECODED"; then BOUNDARY_OK=0; echo "roundtrip mismatch at size $sz"; break; fi
+done
+if [[ "$BOUNDARY_OK" == "1" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    exit 1
+fi
+
+# Test 5c: Malformed runtime map (>4-byte glyph token) must be rejected, not crash
+# Regression: C make_utf8 memcpy'd strlen(token) into a 4-byte array (stack smash).
+echo -e "${BLUE}Test #5c: Malformed runtime map rejected gracefully${NC}"
+if [[ -f character_map.txt ]]; then
+    BADMAP=$(mktemp)
+    awk 'BEGIN{done=0} /^##/{print;next} (done==0){print "TOOLONG8"; done=1; next} {print}' character_map.txt > "$BADMAP"
+    rc=0
+    PRINTABLE_BINARY_MAP="$BADMAP" $SCRIPT <<< "x" >/dev/null 2>&1 || rc=$?
+    rm -f "$BADMAP"
+    if [[ $rc -ge 128 ]]; then
+        echo -e "${RED}FAIL${NC} (crashed with signal, exit $rc)"
+        exit 1
+    fi
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${YELLOW}SKIP (no character_map.txt in cwd)${NC}"
+fi
+
+# Test 5d: -p (passthrough) / -P (preserve) short-flag consistency across all impls
+echo -e "${BLUE}Test #5d: -p passthrough / -P preserve consistency${NC}"
+PT=$(printf 'hi' | $SCRIPT -p 2>/dev/null)
+PR=$(printf '!' | $SCRIPT -P '!' 2>/dev/null)
+if [[ "$PT" == "hi" && "$PR" == "!" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC} (-p passthrough='$PT' want 'hi'; -P preserve='$PR' want '!')"
+    exit 1
+fi
+
+# Test 5e: -f (bare, default grouping) and -f=NxM (attached spec) consistency
+echo -e "${BLUE}Test #5e: -f / -f=NxM format-flag consistency${NC}"
+rc1=0; printf 'AAAABBBB' | $SCRIPT -f >/dev/null 2>&1 || rc1=$?
+rc2=0; printf 'AAAABBBB' | $SCRIPT -f=2x2 >/dev/null 2>&1 || rc2=$?
+if [[ $rc1 -eq 0 && $rc2 -eq 0 ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC} (bare -f exit=$rc1, -f=2x2 exit=$rc2)"
+    exit 1
+fi
+
+# Test 6: Piped input
+echo -e "${BLUE}Test #6: Piped input${NC}"
+RESULT=$(echo -n "Test" | $SCRIPT | $SCRIPT -d)
+if [[ "$RESULT" == "Test" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: Test"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test 7: Help text
+echo -e "${BLUE}Test #7: Basic help text${NC}"
+if [[ "$HELP_OUTPUT" == *"Usage:"* && "$HELP_OUTPUT" == *"Options:"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Help output doesn't contain expected content"
+    echo "Got: $HELP_OUTPUT"
+    exit 1
+fi
+
+# Test 7b: Disassembly options removed
+echo -e "${BLUE}Test #7b: Disassembly options are not exposed${NC}"
+if [[ "$HELP_OUTPUT" == *"--smart-asm"* || "$HELP_OUTPUT" == *"--arch"* || "$HELP_OUTPUT" == *"--asm"* || "$HELP_OUTPUT" == *" -a,"* ]]; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Help output still mentions disassembly options, but they should be removed."
+    exit 1
+else
+    echo -e "${GREEN}PASS${NC}"
+fi
+
+# Test 7c: Disassembly options are rejected
+echo -e "${BLUE}Test #7c: Disassembly options are rejected${NC}"
+if $SCRIPT -a "$TMP_BINARY" >/dev/null 2>&1; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected -a/--asm to be rejected, but it succeeded."
+    exit 1
+fi
+if $SCRIPT --smart-asm "$TMP_BINARY" >/dev/null 2>&1; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected --smart-asm to be rejected, but it succeeded."
+    exit 1
+fi
+if $SCRIPT --arch=x64 "$TMP_BINARY" >/dev/null 2>&1; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected --arch to be rejected, but it succeeded."
+    exit 1
+fi
+echo -e "${GREEN}PASS${NC}"
+
+# Test 8: Mappings table output
+echo -e "${BLUE}Test #8: Mappings table output${NC}"
+$SCRIPT --mappings > "$TMP_MAPPINGS"
+if grep -q "Byte" "$TMP_MAPPINGS" && grep -q "0x00" "$TMP_MAPPINGS"; then
+if grep -q "NUL" "$TMP_MAPPINGS" && grep -q "·" "$TMP_MAPPINGS"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Mappings table missing expected entries"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Mappings table missing header or first entry"
+    exit 1
+fi
+
+# Test 9: Mappings JSON output
+echo -e "${BLUE}Test #9: Mappings JSON output${NC}"
+if $SCRIPT --mappings-json > "$TMP_MAPPINGS_JSON"; then
+    if python3 - "$TMP_MAPPINGS_JSON" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+assert isinstance(data, list) and len(data) == 256
+assert data[0]["byte"] == 0
+assert data[0]["ascii"] == "NUL"
+assert data[0]["mapping"] == "\u00B7"
+assert data[-1]["byte"] == 255
+PY
+    then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Mappings JSON structure invalid"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Failed to generate mappings JSON"
+    exit 1
+fi
+
+# Test 10: Mappings CSV output
+echo -e "${BLUE}Test #10: Mappings CSV output${NC}"
+if $SCRIPT --mappings-csv > "$TMP_MAPPINGS_CSV"; then
+    HEADER=$(head -n 1 "$TMP_MAPPINGS_CSV")
+    FIRST_LINE=$(sed -n '2p' "$TMP_MAPPINGS_CSV")
+if [[ "$HEADER" == "byte,hex,dec,ascii,mapping" ]] && [[ "$FIRST_LINE" == "0,0x00,0,\"NUL\",\"·\"" ]]; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "CSV output unexpected:"
+        echo "Header: $HEADER"
+        echo "First line: $FIRST_LINE"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Failed to generate mappings CSV"
+    exit 1
+fi
+
+# Test 11: Stats include wall-clock input throughput and can be muted.
+echo -e "${BLUE}Test #11: Stats include throughput and honor PRINTABLE_BINARY_MUTE_STATS${NC}"
+printf 'Mute stats test' > "$TMP_BINARY"
+
+# Control: stats should normally be present
+PRINTABLE_BINARY_MUTE_STATS= $SCRIPT "$TMP_BINARY" > "$TMP_ENCODED" 2> "$TMP_STATS_STDERR"
+if [[ -s "$TMP_STATS_STDERR" ]]; then
+    if grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' "$TMP_STATS_STDERR"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Expected a finite processed-input MB/s line in stderr"
+        cat "$TMP_STATS_STDERR"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected stats in stderr when encoding without PRINTABLE_BINARY_MUTE_STATS"
+    exit 1
+fi
+
+PRINTABLE_BINARY_MUTE_STATS= $SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED" 2> "$TMP_STATS_STDERR"
+if grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' "$TMP_STATS_STDERR" \
+    && cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected a finite decoded-input MB/s line and a correct roundtrip"
+    cat "$TMP_STATS_STDERR"
+    exit 1
+fi
+
+PRINTABLE_BINARY_MUTE_STATS=1 $SCRIPT "$TMP_BINARY" > "$TMP_ENCODED" 2> "$TMP_STATS_STDERR"
+if [[ -s "$TMP_STATS_STDERR" ]]; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected no stats in stderr when encoding with PRINTABLE_BINARY_MUTE_STATS=1"
+    cat "$TMP_STATS_STDERR"
+    exit 1
+fi
+
+PRINTABLE_BINARY_MUTE_STATS=1 $SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED" 2> "$TMP_STATS_STDERR"
+if [[ -s "$TMP_STATS_STDERR" ]]; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected no stats in stderr when decoding with PRINTABLE_BINARY_MUTE_STATS=1"
+    cat "$TMP_STATS_STDERR"
+    exit 1
+fi
+
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Roundtrip data mismatch under muted stats"
+    exit 1
+fi
+
+# Test 12: ANSI escape sequences decode correctly (regression test)
+echo -e "${BLUE}Test #12: ANSI escape decode preserves bytes${NC}"
+COLOR_ENCODED=$'⎋⟦38;5;208mhi⎋⟦0;39m¶'
+printf "%s" "$COLOR_ENCODED" > "$TMP_ENCODED"
+$SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED"
+RESULT_HEX=$(xxd -p "$TMP_DECODED" | tr -d '\n')
+EXPECTED_HEX="1b5b33383b353b3230386d68691b5b303b33396d0a"
+if [[ "$RESULT_HEX" == "$EXPECTED_HEX" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected hex: $EXPECTED_HEX"
+    echo "Got:         $RESULT_HEX"
+    exit 1
+fi
+
+# Test 13: Decode survives blank lines in encoded text (regression for APE truncation)
+# This tests the block-formatted use case where --strip-whitespace is needed
+echo -e "${BLUE}Test #13: Decode handles blank lines in encoded text${NC}"
+MULTILINE_CONTENT=$'Line one\nLine two\n\nLine four\nLine five\n'
+printf "%s" "$MULTILINE_CONTENT" > "$TMP_BINARY"
+$SCRIPT "$TMP_BINARY" > "$TMP_ENCODED"
+
+# Inject real newlines (including a double newline) into the encoded stream to simulate copy/paste wrapping
+python3 - "$TMP_ENCODED" "$TMP_ENCODED_WITH_WHITESPACE" <<'PY'
+import sys, pathlib, math
+src, dest = sys.argv[1], sys.argv[2]
+text = pathlib.Path(src).read_text()
+if not text:
+    pathlib.Path(dest).write_text("")
+    sys.exit(0)
+# Insert single and double newlines at deterministic cut points
+first = max(1, len(text)//3)
+second = max(first + 1, 2*len(text)//3)
+wrapped = text[:first] + "\n" + text[first:second] + "\n\n" + text[second:] + "\n"
+pathlib.Path(dest).write_text(wrapped)
+PY
+
+# Use --strip-whitespace (-S) to strip the injected formatting whitespace
+$SCRIPT -d -S "$TMP_ENCODED_WITH_WHITESPACE" > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Multiline decode lost data (possible truncation)."
+    echo "Original (hex): $(xxd -p "$TMP_BINARY")"
+    echo "Decoded  (hex): $(xxd -p "$TMP_DECODED")"
+    exit 1
+fi
+
+###############################################################################
+# CHARACTER MAPS TESTS
+###############################################################################
+
+echo -e "\n${YELLOW}Running character maps tests...${NC}"
+
+# Create a test binary with all 256 possible byte values
+TEST_FILE=$(mktemp)
+ENCODED_FILE=$(mktemp)
+DECODED_FILE=$(mktemp)
+
+# Cleanup for these files
+trap 'cleanup; rm -f "$TEST_FILE" "$ENCODED_FILE" "$DECODED_FILE"' EXIT
+
+# Create file with all 256 byte values
+for i in {0..255}; do
+    printf "\\$(printf '%03o' $i)" >> "$TEST_FILE"
+done
+
+# Encode the test file
+echo -e "${BLUE}Encoding all 256 byte values...${NC}"
+$SCRIPT "$TEST_FILE" > "$ENCODED_FILE"
+
+# Decode back
+echo -e "${BLUE}Decoding back to binary...${NC}"
+$SCRIPT -d "$ENCODED_FILE" > "$DECODED_FILE"
+
+# Verify entire file roundtrip
+if cmp -s "$TEST_FILE" "$DECODED_FILE"; then
+    echo -e "${GREEN}PASS: All 256 byte values correctly encoded and decoded${NC}"
+else
+    echo -e "${RED}FAIL: Roundtrip encoding/decoding failed${NC}"
+    # Find first difference
+    cmp -l "$TEST_FILE" "$DECODED_FILE" | head
+    exit 1
+fi
+
+# Function to test specific byte values
+function test_byte() {
+  local byte_val=$1
+  local name=$2
+  local expected_char=$3
+
+  # Create single byte file
+  printf "\\$(printf '%03o' $byte_val)" > "$TEST_FILE"
+
+  # Encode
+  $SCRIPT "$TEST_FILE" 2>/dev/null > "$ENCODED_FILE"
+
+  # If expected character is provided, verify it appears in the encoding
+  if [ ! -z "$expected_char" ]; then
+    local encoded_result=$(cat "$ENCODED_FILE")
+    if [[ "$encoded_result" != "$expected_char" ]]; then
+      echo -e "${RED}FAIL${NC}: Byte ${byte_val} (${name}) encoded as '${encoded_result}', expected '${expected_char}'"
+      exit 1
+    fi
+  fi
+
+  # Decode
+  $SCRIPT -d "$ENCODED_FILE" 2>/dev/null > "$DECODED_FILE"
+
+  # Get result as hex
+  local result=$(hexdump -ve '1/1 "%02x"' "$DECODED_FILE")
+  local expected=$(printf '%02x' $byte_val)
+
+  if [[ "$result" == "$expected" ]]; then
+    echo -e "${GREEN}PASS${NC}: Byte ${byte_val} (${name}): ${expected} -> encoded -> decoded -> ${result}"
+  else
+    echo -e "${RED}FAIL${NC}: Byte ${byte_val} (${name}): ${expected} -> encoded -> decoded -> ${result}"
+    exit 1
+  fi
+}
+
+echo -e "\n${BLUE}Testing important character mappings individually:${NC}"
+# Test important control characters
+test_byte 0 "NUL"
+test_byte 9 "TAB"
+test_byte 10 "LF"
+test_byte 11 "VT" "↧"  # Expect U+21A7 DOWNWARDS ARROW WITH TIP LEFTWARDS
+test_byte 13 "CR"
+test_byte 21 "CONTROL_21" "µ"  # Expect µ (U+00B5) MICRO SIGN
+test_byte 27 "ESC"
+test_byte 32 "SPACE"
+test_byte 33 "EXCLAMATION" "ǃ"  # Expect U+01C3 LATIN LETTER RETROFLEX CLICK
+test_byte 34 "QUOTE"
+test_byte 35 "HASH" "♯"  # Expect U+266F MUSIC SHARP SIGN
+test_byte 36 "DOLLAR" "Ꞩ"  # Expect U+A7A8 LATIN CAPITAL LETTER S WITH OBLIQUE STROKE
+test_byte 37 "PERCENT" "‰"  # Expect U+2030 PER MILLE SIGN
+test_byte 38 "AMPERSAND" "⅋"  # Expect U+214B TURNED AMPERSAND
+test_byte 39 "SINGLE QUOTE" "ʼ"  # Expect U+02BC MODIFIER LETTER APOSTROPHE
+test_byte 40 "LEFT PAREN" "❨"  # Expect U+2768 MEDIUM LEFT PARENTHESIS ORNAMENT
+test_byte 41 "RIGHT PAREN" "❩"  # Expect U+2769 MEDIUM RIGHT PARENTHESIS ORNAMENT
+test_byte 42 "ASTERISK" "⁎"  # Expect U+204E LOW ASTERISK
+test_byte 43 "PLUS" "⨦"  # Expect U+2A26 PLUS SIGN WITH TILDE BELOW
+test_byte 45 "MINUS" "˗"  # Expect U+02D7 MODIFIER LETTER MINUS SIGN
+test_byte 47 "SLASH" "⁄"  # Expect U+2044 FRACTION SLASH
+test_byte 58 "COLON" "꞉"  # Expect U+A789 MODIFIER LETTER COLON
+test_byte 59 "SEMICOLON" ";"  # Expect U+037E GREEK QUESTION MARK
+test_byte 61 "EQUALS" "꞊"  # Expect U+A78A MODIFIER LETTER SHORT EQUALS SIGN
+test_byte 63 "QUESTION" "Ɂ"  # Expect U+0241 LATIN CAPITAL LETTER GLOTTAL STOP
+test_byte 64 "AT" "@"  # Expect ASCII COMMERCIAL AT
+test_byte 91 "LEFT BRACKET" "⟦"  # Expect U+27E6 MATHEMATICAL LEFT WHITE SQUARE BRACKET
+test_byte 92 "BACKSLASH" "⧷"  # Expect U+29F7 REVERSE SOLIDUS WITH HORIZONTAL STROKE
+test_byte 93 "RIGHT BRACKET" "⟧"  # Expect U+27E7 MATHEMATICAL RIGHT WHITE SQUARE BRACKET
+test_byte 96 "BACKTICK" "ˋ"  # Expect U+02CB MODIFIER LETTER GRAVE ACCENT
+test_byte 123 "LEFT BRACE" "❴"  # Expect U+2774 MEDIUM LEFT CURLY BRACKET ORNAMENT
+test_byte 124 "PIPE" "∣"  # Expect U+2223 DIVIDES
+test_byte 125 "RIGHT BRACE" "❵"  # Expect U+2775 MEDIUM RIGHT CURLY BRACKET ORNAMENT
+test_byte 126 "TILDE" "˜"  # Expect U+02DC SMALL TILDE
+test_byte 127 "DEL"
+
+# Test some representative values in each range
+test_byte 65 "ASCII A"
+test_byte 97 "ASCII a"
+test_byte 126 "ASCII ~"
+test_byte 128 "Extended 128"
+test_byte 192 "Extended 192"
+test_byte 224 "Extended 224"
+test_byte 255 "Extended 255"
+
+###############################################################################
+# PASSTHROUGH MODE TESTS
+###############################################################################
+
+echo -e "\n${YELLOW}Running passthrough mode tests...${NC}"
+
+# Create temp files for passthrough testing
+PASSTHROUGH_BINARY=$(mktemp)
+PASSTHROUGH_STDOUT=$(mktemp)
+PASSTHROUGH_STDERR=$(mktemp)
+
+# Test 1: Basic passthrough with ASCII text
+echo -e "${BLUE}Test #1: Basic passthrough with ASCII text${NC}"
+echo -n "Hello, World!" > "$PASSTHROUGH_BINARY"
+
+# Run with passthrough mode, capturing both stdout and stderr
+$SCRIPT --passthrough "$PASSTHROUGH_BINARY" > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR"
+
+# Check if stdout contains the original binary data unchanged
+if cmp -s "$PASSTHROUGH_BINARY" "$PASSTHROUGH_STDOUT"; then
+    echo -e "${GREEN}PASS: Original data correctly passed through to stdout${NC}"
+else
+    echo -e "${RED}FAIL: Original data not correctly passed through to stdout${NC}"
+    echo "Original: $(xxd -p "$PASSTHROUGH_BINARY")"
+    echo "Stdout: $(xxd -p "$PASSTHROUGH_STDOUT")"
+    exit 1
+fi
+
+# Check if stderr contains the encoded data
+STDERR_CONTENT=$(cat "$PASSTHROUGH_STDERR" | grep -v "Encoding" | grep -v "Encoded to")
+if [[ "$STDERR_CONTENT" == *"Hello٫␣Worldǃ"* ]]; then
+    echo -e "${GREEN}PASS: Encoded data correctly sent to stderr${NC}"
+else
+    echo -e "${RED}FAIL: Encoded data not found in stderr${NC}"
+    echo "Expected to find: Hello٫␣Worldǃ"
+    echo "Got: $STDERR_CONTENT"
+    exit 1
+fi
+
+# Test 2: Passthrough with binary data
+echo -e "${BLUE}Test #2: Passthrough with binary data${NC}"
+# Create a file with binary data including control characters
+printf '\000\001\002\003Hello\377' > "$PASSTHROUGH_BINARY"
+
+# Run with passthrough mode
+$SCRIPT --passthrough "$PASSTHROUGH_BINARY" > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR"
+
+# Check if stdout contains the original binary data unchanged
+if cmp -s "$PASSTHROUGH_BINARY" "$PASSTHROUGH_STDOUT"; then
+    echo -e "${GREEN}PASS: Binary data correctly passed through to stdout${NC}"
+else
+    echo -e "${RED}FAIL: Binary data not correctly passed through to stdout${NC}"
+    echo "Original: $(xxd -p "$PASSTHROUGH_BINARY")"
+    echo "Stdout: $(xxd -p "$PASSTHROUGH_STDOUT")"
+    exit 1
+fi
+
+# Check if stderr contains the encoded data
+STDERR_CONTENT=$(cat "$PASSTHROUGH_STDERR" | grep -v "Encoding" | grep -v "Encoded to")
+if [[ "$STDERR_CONTENT" == *"·¯«»Hello"* ]]; then
+    echo -e "${GREEN}PASS: Encoded binary data correctly sent to stderr${NC}"
+else
+    echo -e "${RED}FAIL: Encoded binary data not found in stderr${NC}"
+    echo "Expected to find encoded control chars followed by 'Hello'"
+    echo "Got: $STDERR_CONTENT"
+    exit 1
+fi
+
+# Test 3: Passthrough ignored in decode mode
+echo -e "${BLUE}Test #3: Passthrough ignored in decode mode${NC}"
+# First encode some data
+echo -n "Test data" > "$PASSTHROUGH_BINARY"
+ENCODED=$($SCRIPT "$PASSTHROUGH_BINARY")
+
+# Now try to decode with passthrough
+$SCRIPT --decode --passthrough <(echo "$ENCODED") > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR"
+
+# Check if a warning about ignored passthrough was generated
+if grep -q "Warning: --passthrough ignored in decode mode" "$PASSTHROUGH_STDERR"; then
+    echo -e "${GREEN}PASS: Warning about ignored passthrough in decode mode${NC}"
+else
+    echo -e "${RED}FAIL: No warning about ignored passthrough in decode mode${NC}"
+    cat "$PASSTHROUGH_STDERR"
+    exit 1
+fi
+
+# Check if stdout contains the decoded data
+if grep -q "Test data" "$PASSTHROUGH_STDOUT"; then
+    echo -e "${GREEN}PASS: Decoded data correctly sent to stdout despite passthrough${NC}"
+else
+    echo -e "${RED}FAIL: Decoded data not found in stdout${NC}"
+    echo "Expected: Test data"
+    echo "Got: $(cat "$PASSTHROUGH_STDOUT")"
+    exit 1
+fi
+
+# Test 4: Passthrough with piped input
+echo -e "${BLUE}Test #4: Passthrough with piped input${NC}"
+echo -n "Piped test" | $SCRIPT --passthrough > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR"
+
+# Check stdout contains the original string
+if [[ $(cat "$PASSTHROUGH_STDOUT") == "Piped test" ]]; then
+    echo -e "${GREEN}PASS: Piped input correctly passed through to stdout${NC}"
+else
+    echo -e "${RED}FAIL: Piped input not correctly passed through to stdout${NC}"
+    echo "Expected: Piped test"
+    echo "Got: $(cat "$PASSTHROUGH_STDOUT")"
+    exit 1
+fi
+
+# Check stderr contains the encoded string
+# Check if stderr contains the encoded data
+STDERR_CONTENT=$(cat "$PASSTHROUGH_STDERR" | grep -v "Encoding" | grep -v "Encoded to")
+if [[ "$STDERR_CONTENT" == *"Piped␣test"* ]]; then
+    echo -e "${GREEN}PASS: Encoded piped input correctly sent to stderr${NC}"
+else
+    echo -e "${RED}FAIL: Encoded piped input not found in stderr${NC}"
+    echo "Expected: Piped␣test"
+    echo "Got: $STDERR_CONTENT"
+    exit 1
+fi
+
+# Clean up
+rm "$PASSTHROUGH_BINARY" "$PASSTHROUGH_STDOUT" "$PASSTHROUGH_STDERR"
+
+###############################################################################
+# DECODE PASS-THROUGH TESTS (NEW BEHAVIOR)
+###############################################################################
+
+echo -e "\n${YELLOW}Running decode pass-through tests...${NC}"
+
+
+# Test: Unrecognized ASCII passes through on decode
+echo -e "${BLUE}Test: Unrecognized ASCII passes through on decode${NC}"
+# The exclamation mark ! encodes to ǃ, so raw ! is not in decode map
+# With pass-through, raw ! should survive decode unchanged
+RESULT=$(echo -n 'hi there!;' | $SCRIPT -d 2>/dev/null)
+if [[ "$RESULT" == "hi there!;" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: hi there!;"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Whitespace passes through by default on decode (NEW DEFAULT)
+echo -e "${BLUE}Test: Whitespace passes through by default on decode${NC}"
+RESULT=$(echo -n 'hello world' | $SCRIPT -d 2>/dev/null)
+if [[ "$RESULT" == "hello world" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: hello world"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Tabs pass through by default on decode
+echo -e "${BLUE}Test: Tabs pass through by default on decode${NC}"
+RESULT=$(printf 'a\tb' | $SCRIPT -d 2>/dev/null)
+if [[ "$RESULT" == $'a\tb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<TAB>b"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Newlines pass through by default on decode
+echo -e "${BLUE}Test: Newlines pass through by default on decode${NC}"
+RESULT=$(printf 'a\nb' | $SCRIPT -d 2>/dev/null)
+if [[ "$RESULT" == $'a\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<LF>b"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Decode is idempotent (multiple passes yield same result)
+echo -e "${BLUE}Test: Decode is idempotent${NC}"
+INPUT="hello world!;"
+PASS1=$(echo -n "$INPUT" | $SCRIPT -d 2>/dev/null)
+PASS2=$(echo -n "$PASS1" | $SCRIPT -d 2>/dev/null)
+PASS3=$(echo -n "$PASS2" | $SCRIPT -d 2>/dev/null)
+if [[ "$PASS1" == "$PASS2" && "$PASS2" == "$PASS3" && "$PASS3" == "$INPUT" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Input: $INPUT"
+    echo "Pass1: $PASS1"
+    echo "Pass2: $PASS2"
+    echo "Pass3: $PASS3"
+    exit 1
+fi
+
+# Test: Multi-byte UTF-8 not in decode map passes through intact
+echo -e "${BLUE}Test: Multi-byte UTF-8 passes through intact${NC}"
+# 世界 are not in the encode map, so they should pass through
+RESULT=$(echo -n 'Hello 世界' | $SCRIPT -d 2>/dev/null)
+if [[ "$RESULT" == "Hello 世界" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: Hello 世界"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: --strip-whitespace flag strips whitespace before decoding
+echo -e "${BLUE}Test: --strip-whitespace strips whitespace${NC}"
+RESULT=$(echo -n 'hello world' | $SCRIPT -d --strip-whitespace 2>/dev/null)
+if [[ "$RESULT" == "helloworld" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: helloworld"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: --strip-whitespace strips tabs and newlines too
+echo -e "${BLUE}Test: --strip-whitespace strips tabs and newlines${NC}"
+RESULT=$(printf 'a\t\nb c' | $SCRIPT -d --strip-whitespace 2>/dev/null)
+if [[ "$RESULT" == "abc" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: abc"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: -S short flag works
+echo -e "${BLUE}Test: -S short flag for --strip-whitespace${NC}"
+RESULT=$(echo -n 'a b' | $SCRIPT -d -S 2>/dev/null)
+if [[ "$RESULT" == "ab" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: ab"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Encoded then decoded roundtrip still works
+echo -e "${BLUE}Test: Encode/decode roundtrip with new behavior${NC}"
+ORIGINAL="Hello, World! Test 123"
+ENCODED=$(echo -n "$ORIGINAL" | $SCRIPT 2>/dev/null)
+# Note: encoded output has no raw spaces/punctuation, so decode should work
+DECODED=$(echo -n "$ENCODED" | $SCRIPT -d 2>/dev/null)
+if [[ "$DECODED" == "$ORIGINAL" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Original: $ORIGINAL"
+    echo "Encoded: $ENCODED"
+    echo "Decoded: $DECODED"
+    exit 1
+fi
+
+###############################################################################
+# ENCODE PRESERVATION FLAGS TESTS (NEW FEATURES)
+###############################################################################
+
+echo -e "\n${YELLOW}Running encode preservation flags tests...${NC}"
+
+
+# Test: --tabs / -t preserves literal tabs
+echo -e "${BLUE}Test: --tabs preserves literal tabs on encode${NC}"
+RESULT=$(printf 'a\tb' | $SCRIPT --tabs 2>/dev/null)
+if [[ "$RESULT" == $'a\tb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<TAB>b (literal tab)"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+echo -e "${BLUE}Test: -t short flag preserves tabs${NC}"
+RESULT=$(printf 'a\tb' | $SCRIPT -t 2>/dev/null)
+if [[ "$RESULT" == $'a\tb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<TAB>b (literal tab)"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: --crlf / -n preserves literal CR/LF
+echo -e "${BLUE}Test: --crlf preserves literal newlines on encode${NC}"
+RESULT=$(printf 'a\nb' | $SCRIPT --crlf 2>/dev/null)
+if [[ "$RESULT" == $'a\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<LF>b (literal newline)"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+echo -e "${BLUE}Test: --crlf preserves CR too${NC}"
+RESULT=$(printf 'a\r\nb' | $SCRIPT --crlf 2>/dev/null)
+if [[ "$RESULT" == $'a\r\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<CR><LF>b"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+echo -e "${BLUE}Test: -n short flag preserves newlines${NC}"
+RESULT=$(printf 'a\nb' | $SCRIPT -n 2>/dev/null)
+if [[ "$RESULT" == $'a\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a<LF>b"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: --preserve-whitespace / -w enables all whitespace preservation
+echo -e "${BLUE}Test: --preserve-whitespace preserves all whitespace${NC}"
+RESULT=$(printf 'a \t\nb' | $SCRIPT --preserve-whitespace 2>/dev/null)
+if [[ "$RESULT" == $'a \t\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a <TAB><LF>b (all literal)"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+echo -e "${BLUE}Test: -w short flag preserves all whitespace${NC}"
+RESULT=$(printf 'a \t\nb' | $SCRIPT -w 2>/dev/null)
+if [[ "$RESULT" == $'a \t\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a <TAB><LF>b"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: --preserve / -p/-P with custom characters
+echo -e "${BLUE}Test: --preserve with custom characters${NC}"
+# Normally ! encodes to ǃ and " encodes to ˮ
+# Detect which format the implementation uses (= or space-separated)
+if [[ "$HELP_OUTPUT" == *"--preserve="* ]]; then
+    # Uses --preserve=CHARS format (C, Zig)
+    RESULT=$(printf 'hello!"world' | $SCRIPT --preserve='!"' 2>/dev/null)
+else
+    # Uses --preserve <chars> format (Lua)
+    RESULT=$(printf 'hello!"world' | $SCRIPT --preserve '!"' 2>/dev/null)
+fi
+if [[ "$RESULT" == 'hello!"world' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo 'Expected: hello!"world'
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+echo -e "${BLUE}Test: -p/-P short flag with custom characters${NC}"
+# Detect which short flag the implementation uses (-p for Lua, -P for C/Zig)
+if [[ "$HELP_OUTPUT" == *" -P,"* || "$HELP_OUTPUT" == *" -P "* ]]; then
+    RESULT=$(echo -n 'test;data' | $SCRIPT -P ';' 2>/dev/null)
+else
+    RESULT=$(echo -n 'test;data' | $SCRIPT -p ';' 2>/dev/null)
+fi
+# ; normally encodes to itself (Greek question mark), but let's verify behavior
+if [[ "$RESULT" == *";"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected semicolon to be preserved"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# Test: Combined short flags work (e.g., -stn)
+echo -e "${BLUE}Test: Combined short flags -stn${NC}"
+RESULT=$(printf 'a \t\nb' | $SCRIPT -stn 2>/dev/null)
+if [[ "$RESULT" == $'a \t\nb' ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: a <TAB><LF>b (all literal)"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+###############################################################################
+# DOUBLE-ENCODING DETECTION TESTS
+###############################################################################
+
+echo -e "\n${YELLOW}Running double-encoding detection tests...${NC}"
+
+# Test: Double-encoding produces warning to stderr
+echo -e "${BLUE}Test: Double-encoding produces warning to stderr${NC}"
+# Create single-encoded output, then try to encode it again
+SINGLE_ENCODED=$(echo -n -e '\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f' | $SCRIPT 2>/dev/null)
+# Now encode again - should produce warning
+STDERR_OUTPUT=$($SCRIPT 2>&1 >/dev/null <<< "$SINGLE_ENCODED")
+if [[ "$STDERR_OUTPUT" == *"already"*"encoded"* ]] || [[ "$STDERR_OUTPUT" == *"double"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected warning about double-encoding in stderr"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# Test: Warning still produces output (non-blocking)
+echo -e "${BLUE}Test: Double-encoding warning is non-blocking (still produces output)${NC}"
+DOUBLE_ENCODED=$(echo -n "$SINGLE_ENCODED" | $SCRIPT 2>/dev/null)
+if [[ -n "$DOUBLE_ENCODED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected double-encoding to still produce output"
+    exit 1
+fi
+
+# Test: --no-double-encode-check suppresses warning
+echo -e "${BLUE}Test: --no-double-encode-check suppresses warning${NC}"
+STDERR_OUTPUT=$($SCRIPT --no-double-encode-check 2>&1 >/dev/null <<< "$SINGLE_ENCODED")
+if [[ "$STDERR_OUTPUT" != *"already"*"encoded"* ]] && [[ "$STDERR_OUTPUT" != *"double"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected no warning with --no-double-encode-check"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# Test: Pure ASCII does NOT trigger warning (identity case)
+echo -e "${BLUE}Test: Pure ASCII input does not trigger double-encode warning${NC}"
+STDERR_OUTPUT=$($SCRIPT 2>&1 >/dev/null <<< "Hello World this is plain ASCII text")
+if [[ "$STDERR_OUTPUT" != *"already"*"encoded"* ]] && [[ "$STDERR_OUTPUT" != *"double"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Pure ASCII should not trigger double-encode warning"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# Test: Low percentage of PB glyphs does NOT trigger warning
+echo -e "${BLUE}Test: Low percentage of PB glyphs does not trigger warning${NC}"
+# One PB glyph (·) among many ASCII chars - well under 5%
+STDERR_OUTPUT=$($SCRIPT 2>&1 >/dev/null <<< "This is mostly ASCII with one middot · character in a very long string of text")
+if [[ "$STDERR_OUTPUT" != *"already"*"encoded"* ]] && [[ "$STDERR_OUTPUT" != *"double"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Low percentage of PB glyphs should not trigger warning"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# Test: Threshold boundary - just above 5% should warn
+echo -e "${BLUE}Test: Above 5% threshold triggers warning${NC}"
+# Create input that's >5% high-confidence PB glyphs
+# 6 glyphs out of ~100 chars = 6%
+HIGH_GLYPH_INPUT="aaaaaaaaaa·¯«»ϟ¿aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+STDERR_OUTPUT=$($SCRIPT 2>&1 >/dev/null <<< "$HIGH_GLYPH_INPUT")
+if [[ "$STDERR_OUTPUT" == *"already"*"encoded"* ]] || [[ "$STDERR_OUTPUT" == *"double"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Above 5% threshold should trigger warning"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+###############################################################################
+# BYTE-RANGE TESTS
+###############################################################################
+
+echo -e "\n${YELLOW}Running byte-range tests...${NC}"
+
+# Standard 26-byte input for all range tests
+RANGE_INPUT="abcdefghijklmnopqrstuvwxyz"
+TMP_RANGE_INPUT=$(mktemp)
+TMP_RANGE_OUTPUT=$(mktemp)
+TMP_RANGE_STDERR=$(mktemp)
+TMP_RANGE_DECODED=$(mktemp)
+
+printf '%s' "$RANGE_INPUT" > "$TMP_RANGE_INPUT"
+
+# Helper: encode a known slice and compare
+range_encode() {
+    printf '%s' "$1" | $SCRIPT 2>/dev/null
+}
+
+# R1: Basic range --range 0-9 -> first 10 bytes
+echo -e "${BLUE}Test R1: Basic range (--range 0-9)${NC}"
+RESULT=$($SCRIPT --range 0-9 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "abcdefghij")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R2: Omitted start --range -4 -> bytes 0-4
+echo -e "${BLUE}Test R2: Omitted start (--range -4)${NC}"
+RESULT=$($SCRIPT --range -4 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "abcde")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R3: Omitted end --range 20- -> byte 20 to EOF
+echo -e "${BLUE}Test R3: Omitted end (--range 20-)${NC}"
+RESULT=$($SCRIPT --range 20- "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "uvwxyz")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R4: Hex range --range 0x00-0x09 -> same as R1
+echo -e "${BLUE}Test R4: Hex range (--range 0x00-0x09)${NC}"
+RESULT=$($SCRIPT --range 0x00-0x09 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "abcdefghij")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R5: OOB end --range 0-999 -> full data + stderr warning
+echo -e "${BLUE}Test R5: Out-of-bounds end (--range 0-999)${NC}"
+RESULT=$($SCRIPT --range 0-999 "$TMP_RANGE_INPUT" 2>"$TMP_RANGE_STDERR")
+EXPECTED=$(range_encode "$RANGE_INPUT")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    if grep -q "clamping" "$TMP_RANGE_STDERR"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Missing clamping warning in stderr"
+        echo "Stderr: $(cat "$TMP_RANGE_STDERR")"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R6: OOB start --range 999-1000 -> empty + stderr warning
+echo -e "${BLUE}Test R6: Out-of-bounds start (--range 999-1000)${NC}"
+RESULT=$($SCRIPT --range 999-1000 "$TMP_RANGE_INPUT" 2>"$TMP_RANGE_STDERR")
+if [[ -z "$RESULT" ]]; then
+    if grep -q "exceeds input size" "$TMP_RANGE_STDERR"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Missing warning about start exceeding input size"
+        echo "Stderr: $(cat "$TMP_RANGE_STDERR")"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected empty output, got: $RESULT"
+    exit 1
+fi
+
+# R7: Start > end --range 10-5 -> empty + stderr warning
+echo -e "${BLUE}Test R7: Start > end (--range 10-5)${NC}"
+RESULT=$($SCRIPT --range 10-5 "$TMP_RANGE_INPUT" 2>"$TMP_RANGE_STDERR")
+if [[ -z "$RESULT" ]]; then
+    if grep -q "empty range" "$TMP_RANGE_STDERR"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        echo "Missing warning about empty range"
+        echo "Stderr: $(cat "$TMP_RANGE_STDERR")"
+        exit 1
+    fi
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected empty output, got: $RESULT"
+    exit 1
+fi
+
+# R8: Negative start --start -5 -> last 5 bytes
+echo -e "${BLUE}Test R8: Negative start (--start -5)${NC}"
+RESULT=$($SCRIPT --start -5 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "vwxyz")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R9: Separate start/end --start 5 --end 9
+echo -e "${BLUE}Test R9: Separate start/end (--start 5 --end 9)${NC}"
+RESULT=$($SCRIPT --start 5 --end 9 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "fghij")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R10: Positional range 5-9
+echo -e "${BLUE}Test R10: Positional range (5-9)${NC}"
+RESULT=$($SCRIPT 5-9 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "fghij")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R11: Range with stdin
+echo -e "${BLUE}Test R11: Range with stdin (--range 0-4)${NC}"
+RESULT=$(printf '%s' "$RANGE_INPUT" | $SCRIPT --range 0-4 2>/dev/null)
+EXPECTED=$(range_encode "abcde")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+# R12: Range roundtrip - encode range then decode
+echo -e "${BLUE}Test R12: Range roundtrip (encode range then decode)${NC}"
+ENCODED=$($SCRIPT --range 5-14 "$TMP_RANGE_INPUT" 2>/dev/null)
+DECODED=$(printf '%s' "$ENCODED" | $SCRIPT -d 2>/dev/null)
+if [[ "$DECODED" == "fghijklmno" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: fghijklmno"
+    echo "Got:      $DECODED"
+    exit 1
+fi
+
+# R13: Single byte --range 5-5
+echo -e "${BLUE}Test R13: Single byte (--range 5-5)${NC}"
+RESULT=$($SCRIPT --range 5-5 "$TMP_RANGE_INPUT" 2>/dev/null)
+EXPECTED=$(range_encode "f")
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got:      $RESULT"
+    exit 1
+fi
+
+rm -f "$TMP_RANGE_INPUT" "$TMP_RANGE_OUTPUT" "$TMP_RANGE_STDERR" "$TMP_RANGE_DECODED"
+
+###############################################################################
+# HEXLIKE ENCODING/DECODING TESTS
+###############################################################################
+
+# Feature detection: only run if --hexlike is supported
+if [[ "$HELP_OUTPUT" == *"--hexlike"* ]]; then
+
+echo -e "\n${YELLOW}Running hexlike encoding/decoding tests...${NC}"
+
+# The Οχ prefix: Greek Omicron (U+039F) + Greek Chi (U+03C7)
+# NOT ASCII "0x" — this is intentional for disambiguation
+OX=$'\xCE\x9F\xCF\x87'  # Οχ in UTF-8
+
+# --- Encode tests ---
+
+# H1: Pure passthrough ASCII stays unchanged
+echo -e "${BLUE}Test H1: Hexlike encode pure passthrough ASCII${NC}"
+RESULT=$(printf 'Hello' | $SCRIPT --hexlike 2>/dev/null)
+if [[ "$RESULT" == "Hello" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: Hello"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H2: Non-passthrough byte encoded as hex (space is NOT passthrough without --spaces)
+echo -e "${BLUE}Test H2: Hexlike encode non-passthrough byte${NC}"
+RESULT=$(printf 'A B' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="A ${OX}20 B"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H3: Consecutive non-passthrough bytes grouped into single hex run
+echo -e "${BLUE}Test H3: Hexlike encode groups consecutive non-passthrough${NC}"
+RESULT=$(printf '\x00\x01\x02' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="${OX}000102"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H4: Mixed ASCII and non-passthrough (no --spaces: space gets hex-encoded)
+echo -e "${BLUE}Test H4: Hexlike encode mixed (comma+space grouped)${NC}"
+RESULT=$(printf 'Hello, World!' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="Hello ${OX}2C20 World ${OX}21"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H5: With --spaces, space passes through (not grouped with comma)
+echo -e "${BLUE}Test H5: Hexlike encode with --spaces (space passthrough)${NC}"
+RESULT=$(printf 'Hello, World!' | $SCRIPT --hexlike --spaces 2>/dev/null)
+EXPECTED="Hello ${OX}2C  World ${OX}21"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H6: Hex at end — no trailing space
+echo -e "${BLUE}Test H6: Hexlike no trailing space at end${NC}"
+RESULT=$(printf 'Hello!' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="Hello ${OX}21"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H7: Hex at start — no leading space
+echo -e "${BLUE}Test H7: Hexlike no leading space at start${NC}"
+RESULT=$(printf '\x00Hello' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="${OX}00 Hello"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H8: All non-passthrough — no delimiter spaces at all
+echo -e "${BLUE}Test H8: Hexlike all non-passthrough${NC}"
+RESULT=$(printf '\x00\x01' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="${OX}0001"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H9: Hex is uppercase
+echo -e "${BLUE}Test H9: Hexlike uses uppercase hex${NC}"
+RESULT=$(printf '\xAB\xCD\xEF' | $SCRIPT --hexlike 2>/dev/null)
+EXPECTED="${OX}ABCDEF"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H10: Short flag -X works
+echo -e "${BLUE}Test H10: Hexlike short flag -X${NC}"
+RESULT=$(printf 'Hi!' | $SCRIPT -X 2>/dev/null)
+EXPECTED="Hi ${OX}21"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# --- Decode tests ---
+
+# H11: Hexlike decode of pure hex
+echo -e "${BLUE}Test H11: Hexlike decode pure hex${NC}"
+RESULT=$(printf "${OX}48656C6C6F" | $SCRIPT -d --hexlike 2>/dev/null)
+if [[ "$RESULT" == "Hello" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: Hello"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H12: Hexlike decode mixed (passthrough + hex runs)
+echo -e "${BLUE}Test H12: Hexlike decode mixed${NC}"
+INPUT="Hello ${OX}2C20 World ${OX}21"
+RESULT=$(printf '%s' "$INPUT" | $SCRIPT -d --hexlike 2>/dev/null)
+EXPECTED="Hello, World!"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# H13: Full 256-byte roundtrip via hexlike encode then decode
+echo -e "${BLUE}Test H13: Hexlike 256-byte roundtrip${NC}"
+# Generate all 256 byte values
+python3 -c "import sys; sys.stdout.buffer.write(bytes(range(256)))" > "$TMP_BINARY"
+$SCRIPT --hexlike "$TMP_BINARY" 2>/dev/null > "$TMP_ENCODED"
+$SCRIPT -d --hexlike "$TMP_ENCODED" 2>/dev/null > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "256-byte roundtrip failed"
+    echo "Original hex: $(xxd -p "$TMP_BINARY" | head -c 80)"
+    echo "Decoded hex:  $(xxd -p "$TMP_DECODED" | head -c 80)"
+    exit 1
+fi
+
+# H14: Roundtrip with --spaces
+echo -e "${BLUE}Test H14: Hexlike roundtrip with --spaces${NC}"
+printf 'Hello, World!\n' > "$TMP_BINARY"
+$SCRIPT --hexlike --spaces "$TMP_BINARY" 2>/dev/null > "$TMP_ENCODED"
+$SCRIPT -d --hexlike --spaces "$TMP_ENCODED" 2>/dev/null > "$TMP_DECODED"
+if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Roundtrip with --spaces failed"
+    echo "Original hex: $(xxd -p "$TMP_BINARY")"
+    echo "Encoded:      $(cat "$TMP_ENCODED")"
+    echo "Decoded hex:  $(xxd -p "$TMP_DECODED")"
+    exit 1
+fi
+
+# H15: Decode with --hexlike short flag -dX
+echo -e "${BLUE}Test H15: Hexlike decode with combined -dX${NC}"
+RESULT=$(printf "${OX}48656C6C6F" | $SCRIPT -dX 2>/dev/null)
+if [[ "$RESULT" == "Hello" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: Hello"
+    echo "Got: $RESULT"
+    exit 1
+fi
+
+# H16: Space adjacent to hex run — data space preserved
+echo -e "${BLUE}Test H16: Hexlike data space adjacent to hex run${NC}"
+# Encode " \x00" (space then null) with --spaces
+# Data space + delimiter space before Οχ = 2 spaces total
+RESULT=$(printf ' \x00' | $SCRIPT --hexlike --spaces 2>/dev/null)
+EXPECTED="  ${OX}00"
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected: $EXPECTED"
+    echo "Got: $RESULT"
+    echo "Expected hex: $(printf '%s' "$EXPECTED" | xxd -p)"
+    echo "Got hex:      $(printf '%s' "$RESULT" | xxd -p)"
+    exit 1
+fi
+
+# --- Warning tests ---
+
+# H17: Hexlike decode warns if no Οχ sequences found
+echo -e "${BLUE}Test H17: Hexlike decode warns on no hex content${NC}"
+STDERR_OUTPUT=$(printf 'Hello World' | $SCRIPT -d --hexlike 2>&1 >/dev/null)
+if [[ "$STDERR_OUTPUT" == *"hexlike"* ]] || [[ "$STDERR_OUTPUT" == *"no"*"hex"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected warning about no hexlike content"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# H18: Hexlike decode warns if PB-style encoding detected
+echo -e "${BLUE}Test H18: Hexlike decode warns on PB glyphs${NC}"
+# Create PB-encoded data (contains PB glyphs like ␣, ·, etc.)
+PB_ENCODED=$(printf '\x00\x01\x02\x20' | $SCRIPT 2>/dev/null)
+STDERR_OUTPUT=$(printf '%s' "$PB_ENCODED" | $SCRIPT -d --hexlike 2>&1 >/dev/null)
+if [[ "$STDERR_OUTPUT" == *"printable"*"binary"* ]] || [[ "$STDERR_OUTPUT" == *"standard"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected warning about PB-style encoding detected"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# H19: Regular PB decode warns if Οχ sequences detected
+echo -e "${BLUE}Test H19: Regular decode warns on hexlike content${NC}"
+HEXLIKE_INPUT="Hello ${OX}2C20 World"
+STDERR_OUTPUT=$(printf '%s' "$HEXLIKE_INPUT" | $SCRIPT -d 2>&1 >/dev/null)
+if [[ "$STDERR_OUTPUT" == *"hexlike"* ]] || [[ "$STDERR_OUTPUT" == *"hex"*"encod"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Expected warning about hexlike encoding detected"
+    echo "Got stderr: $STDERR_OUTPUT"
+    exit 1
+fi
+
+# --- Help text test ---
+
+# H20: Help mentions --hexlike and warns about Οχ vs 0x
+echo -e "${BLUE}Test H20: Help text mentions hexlike and Οχ disambiguation${NC}"
+if [[ "$HELP_OUTPUT" == *"--hexlike"* ]] && [[ "$HELP_OUTPUT" == *"0x"* || "$HELP_OUTPUT" == *"Οχ"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "Help output should mention --hexlike and warn about Οχ vs 0x"
+    exit 1
+fi
+
+else
+    echo -e "\n${YELLOW}Skipping hexlike tests (--hexlike not supported by this implementation)${NC}"
+fi
+
+# Print summary
+echo -e "\n${BLUE}=== Test Suite Summary ===${NC}"
+echo -e "${GREEN}All tests passed!${NC}"
+exit 0

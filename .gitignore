@@ -36,3 +36,6 @@ ZIG_RECENT_API_CHANGES*
 *.sigil-secret
 *.sk
 secret_key
+
+# Zig 0.16 stages fetched dependencies here (content-addressed, re-fetchable)
+zig-pkg

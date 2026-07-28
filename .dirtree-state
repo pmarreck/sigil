@@ -1,0 +1,12 @@
+# Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
+ver=1.2
+annotate=[
+	build = nix build wrapper -> zig-out/bin. --debug/--test switch optimize mode.
+	cli/main.c = The CLI, in C on purpose: C cannot @import the Zig core, so bypassing the FFI is inexpressible rather than merely discouraged.
+	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
+	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
+	src/lib.zig = Importable Zig module root. Re-exports verify + envelope. Emits NO C symbols and needs no libc.
+	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
+	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
+	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
+]

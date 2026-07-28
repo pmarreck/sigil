@@ -1,0 +1,7 @@
+.{
+    .name = .printable_binary,
+    .version = "1.0.0",
+    .dependencies = .{},
+    .paths = .{""},
+    .fingerprint = 0xa87e1f5fcae2d349,
+}

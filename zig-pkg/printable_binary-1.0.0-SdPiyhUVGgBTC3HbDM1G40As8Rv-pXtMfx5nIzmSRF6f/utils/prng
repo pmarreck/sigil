@@ -1,0 +1,107 @@
+#!/usr/bin/env luajit
+
+local xxhash = require '../lib/xxhash32'
+local bit = require('bit')
+
+-- Command line argument parsing
+local function usage()
+    io.stderr:write("prng - Generate deterministic pseudo-random data using XXH32\n\n")
+    io.stderr:write("Usage: prng [OPTIONS]\n")
+    io.stderr:write("Options:\n")
+    io.stderr:write("  -s, --seed N      Seed value (auto-generated if not provided)\n")
+    io.stderr:write("  -n, --bytes N     Number of bytes to generate (required)\n")
+    io.stderr:write("  -h, --help        Show this help\n")
+    io.stderr:write("\n")
+    io.stderr:write("Examples:\n")
+    io.stderr:write("  prng --bytes=1024                # Generate 1KB with auto seed\n")
+    io.stderr:write("  prng --seed=123 --bytes=1024     # Generate 1KB of seeded data\n")
+    io.stderr:write("  prng -s 42 -n 1048576            # Generate 1MB with seed 42\n")
+    io.stderr:write("  prng --seed=999 --bytes=100 | xxd # Show hex dump of output\n")
+    io.stderr:write("\n")
+    io.stderr:write("Notes:\n")
+    io.stderr:write("  - Same seed + byte count always produces identical output\n")
+    io.stderr:write("  - Auto-generated seeds use nanosecond precision epoch time\n")
+    io.stderr:write("  - Uses XXH32 hash function for high-quality pseudo-randomness\n")
+    io.stderr:write("  - Output is written to stdout as binary data\n")
+    os.exit(1)
+end
+
+local seed = nil
+local byte_count = nil
+local auto_generated = false
+
+-- Parse arguments
+local i = 1
+while i <= #arg do
+    local a = arg[i]
+    if a == "--help" or a == "-h" then
+        usage()
+    elseif a:match("^--seed=(.+)") then
+        seed = tonumber(a:match("^--seed=(.+)"))
+    elseif a == "--seed" or a == "-s" then
+        i = i + 1
+        seed = tonumber(arg[i])
+    elseif a:match("^--bytes=(.+)") then
+        byte_count = tonumber(a:match("^--bytes=(.+)"))
+    elseif a == "--bytes" or a == "-n" then
+        i = i + 1
+        byte_count = tonumber(arg[i])
+    else
+        io.stderr:write("Unknown option: " .. a .. "\n")
+        usage()
+    end
+    i = i + 1
+end
+
+-- Auto-generate seed if not provided
+if not seed then
+    -- Get nanoseconds since epoch (equivalent to date +%s%N)
+    local ffi = require('ffi')
+    ffi.cdef[[
+        typedef struct {
+            long tv_sec;
+            long tv_nsec;
+        } timespec;
+        int clock_gettime(int clk_id, timespec *tp);
+    ]]
+
+    local ts = ffi.new("timespec")
+    ffi.C.clock_gettime(0, ts) -- CLOCK_REALTIME = 0
+
+    -- Combine seconds and nanoseconds into a single number
+    seed = tonumber(ts.tv_sec) * 1000000000 + tonumber(ts.tv_nsec)
+
+    -- Flag that we auto-generated the seed
+    auto_generated = true
+end
+
+if not byte_count or byte_count <= 0 then
+    io.stderr:write("Error: --bytes must be a positive number\n")
+    usage()
+end
+
+-- Generate pseudo-random data using XXH32 as PRNG
+local counter = 0
+local bytes_generated = 0
+
+while bytes_generated < byte_count do
+    -- Hash the seed + counter to get a 32-bit value
+    local hash_input = string.format("%d:%d", seed, counter)
+    local hash = xxhash(hash_input)
+
+    -- Extract 4 bytes from the hash (little-endian order)
+    for shift = 0, 24, 8 do
+        if bytes_generated < byte_count then
+            local byte = bit.band(bit.rshift(hash, shift), 0xFF)
+            io.write(string.char(byte))
+            bytes_generated = bytes_generated + 1
+        end
+    end
+
+    counter = counter + 1
+end
+
+-- Output the seed used for reproducibility
+if auto_generated then
+    io.stderr:write(string.format("Auto-generated seed: %d (use --seed=%d to reproduce)\n", seed, seed))
+end

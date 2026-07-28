@@ -21,6 +21,63 @@
         version = "0.1.0";
         # Pinned to 0.16.0 ("Juicy Main", April 2026).
         zigPkg = zig-overlay.packages.${system}."0.16.0";
+
+        # Nix build sandboxes have no network, so the Zig dependency tree is
+        # fetched once in a fixed-output derivation (which Nix grants network
+        # access precisely because the output hash is declared up front) and
+        # then copied into the cache of every real build.
+        #
+        # To refresh after build.zig.zon changes: set this to
+        # pkgs.lib.fakeHash, run `nix build`, paste the hash it prints.
+        zigDepsHash = "sha256-Ia5GfeuNSczsLca/7CVU7NpFtOtECBMMlzErOz+QTFM=";
+        zigDeps = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-zig-deps";
+          inherit version;
+          src = ./.;
+          nativeBuildInputs = [ zigPkg pkgs.git pkgs.cacert ];
+          outputHashMode = "recursive";
+          outputHashAlgo = "sha256";
+          outputHash = zigDepsHash;
+          dontConfigure = true;
+          dontFixup = true;
+          dontPatchShebangs = true;
+          buildPhase = ''
+            export HOME=$TMPDIR
+            export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
+            mkdir -p $ZIG_GLOBAL_CACHE_DIR
+            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            zig build --fetch=all
+          '';
+          # Zig 0.16 stages fetched deps into a project-local `zig-pkg/` as well
+          # as (sometimes) the global cache's `p/`. Capture whichever appear so
+          # this keeps working if upstream settles on one of them.
+          installPhase = ''
+            mkdir -p $out
+            if [ -d zig-pkg ]; then cp -r zig-pkg $out/zig-pkg; fi
+            if [ -d "$TMPDIR/zig-cache/p" ]; then cp -r "$TMPDIR/zig-cache/p" $out/p; fi
+            if [ ! -d $out/zig-pkg ] && [ ! -d $out/p ]; then
+              echo "zig build --fetch=all produced no package directory" >&2
+              exit 1
+            fi
+          '';
+        };
+
+        # Prelude shared by every derivation that runs `zig build`.
+        zigSetup = ''
+          export HOME=$TMPDIR
+          export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
+          mkdir -p $ZIG_GLOBAL_CACHE_DIR
+          if [ -d ${zigDeps}/p ]; then
+            cp -r ${zigDeps}/p $ZIG_GLOBAL_CACHE_DIR/p
+            chmod -R u+w $ZIG_GLOBAL_CACHE_DIR
+          fi
+          if [ -d ${zigDeps}/zig-pkg ]; then
+            cp -r ${zigDeps}/zig-pkg ./zig-pkg
+            chmod -R u+w ./zig-pkg
+          fi
+          ${pkgs.lib.optionalString pkgs.stdenv.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
+        '';
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit pname version;
@@ -30,8 +87,7 @@
           dontConfigure = true;
           dontFixup = true;
           buildPhase = ''
-            export HOME=$TMPDIR
-            ${pkgs.lib.optionalString pkgs.stdenv.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
+            ${zigSetup}
             zig build -Doptimize=ReleaseFast --prefix $out
             ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
               # The CLI is C and therefore links libc. Zig bakes an FHS
@@ -59,12 +115,23 @@
             pname = "${pname}-test";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg ];
+            nativeBuildInputs = [ zigPkg ]
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
             buildPhase = ''
-              export HOME=$TMPDIR
-              ${pkgs.lib.optionalString pkgs.stdenv.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
+              ${zigSetup}
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                # Same baked-in FHS dynamic linker as the CLI, except a test
+                # binary cannot be patched after the fact by the install step —
+                # it has to run. Compile first, repoint, then run against the
+                # cached (now runnable) artifacts.
+                zig build test-compile
+                DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
+                for f in $(find .zig-cache zig-out -type f -perm -u+x 2>/dev/null); do
+                  patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
+                done
+              ''}
               timeout 600 zig build test || { echo "Tests failed"; exit 1; }
             '';
             installPhase = ''

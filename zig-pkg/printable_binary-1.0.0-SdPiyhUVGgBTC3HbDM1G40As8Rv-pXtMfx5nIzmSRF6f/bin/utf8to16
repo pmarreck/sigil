@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# utf8to16 — transcode UTF-8 on stdin to UTF-16 on stdout (a thin iconv wrapper).
+#
+# Defaults to LITTLE-ENDIAN with a BOM. ARM and x86_64 are little-endian, and
+# `iconv -t UTF-16` historically emits big-endian (per RFC 2781), so this wrapper
+# makes LE the explicit, predictable default.
+#
+#   printable-binary file | utf8to16            # UTF-16LE + BOM
+#   printable-binary file | utf8to16 --be       # UTF-16BE + BOM
+#   printable-binary file | utf8to16 --no-bom   # UTF-16LE, no BOM
+#
+# Useful because every printable-binary glyph is in the BMP, so UTF-8<->UTF-16 is
+# a lossless bijection — pair with utf16to8 to round-trip through UTF-16.
+set -euo pipefail
+
+endian=LE
+bom=1
+for arg in "$@"; do
+  case "$arg" in
+    --le) endian=LE ;;
+    --be) endian=BE ;;
+    --no-bom) bom=0 ;;
+    -h|--help)
+      echo "usage: utf8to16 [--le|--be] [--no-bom]   (UTF-8 stdin -> UTF-16 stdout; default: LE + BOM)"
+      exit 0 ;;
+    *) echo "utf8to16: unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# Emit the BOM ourselves so endianness is guaranteed regardless of iconv's default.
+if [ "$bom" -eq 1 ]; then
+  if [ "$endian" = LE ]; then printf '\xff\xfe'; else printf '\xfe\xff'; fi
+fi
+
+exec iconv -f UTF-8 -t "UTF-16$endian"

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# Memory-leak suite. Runs an implementation in a long-lived, TIME-BOUNDED loop
+# that prints its own RSS periodically, then FAILS if memory grows monotonically
+# over time (a leak) instead of plateauing after warmup (correct, bounded
+# streaming). The target self-terminates, so nothing can run away.
+#
+# Two modes (both supported):
+#   1. FFI mode (default): drives the Zig static lib via test/leak_harness.c —
+#      the truest leak surface, exercising every pb_* alloc/free path.
+#   2. CLI mode: set IMPLEMENTATION_TO_TEST=<cli> to drive a CLI binary's
+#      long-lived --leak-seconds loop (env-selectable across implementations).
+#
+# Env:
+#   IMPLEMENTATION_TO_TEST   CLI to leak-test (CLI mode). Unset => FFI mode.
+#   LEAK_HARNESS             Path to a prebuilt leak_harness (FFI mode).
+#   LEAK_SECONDS             Run/sample window in seconds (default 8).
+#   LEAK_GROWTH_FACTOR       Fail if final RSS > baseline * this (default 1.5).
+#   LEAK_MIN_GROWTH_KB       ...and grew by at least this many KB (default 4096).
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SECONDS_RUN="${LEAK_SECONDS:-8}"
+GROWTH_FACTOR="${LEAK_GROWTH_FACTOR:-1.5}"
+MIN_GROWTH_KB="${LEAK_MIN_GROWTH_KB:-4096}"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; YEL='\033[0;33m'; NC='\033[0m'
+
+if [ -n "${IMPLEMENTATION_TO_TEST:-}" ]; then
+    MODE="CLI"
+    TARGET=("${IMPLEMENTATION_TO_TEST}" --leak-seconds "$SECONDS_RUN")
+    LABEL="CLI: ${IMPLEMENTATION_TO_TEST}"
+else
+    MODE="FFI"
+    HARNESS="${LEAK_HARNESS:-$SCRIPT_DIR/leak_harness}"
+    if [ ! -x "$HARNESS" ]; then
+        echo -e "${RED}leak_harness not found at $HARNESS${NC} — build it first (see test-leak in flake.nix)" >&2
+        exit 2
+    fi
+    TARGET=("$HARNESS" "$SECONDS_RUN")
+    LABEL="Zig FFI lib (via leak_harness)"
+fi
+
+echo -e "${BLUE}==> Memory-leak suite${NC} — implementation under test: ${YEL}${LABEL}${NC}" >&2
+echo "    mode=$MODE window=${SECONDS_RUN}s  fail if final RSS > baseline*${GROWTH_FACTOR} and +${MIN_GROWTH_KB}KB" >&2
+
+# Run foreground (target self-terminates); a hard timeout is a belt-and-suspenders
+# guard in case a build regresses the time bound.
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+HARD_LIMIT=$(( SECONDS_RUN + 15 ))
+if command -v timeout >/dev/null 2>&1; then
+    timeout "$HARD_LIMIT" "${TARGET[@]}" >"$LOG" 2>/dev/null
+else
+    "${TARGET[@]}" >"$LOG" 2>/dev/null
+fi
+
+mapfile -t RSS < <(awk '/^RSS /{print $2}' "$LOG" | grep -E '^[0-9]+$')
+N="${#RSS[@]}"
+if [ "$N" -lt 4 ]; then
+    echo -e "${RED}FAIL${NC} — only $N RSS samples (target crashed or printed nothing?)." >&2
+    sed -n '1,5p' "$LOG" >&2
+    exit 1
+fi
+
+median() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END{m=int(NR/2); print (NR%2)? a[m+1] : int((a[m]+a[m+1])/2)}'; }
+
+# baseline = median of the first third (after the first warmup sample);
+# final = median of the last quarter.
+w_start=1
+w_len=$(( N / 3 )); [ "$w_len" -lt 2 ] && w_len=2
+f_len=$(( N / 4 )); [ "$f_len" -lt 2 ] && f_len=2
+baseline=$(median "${RSS[@]:$w_start:$w_len}")
+final=$(median "${RSS[@]: -$f_len}")
+
+echo "    $N RSS samples (KB): first=${RSS[0]} baseline=${baseline} final=${final} last=${RSS[-1]}" >&2
+
+grew=$(( final - baseline ))
+threshold=$(awk -v b="$baseline" -v f="$GROWTH_FACTOR" 'BEGIN{printf "%d", b*f}')
+if [ "$final" -gt "$threshold" ] && [ "$grew" -gt "$MIN_GROWTH_KB" ]; then
+    echo -e "${RED}FAIL — RSS grew ${grew}KB (baseline ${baseline} -> final ${final}); likely a leak.${NC}" >&2
+    exit 1
+fi
+echo -e "${GREEN}PASS — RSS stable after warmup (Δ${grew}KB).${NC}" >&2
+exit 0
