@@ -12,16 +12,7 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] **Mechatron Prime webhook — needs Peter.** Everything else is done: the
-      repo is public at github.com/pmarreck/sigil (branch `yolo`),
-      `.mechatron-prime/targets` lists four attributes each verified to build,
-      and the README carries the canonical badge. The provisioner reads the
-      shared secret through `sudo`, which an agent cannot supply, so the live
-      run is Peter's. Dry run confirmed exactly one action: `CREATE
-      pmarreck/sigil`. Admission was HALTED overnight but went `running` at
-      2026-07-28 17:46Z and the queue is empty, so the first build should go
-      straight through. `/badges/sigil.json` 404s until then — expected, not a
-      failure.
+- [ ] Work Einstein's remediation queue (see below). Item 1 done.
 
 ## Next
 
@@ -146,7 +137,25 @@ linking, running or disassembling — none are speculative.
       links and runs against the archive, now 512,956 bytes, down from
       949,604. `tests/test_c_conformance` gates it, 12 assertions.
 
+- [x] **Mechatron Prime CI green.** Peter supplied sudo; hook 658279047 created
+      2026-07-28 22:41:54Z. It was created 73 min AFTER the last push, and
+      GitHub does not replay history — so the 404 badge was simply "no push
+      event yet", not a misconfiguration. First push after that (`884c0be`)
+      built in 6s: `PASSING`. — 2026-07-28 19:20 EDT
+- [x] **`verify` no longer reports a transient failure as a forgery** (queue
+      item 1). `cli/exit_codes.h`, header-only and pure, tested as a classifier
+      over a partition of every code in `sigil.h`. Only a bad signature exits 1;
+      malformed input is 65, OOM is 75, unknown codes are 70. Both directions
+      pinned, so "never accuse anything" cannot pass. — 2026-07-28 19:18 EDT
+
 ### Critical, still open
+- [ ] **Delete the keyfile's `public` field** (queue item 2). Peter:
+      *"Mechanically force it to be computed!"* Remove the field, do not
+      validate it. Note the consequence: `sigil pubkey --key` will then need
+      the passphrase, since the key must come from the decrypted seed. The
+      passphrase-free path stays available via the sibling `.pub` file.
+      Also drop the public key from the AAD — it cannot be bound if it must be
+      derived after decryption.
 - [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
       `sigil verify --help` → `unknown option`, exit 64.
 - [ ] **`verify` reports transient OOM as a forged license** — collapses every
