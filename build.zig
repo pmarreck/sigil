@@ -32,11 +32,18 @@ pub fn build(b: *std.Build) void {
 	// -- Static library exposing the C ABI (the real public API). Its root is
 	//    src/ffi.zig, which holds every `export fn sigil_*`, so the C ABI is
 	//    emitted ONLY here and never in the importable module above. --
+	// `.pic = true` is not optional for a shipped static library. Most current
+	// distro toolchains default to PIE, and a non-PIC archive fails their link
+	// with "relocation R_X86_64_32 ... can not be used when making a PIE
+	// object" — verified against stock gcc 15.3.0. Our own C CLI never caught
+	// this because `zig build` links it the Zig way; only a customer's `cc`
+	// walks that path.
 	const ffi_mod = b.createModule(.{
 		.root_source_file = b.path("src/ffi.zig"),
 		.target = target,
 		.optimize = optimize,
 		.link_libc = true,
+		.pic = true,
 	});
 	ffi_mod.addImport("printable_binary", pb_mod);
 
@@ -55,6 +62,7 @@ pub fn build(b: *std.Build) void {
 		.target = target,
 		.optimize = optimize,
 		.link_libc = true,
+		.pic = true,
 	});
 	sign_ffi_mod.addImport("printable_binary", pb_mod);
 

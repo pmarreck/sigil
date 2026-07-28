@@ -55,10 +55,133 @@ const Wire = struct {
     sig: []const u8,
 };
 
-const parse_options: std.json.ParseOptions = .{
-    .ignore_unknown_fields = true,
-    .duplicate_field_behavior = .@"error",
+/// ASCII bytes a valid envelope can legitimately contain: printable-binary's
+/// ASCII subset, plus the five JSON structure characters this format uses.
+///
+/// The two sets are DISJOINT — printable-binary emits no `"`, `:`, `,`, `{` or
+/// `}` — which is the same property that lets `write` splice values in with no
+/// escaping pass. Everything else below 0x80 is transport noise by
+/// construction: line folds, `>` reply prefixes, stray tabs, terminal wrapping.
+///
+/// Kept honest by "MFIC: the ASCII allowlist matches what the codec actually
+/// emits", which sweeps all 256 byte values. A remapped glyph upstream fails
+/// the build rather than silently making valid envelopes unverifiable.
+const allowed_ascii =
+    ".0123456789@ABCDEFGHIJKLMNOPQRSTUVWXYZ^_abcdefghijklmnopqrstuvwxyz" ++
+    "{}\":,";
+
+const ascii_keep: [128]bool = blk: {
+    var t = [_]bool{false} ** 128;
+    for (allowed_ascii) |c| t[c] = true;
+    break :blk t;
 };
+
+/// Strip transport noise so an envelope survives email, terminals and
+/// copy-paste. O(n), single pass, no allocation beyond the output.
+///
+/// Safe to be this aggressive because of an ordering property, not a guess:
+/// normalization runs BEFORE verification and the signature covers the DECODED
+/// payload bytes. If this ever removes something meaningful, the decoded bytes
+/// stop matching what was signed and verification FAILS. A bug here can only
+/// cause a false rejection, never a false acceptance — availability risk, not
+/// authenticity risk. That asymmetry is what licenses the whole approach.
+///
+/// Bytes >= 0x80 are always kept: they are parts of multi-byte alphabet glyphs,
+/// and a fold landing mid-glyph must reassemble cleanly once the fold is gone.
+fn normalize(allocator: std.mem.Allocator, envelope_json: []const u8) ![]u8 {
+    const out = try allocator.alloc(u8, envelope_json.len);
+    errdefer allocator.free(out);
+    var n: usize = 0;
+    for (envelope_json) |c| {
+        if (c >= 0x80 or ascii_keep[c]) {
+            out[n] = c;
+            n += 1;
+        }
+    }
+    return allocator.realloc(out, n);
+}
+
+/// Parse the normalized envelope. Deliberately NOT `std.json`.
+///
+/// Two reasons, one of them a shipping defect: `std.json`'s number path pulls
+/// in 128-bit soft-float symbols (`roundq`, `__divtf3`, …) that no valid
+/// envelope can ever reach, and those unresolved symbols made `libsigil.a`
+/// unlinkable by a customer's stock `cc`. This format has three string fields
+/// and no numbers, so the dependency bought nothing and cost the link.
+///
+/// Normalization has already removed every byte outside `allowed_ascii`, so a
+/// `"` here unambiguously ends a string: printable-binary emits neither `"` nor
+/// `\`, and any literal backslash was stripped as noise. That means NO escape
+/// handling — which also means an envelope written by some other tool using
+/// `\uXXXX` escapes will no longer verify. That is a deliberate narrowing: it
+/// removes a class of distinct-but-equivalent encodings, and sigil never emits
+/// escapes itself.
+fn parseEnvelope(s: []const u8) EnvelopeError!Wire {
+    var i: usize = 0;
+    if (i == s.len or s[i] != '{') return EnvelopeError.MalformedJson;
+    i += 1;
+
+    var data: ?[]const u8 = null;
+    var st: ?[]const u8 = null;
+    var sg: ?[]const u8 = null;
+
+    if (i < s.len and s[i] == '}') {
+        i += 1;
+    } else while (true) {
+        const key = try scanString(s, &i);
+        if (i == s.len or s[i] != ':') return EnvelopeError.MalformedJson;
+        i += 1;
+        const val = try scanString(s, &i);
+
+        // Duplicates are an error, not last-wins: two `data` fields is a
+        // crafted envelope, and silently preferring one is how a reader and a
+        // verifier end up disagreeing about what was signed.
+        if (std.mem.eql(u8, key, "data")) {
+            if (data != null) return EnvelopeError.MalformedJson;
+            data = val;
+        } else if (std.mem.eql(u8, key, "sigtype")) {
+            if (st != null) return EnvelopeError.MalformedJson;
+            st = val;
+        } else if (std.mem.eql(u8, key, "sig")) {
+            if (sg != null) return EnvelopeError.MalformedJson;
+            sg = val;
+        }
+        // Unknown fields are ignored, so the format can gain fields later
+        // without old verifiers rejecting new licenses.
+
+        if (i == s.len) return EnvelopeError.MalformedJson;
+        if (s[i] == ',') {
+            i += 1;
+            continue;
+        }
+        if (s[i] == '}') {
+            i += 1;
+            break;
+        }
+        return EnvelopeError.MalformedJson;
+    }
+
+    if (i != s.len) return EnvelopeError.MalformedJson; // trailing junk
+
+    return .{
+        .data = data orelse return EnvelopeError.MissingField,
+        .sigtype = st orelse return EnvelopeError.MissingField,
+        .sig = sg orelse return EnvelopeError.MissingField,
+    };
+}
+
+/// Read one `"…"` token, advancing `i` past the closing quote. Returns a slice
+/// INTO the normalized buffer, which the caller must keep alive.
+fn scanString(s: []const u8, i: *usize) EnvelopeError![]const u8 {
+    if (i.* == s.len or s[i.*] != '"') return EnvelopeError.MalformedJson;
+    i.* += 1;
+    const start = i.*;
+    while (i.* < s.len and s[i.*] != '"') i.* += 1;
+    if (i.* == s.len) return EnvelopeError.MalformedJson; // unterminated
+    const out = s[start..i.*];
+    i.* += 1;
+    return out;
+}
 
 /// Verify an envelope and return its AUTHENTICATED payload bytes.
 ///
@@ -71,21 +194,28 @@ pub fn verifyEnvelope(
     envelope_json: []const u8,
     public_key: *const [public_key_len]u8,
 ) VerifyEnvelopeError![]u8 {
-    const parsed = std.json.parseFromSlice(Wire, allocator, envelope_json, parse_options) catch |e| {
-        return switch (e) {
-            error.OutOfMemory => error.OutOfMemory,
-            error.MissingField => EnvelopeError.MissingField,
-            else => EnvelopeError.MalformedJson,
-        };
-    };
-    defer parsed.deinit();
+    // Strip transport noise first. This cannot weaken the check: the signature
+    // is verified over the decoded payload further down, so anything this
+    // removes wrongly shows up as a failed verification, never a false pass.
+    const clean = try normalize(allocator, envelope_json);
+    defer allocator.free(clean);
 
-    if (!std.mem.eql(u8, parsed.value.sigtype, sigtype)) return EnvelopeError.UnsupportedSigType;
+    // `std.json` validated UTF-8 as a side effect; a hand-rolled parser must do
+    // it deliberately. Without this a truncated multi-byte glyph decodes to
+    // something plausible and fails as BadSignature — telling a customer their
+    // licence is FORGED when it was merely mangled in transit. Structural
+    // damage and tampering must stay distinguishable.
+    if (!std.unicode.utf8ValidateSlice(clean)) return EnvelopeError.MalformedJson;
 
-    const payload = try decodeField(allocator, parsed.value.data);
+    // `wire` holds slices into `clean`, which outlives it via the defer above.
+    const wire = try parseEnvelope(clean);
+
+    if (!std.mem.eql(u8, wire.sigtype, sigtype)) return EnvelopeError.UnsupportedSigType;
+
+    const payload = try decodeField(allocator, wire.data);
     errdefer allocator.free(payload);
 
-    const sig = try decodeField(allocator, parsed.value.sig);
+    const sig = try decodeField(allocator, wire.sig);
     defer allocator.free(sig);
     if (sig.len != signature_len) return EnvelopeError.BadSignatureLength;
 
@@ -512,6 +642,125 @@ test "MFIC: printable-binary output needs no JSON escaping, swept over every byt
     for (encoded) |c| {
         if (c == '"' or c == '\\' or c < 0x20 or c == 0x7F) {
             std.debug.print("printable-binary emitted JSON-hostile byte 0x{X:0>2}\n", .{c});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+// ── Transport mangling (feature: survive email, terminals, copy-paste) ──────
+
+/// Simulate a lossy text transport: hard-wrap every `width` bytes the way a mail
+/// client folds a long line, and prefix each resulting line the way a reply
+/// quotes it. Deliberately wraps on BYTE boundaries, so it will happily split a
+/// multi-byte glyph — that is the hostile case, not an accident.
+fn mangleForTest(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    width: usize,
+    quote: []const u8,
+) ![]u8 {
+    const lines = (text.len + width - 1) / width;
+    var out = try allocator.alloc(u8, text.len + lines * (quote.len + 1));
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) {
+        const end = @min(i + width, text.len);
+        @memcpy(out[n..][0..quote.len], quote);
+        n += quote.len;
+        @memcpy(out[n..][0 .. end - i], text[i..end]);
+        n += end - i;
+        out[n] = '\n';
+        n += 1;
+        i = end;
+    }
+    return allocator.realloc(out, n);
+}
+
+test "an envelope hard-wrapped in transit still verifies" {
+    // Mail clients fold long lines. The fold lands inside the quoted values and
+    // even mid-glyph, because printable-binary emits multi-byte UTF-8.
+    const a = testing.allocator;
+    const kp = try testKey(core.test_seed_a);
+    const payload = "email = \"peter@marreck.com\"\nmax_major = \"1\"\n";
+
+    const env = try sealForTest(a, kp, payload);
+    defer a.free(env);
+
+    const wrapped = try mangleForTest(a, env, 40, "");
+    defer a.free(wrapped);
+
+    const got = try verifyEnvelope(a, wrapped, &kp.public_key.toBytes());
+    defer a.free(got);
+    try testing.expectEqualStrings(payload, got);
+}
+
+test "an envelope carrying email quote prefixes still verifies" {
+    // A reply quotes every line with "> ". `>` is NOT in the printable-binary
+    // alphabet (0x3E encodes to U+02C3), so a literal one is provably transport
+    // noise rather than data.
+    const a = testing.allocator;
+    const kp = try testKey(core.test_seed_a);
+    const payload = "product = \"mecha-rotshield\"\n";
+
+    const env = try sealForTest(a, kp, payload);
+    defer a.free(env);
+
+    const quoted = try mangleForTest(a, env, 50, "> ");
+    defer a.free(quoted);
+
+    const got = try verifyEnvelope(a, quoted, &kp.public_key.toBytes());
+    defer a.free(got);
+    try testing.expectEqualStrings(payload, got);
+}
+
+test "MFIC: normalization cannot rescue a tampered payload" {
+    // The property that licenses aggressive stripping: normalization runs
+    // BEFORE verification and the signature covers the DECODED bytes, so a
+    // normalization bug can only cause a false rejection, never a false accept.
+    // Mangling a forged envelope must still be a forgery.
+    const a = testing.allocator;
+    const kp = try testKey(core.test_seed_a);
+    const payload = "max_major = \"1\"\n";
+
+    const env = try sealForTest(a, kp, payload);
+    defer a.free(env);
+
+    // Flip a byte inside the encoded data value. `1` -> `9` is the commercial
+    // attack: the free-minor/paid-major rule lives in that number.
+    const forged = try a.dupe(u8, env);
+    defer a.free(forged);
+    const one = std.mem.indexOfScalar(u8, forged, '1') orelse return error.TestUnexpectedResult;
+    forged[one] = '9';
+
+    const mangled = try mangleForTest(a, forged, 30, "> ");
+    defer a.free(mangled);
+
+    try testing.expectError(
+        core.Error.BadSignature,
+        verifyEnvelope(a, mangled, &kp.public_key.toBytes()),
+    );
+}
+
+test "MFIC: the ASCII allowlist matches what the codec actually emits" {
+    // The normalizer keeps ASCII bytes on an allowlist and strips the rest.
+    // That constant must never drift from the codec. Sweep all 256 byte values
+    // and assert every ASCII byte printable-binary can emit is on the list —
+    // so a remapped glyph upstream fails the build instead of silently making
+    // valid envelopes unverifiable.
+    const a = testing.allocator;
+    var all: [256]u8 = undefined;
+    for (&all, 0..) |*c, i| c.* = @intCast(i);
+
+    const enc = try pb.encode(a, &all, .{});
+    defer a.free(enc);
+
+    for (enc) |c| {
+        if (c >= 0x80) continue; // part of a multi-byte glyph; always preserved
+        if (std.mem.indexOfScalar(u8, allowed_ascii, c) == null) {
+            std.debug.print(
+                "codec emits ASCII 0x{X:0>2} ('{c}') which the normalizer would STRIP\n",
+                .{ c, c },
+            );
             return error.TestUnexpectedResult;
         }
     }

@@ -82,6 +82,12 @@ if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then
 	run_suite "Symbol Separation" "nix develop -c bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
 fi
 
+# The customer's link path: stock cc against libsigil.a, exercising the
+# sigil_verify primitive that the C CLI never calls.
+if [[ -f "$SCRIPT_DIR/tests/test_c_conformance" ]]; then
+	run_suite "C Conformance (stock cc)" "bash '$SCRIPT_DIR/tests/test_c_conformance'"
+fi
+
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
 if [[ -f "$SCRIPT_DIR/tests/cli/test_cli" ]]; then

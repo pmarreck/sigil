@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Build and run the C conformance consumer with a STOCK C compiler.
+#
+# This is the customer's link path, and until 2026-07-28 nothing exercised it.
+# `zig build` supplies compiler-rt and links the Zig way, so libsigil.a was
+# unlinkable by plain `cc` for two independent reasons — a non-PIC archive
+# against a default-PIE toolchain, and unresolved 128-bit soft-float symbols
+# pulled in by std.json's number parser — while every test reported green.
+#
+# Deliberately does NOT use `zig cc`. Using it would restore exactly the blind
+# spot this file exists to remove.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LIB="$REPO_ROOT/zig-out/lib/libsigil.a"
+SRC="$SCRIPT_DIR/conformance/verify_conformance.c"
+
+if [[ ! -f "$LIB" ]]; then
+	echo "FATAL: $LIB not found — run ./build first" >&2
+	exit 1
+fi
+
+# Pick a compiler that is NOT zig. `cc` is the customer's default.
+CC="${CC:-cc}"
+if ! command -v "$CC" >/dev/null 2>&1; then
+	echo "FATAL: no stock C compiler ($CC) — the customer link path cannot be tested" >&2
+	exit 1
+fi
+case "$("$CC" --version 2>&1 | head -1)" in
+	*zig*)
+		echo "FATAL: \$CC resolves to zig cc, which hides the very failure this test exists to catch." >&2
+		echo "       Set CC to gcc or clang." >&2
+		exit 1
+		;;
+esac
+
+bin="$(mktemp "${TMPDIR:-/tmp}/sigil-conformance-XXXXXX")"
+trap 'rm -f "$bin"' EXIT
+
+build_log=$("$CC" -std=c11 -Wall -Wextra -I "$REPO_ROOT/include" "$SRC" "$LIB" -o "$bin" 2>&1)
+build_rc=$?
+if [[ $build_rc -ne 0 ]]; then
+	echo "FAIL libsigil.a cannot be linked by a stock C compiler ($CC)" >&2
+	echo "$build_log" | sed 's/^/     /' >&2
+	echo ""
+	echo "0 passed, 1 failed"
+	exit 1
+fi
+echo "  ok   libsigil.a links with a stock C compiler ($("$CC" --version 2>&1 | head -1))"
+
+run_out=$("$bin")
+run_rc=$?
+echo "$run_out" | grep -E '^  (ok|FAIL)' || true
+
+passed=$(grep -c '^  ok' <<<"$run_out")
+# +1 for the link check emitted above.
+passed=$((passed + 1))
+printf '\n%d passed, %d failed\n' "$passed" "$run_rc"
+exit "$run_rc"
