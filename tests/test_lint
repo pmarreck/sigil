@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Commit gate for the MASKED RETURN VALUE defect class.
+#
+# The family: a check whose failure is indistinguishable from its success.
+# In MFIC terms it is the ¬F axis — the control cannot produce a biting
+# refutation, so it reports green regardless of the truth. Observed instances
+# across this fleet in a single week:
+#
+#   ./test:46            `build | tail -3 || fatal`  — `||` reads tail's status
+#   dotfiles pre-push    `--check-only` documented, never parsed
+#   dotfiles session_test asserted `-Ad`, pinning the bug it should have caught
+#   test_cli:307         two failing commands both emit "", compare equal, pass
+#   test_no_signing_syms `nm` denylist: green while a working signer shipped
+#
+# Zig makes the core of this class a COMPILE ERROR (unused return values and
+# unhandled errors are rejected outright), which is why five review agents found
+# zero instances in the Zig core and all of them in C and Bash. C and Bash make
+# the same checks opt-in — so this file is that opt-in, enforced.
+#
+# shellcheck ships SC2312 DISABLED by default under
+# `-o check-extra-masked-returns`. It was findable all along.
+#
+# Per Mecha conventions: `set -u` only. `set -e` would abort on the non-zero
+# exits this file exists to assert on.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PASS=0
+FAIL=0
+
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	[[ $# -gt 1 ]] && printf '%s\n' "$2" >&2
+	return 0
+}
+
+# A missing linter must FAIL, never skip. A gate that silently disappears when
+# its tool is absent is the very defect this file polices — see the `nm`
+# lesson, where a dead binary would have made every negative assertion
+# vacuously true.
+require_tool() {
+	if command -v "$1" >/dev/null 2>&1; then
+		return 0
+	fi
+	fail "$1 is available" "  the gate cannot run without it; add it to flake.nix rather than skipping"
+	return 1
+}
+
+# ── Bash: SC2312 masked return values ───────────────────────────────────────
+if require_tool shellcheck; then
+	shell_scripts=()
+	for candidate in \
+		"$REPO_ROOT/test" \
+		"$REPO_ROOT/build" \
+		"$REPO_ROOT/tests/test_no_signing_symbols" \
+		"$REPO_ROOT/tests/test_harness_guards" \
+		"$REPO_ROOT/tests/test_lint" \
+		"$REPO_ROOT/tests/cli/test_cli"
+	do
+		[[ -f "$candidate" ]] && shell_scripts+=("$candidate")
+	done
+
+	for script in "${shell_scripts[@]}"; do
+		rel="${script#"$REPO_ROOT"/}"
+		findings=$(shellcheck -o check-extra-masked-returns -f gcc "$script" 2>/dev/null)
+		sc_rc=$?
+		# shellcheck itself failing to run is distinct from finding nothing.
+		if [[ $sc_rc -gt 1 ]]; then
+			fail "shellcheck runs on $rel" "  shellcheck exited $sc_rc — the gate did not actually inspect this file"
+			continue
+		fi
+		masked=$(grep -c 'SC2312' <<<"$findings")
+		[[ -z "$findings" ]] && masked=0
+		if [[ "$masked" -eq 0 ]]; then
+			pass "no masked return values in $rel"
+		else
+			fail "no masked return values in $rel" \
+				"$(grep 'SC2312' <<<"$findings" | sed 's/^/       /')"
+		fi
+	done
+
+	# Meta-control: prove the gate can still fire. A lint gate that has been
+	# quietly defanged (wrong flag, wrong file list, tool stubbed) looks
+	# identical to a clean repo. Feed it a known violation and require a catch.
+	probe="$(mktemp "${TMPDIR:-/tmp}/sigil-lint-probe-XXXXXX.sh")"
+	cat > "$probe" <<'PROBE'
+#!/usr/bin/env bash
+set -u
+./build 2>&1 | tail -3 || { echo "FATAL"; exit 1; }
+PROBE
+	probe_findings=$(shellcheck -o check-extra-masked-returns -f gcc "$probe" 2>/dev/null)
+	if grep -q 'SC2312' <<<"$probe_findings"; then
+		pass "the gate still fires on a known violation (specificity corpus)"
+	else
+		fail "the gate still fires on a known violation (specificity corpus)" \
+			"       SC2312 did not trigger on a deliberately masked pipeline — the gate is defanged"
+	fi
+	rm -f "$probe"
+fi
+
+# ── C: unchecked return values (the same class, different language) ─────────
+# `-Wunused-result` only fires on functions annotated warn_unused_result, so it
+# is necessary but nowhere near sufficient. cert-err33-c is the real check: it
+# flags ignored returns from standard library calls that can fail.
+if require_tool clang-tidy; then
+	c_sources=()
+	for candidate in "$REPO_ROOT/cli/main.c"; do
+		[[ -f "$candidate" ]] && c_sources+=("$candidate")
+	done
+
+	for src in "${c_sources[@]}"; do
+		rel="${src#"$REPO_ROOT"/}"
+		# Check set chosen for SILENCE ON CORRECT CODE. Two checks were tried
+		# and rejected because a gate that fires on correct code is a gate
+		# everyone learns to scroll past — the same "trains you to ignore red"
+		# failure this file exists to prevent:
+		#   cert-err33-c   — 39 hits, every one an `fprintf(stderr, …)`.
+		#                    An unwritable stderr cannot be reported anyway.
+		#   security.insecureAPI.DeprecatedOrUnsafeBufferHandling — demands
+		#                    C11 Annex K (`fprintf_s`), which glibc does not
+		#                    implement and which is broadly considered a failed
+		#                    standard.
+		# Verified: 0 warnings on cli/main.c as it stands, and it does catch a
+		# planted double-free and strcpy overflow. Coverage is partial (it
+		# missed a planted leak and an uninitialized read) — treat it as a
+		# floor, not a proof.
+		out=$(clang-tidy \
+			--quiet \
+			--checks='-*,bugprone-unused-return-value,bugprone-suspicious-memory-comparison,clang-analyzer-unix.Malloc,clang-analyzer-core.NullDereference,clang-analyzer-core.uninitialized.*,clang-analyzer-deadcode.DeadStores,clang-analyzer-security.insecureAPI.UncheckedReturn,clang-analyzer-security.insecureAPI.strcpy' \
+			"$src" -- -std=c11 -I "$REPO_ROOT/include" 2>/dev/null)
+		tidy_rc=$?
+		if [[ $tidy_rc -gt 1 ]]; then
+			fail "clang-tidy runs on $rel" "  exited $tidy_rc — the gate did not actually inspect this file"
+			continue
+		fi
+		warnings=$(grep -c 'warning:' <<<"$out")
+		[[ -z "$out" ]] && warnings=0
+		if [[ "$warnings" -eq 0 ]]; then
+			pass "no ignored return values in $rel"
+		else
+			fail "no ignored return values in $rel" \
+				"$(grep 'warning:' <<<"$out" | sed 's/^/       /' | head -20)"
+		fi
+	done
+
+	# Meta-control, same as the shell side: a check set this narrow could be
+	# silent because the code is clean, or silent because it was defanged.
+	# Those look identical from the outside, so prove it still bites.
+	cprobe="$(mktemp "${TMPDIR:-/tmp}/sigil-tidy-probe-XXXXXX.c")"
+	cat > "$cprobe" <<'CPROBE'
+#include <stdlib.h>
+int main(void) {
+	char *q = malloc(8);
+	free(q);
+	free(q);
+	return 0;
+}
+CPROBE
+	cprobe_out=$(clang-tidy --quiet \
+		--checks='-*,clang-analyzer-unix.Malloc' \
+		"$cprobe" -- -std=c11 2>/dev/null)
+	if grep -q 'warning:' <<<"$cprobe_out"; then
+		pass "the C gate still fires on a known violation (specificity corpus)"
+	else
+		fail "the C gate still fires on a known violation (specificity corpus)" \
+			"       a planted double-free went unreported — clang-tidy is not actually analysing"
+	fi
+	rm -f "$cprobe"
+fi
+
+printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+exit "$FAIL"

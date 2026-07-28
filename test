@@ -25,7 +25,14 @@ run_suite() {
 	#   - shell-style "N passed" / "N failed"
 	#   - Zig --summary all success: "N/N tests passed"
 	#   - Zig --summary all failure: "N pass, N fail (M total)"
+	# SC2312 is deliberate here and safe: grep exits 1 when a suite simply
+	# printed no "N passed" line, which `|| echo 0` handles. Crucially the
+	# suite's OWN status is captured as $rc above and re-checked below, so a
+	# crashed suite cannot masquerade as "0 failures" — that is the safety net
+	# these two lines are allowed to lean on.
+	# shellcheck disable=SC2312
 	pass=$(echo "$output" | grep -oE '[0-9]+(/[0-9]+)?( tests?)? pass(ed)?' | head -1 | grep -oE '^[0-9]+' || echo "0")
+	# shellcheck disable=SC2312
 	fail=$(echo "$output" | grep -oE '[0-9]+( tests?)? fail(ed)?' | head -1 | grep -oE '^[0-9]+' || echo "0")
 	if [[ $rc -ne 0 && "$fail" == "0" ]]; then
 		fail=1
@@ -43,8 +50,28 @@ echo "╚═══════════════════════�
 # artifact rather than a stale one.
 echo ""
 echo "Building (ReleaseFast)..."
-"$SCRIPT_DIR/build" 2>&1 | tail -3 \
-	|| { echo "FATAL: build failed"; exit 1; }
+# Harness self-check FIRST: it needs no binary, and if the controls below
+# cannot fail, every subsequent "pass" in this run is unverified.
+if [[ -f "$SCRIPT_DIR/tests/test_harness_guards" ]]; then
+	run_suite "Harness Guards" "bash '$SCRIPT_DIR/tests/test_harness_guards'"
+fi
+
+# Masked-return-value gate for Bash and C. Zig rejects this class at compile
+# time; these two languages make it opt-in, so this is the opt-in.
+if [[ -f "$SCRIPT_DIR/tests/test_lint" ]]; then
+	run_suite "Lint (masked returns)" "nix develop -c bash '$SCRIPT_DIR/tests/test_lint'"
+fi
+
+# NOT `./build | tail -3 || fatal` — `||` would bind to the pipeline, whose
+# status is `tail`'s (always 0), so a failed build would slip through and the
+# suite would certify a stale binary. Capture first, then judge.
+build_log=$("$SCRIPT_DIR/build" 2>&1)
+build_rc=$?
+echo "$build_log" | tail -3
+if [[ $build_rc -ne 0 ]]; then
+	echo "FATAL: build failed"
+	exit 1
+fi
 
 # Zig unit tests — `--summary all` makes Zig emit "N/N tests passed"
 # which run_suite's grep can pick up.

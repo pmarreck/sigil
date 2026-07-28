@@ -36,10 +36,29 @@ done
 
 # Defined text symbols only. On Mach-O these carry a leading underscore, so the
 # patterns below tolerate one.
-defined_symbols() { "$NM" --defined-only "$1" 2>/dev/null | awk '$2 == "T" || $2 == "t" { print $3 }'; }
+#
+# `$NM` is checked SEPARATELY from the awk that filters it. Piping directly
+# would mask nm's exit status behind awk's, so a dead or wrong-arch nm would
+# yield an empty symbol list — and every "must NOT contain a signing symbol"
+# assertion below would pass vacuously, certifying an archive nobody read.
+# The positive assertions already catch this, but defence should not depend on
+# another check happening to be present.
+defined_symbols() {
+	local raw
+	if ! raw=$("$NM" --defined-only "$1" 2>/dev/null); then
+		echo "FATAL: '$NM --defined-only $1' failed; symbols were never inspected" >&2
+		exit 1
+	fi
+	awk '$2 == "T" || $2 == "t" { print $3 }' <<<"$raw"
+}
 
-verifier_syms=$(defined_symbols "$verifier")
-signer_syms=$(defined_symbols "$signer")
+# `|| exit 1` is REQUIRED, not decorative: defined_symbols runs inside a command
+# substitution, which is a subshell, so its `exit 1` ends only that subshell.
+# Without propagating the status here the script would continue with an empty
+# symbol list and every "must NOT contain" assertion would pass vacuously —
+# the exact class of bug this control exists to catch, one level up.
+verifier_syms=$(defined_symbols "$verifier") || exit 1
+signer_syms=$(defined_symbols "$signer") || exit 1
 
 # The verifier must define the whole verification surface...
 for sym in sigil_verify sigil_verify_envelope sigil_strerror sigil_version \
@@ -65,6 +84,9 @@ done
 # renamed rather than removed.
 for stem in keygen wrapKey unwrapKey argon2 Argon2; do
 	if grep -qi "$stem" <<<"$verifier_syms"; then
+		# SC2312 deliberate: diagnostic text built only on the failure path,
+		# where the assertion has already been decided by the `grep -qi` above.
+		# shellcheck disable=SC2312
 		fail "libsigil.a has no '$stem' symbol" \
 			"$(grep -i "$stem" <<<"$verifier_syms" | head -3 | tr '\n' ' ')"
 	else

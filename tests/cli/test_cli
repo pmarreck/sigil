@@ -80,7 +80,15 @@ assert_status 0 "--about exits 0" "$SIGIL" --about
 assert_stdout_matches '^sigil [0-9]+\.[0-9]+\.[0-9]+ .* \((linux|macos|windows|unknown)/(x86_64|aarch64|unknown)\)$' \
 	"--about is one line with version and platform/arch" "$SIGIL" --about
 
-about_lines=$("$SIGIL" --about 2>/dev/null | wc -l)
+# Capture the command's own status before counting lines: piping into `wc`
+# would mask a crash as "0 lines", which is a different failure wearing the
+# same clothes.
+about_out=$("$SIGIL" --about 2>/dev/null)
+about_rc=$?
+about_lines=$(printf '%s\n' "$about_out" | wc -l)
+if [[ $about_rc -ne 0 ]]; then
+	fail "--about exits successfully" "exit=$about_rc"
+fi
 if [[ "$about_lines" -eq 1 ]]; then pass "--about emits exactly one line"
 else fail "--about emits exactly one line" "got $about_lines lines"; fi
 
@@ -112,9 +120,14 @@ fi
 [[ -s "$KEY" ]] && pass "keygen wrote a non-empty keyfile" || fail "keygen wrote a non-empty keyfile"
 [[ -s "$PUB" ]] && pass "keygen wrote <keyfile>.pub alongside it" || fail "keygen wrote <keyfile>.pub alongside it"
 
+# SC2312 below is deliberate throughout this file where a command substitution
+# appears ONLY inside a `fail` diagnostic: the assertion has already been
+# decided by the `if`, so the snippet's exit status cannot change the verdict.
+# shellcheck disable=SC2312
 if grep -q '"sigil":"secret-key-v1"' "$KEY"; then pass "the keyfile declares its format version"
 else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
 
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 if grep -q '^sigil-pubkey-v1 ' "$PUB"; then pass "the public key file carries its prefix"
 else fail "the public key file carries its prefix" "$(head -c 120 "$PUB")"; fi
 
@@ -147,10 +160,12 @@ ENV="$WORK/license.sigil"
 assert_status 0 "sign produces an envelope" \
 	"$SIGIL" sign "$DOC" --key "$KEY" --passphrase-file "$PW" --out "$ENV"
 
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 if grep -q '"sigtype":"Ed25519"' "$ENV"; then pass "the envelope names its signature type"
 else fail "the envelope names its signature type" "$(head -c 200 "$ENV")"; fi
 
 # The whole point of printable-binary over base64: the payload stays readable.
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 if grep -q 'mecha' "$ENV"; then pass "the payload is still human-scannable in the envelope"
 else fail "the payload is still human-scannable in the envelope" "$(head -c 200 "$ENV")"; fi
 
@@ -159,6 +174,7 @@ assert_status 0 "verify accepts a genuine envelope" \
 
 # stdout is the authenticated payload, byte for byte, so it can be piped.
 "$SIGIL" verify "$ENV" --pubkey "$PUB" 2>/dev/null > "$WORK/out.toml"
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 if cmp -s "$DOC" "$WORK/out.toml"; then pass "verify emits the exact payload on stdout"
 else fail "verify emits the exact payload on stdout" "$(diff "$DOC" "$WORK/out.toml" | head -5)"; fi
 
@@ -266,7 +282,9 @@ assert_stdout_matches '^\{"verified":false,"code":-1,' \
 
 assert_stdout_empty "--quiet suppresses the payload" \
 	"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet
-if [[ -z "$("$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>&1)" ]]; then
+quiet_out=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>&1)
+quiet_rc=$?
+if [[ $quiet_rc -eq 0 && -z "$quiet_out" ]]; then
 	pass "--quiet suppresses status output too"
 else fail "--quiet suppresses status output too"; fi
 assert_status 0 "--quiet still reports success through the exit code" \
@@ -279,13 +297,24 @@ assert_status 1 "--quiet still reports failure through the exit code" \
 simple_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --simple 2>&1 >/dev/null)
 if [[ "$simple_err" == *"OK"* ]]; then pass "--simple uses ASCII marks"
 else fail "--simple uses ASCII marks" "$simple_err"; fi
-if LC_ALL=C grep -qP '[\x80-\xff]' <<<"$simple_err" 2>/dev/null; then
+# NOT `grep -P '[\x80-\xff]'` — PCRE matches CODE POINTS U+0080–U+00FF there,
+# not raw bytes, so it could not see ✓ (U+2713) or any emoji: exactly the
+# characters --simple exists to suppress. Verified empirically that the old
+# pattern missed "✓ verified" while this one catches it and does not
+# false-positive on plain ASCII. Tab is allowed through as legitimate ASCII.
+if LC_ALL=C grep -q $'[^\t -~]' <<<"$simple_err" 2>/dev/null; then
 	fail "--simple emits no non-ASCII bytes" "$simple_err"
 else pass "--simple emits no non-ASCII bytes"; fi
 
 # Piped output must never carry ANSI escapes even without --no-color.
-if [[ "$("$SIGIL" verify "$ENV" --pubkey "$PUB" 2>&1 >/dev/null)" == *$'\033'* ]]; then
-	fail "no ANSI escapes when stderr is not a terminal"
+# Capture status too: a crash produces no ANSI either, and would otherwise be
+# indistinguishable from correct behaviour.
+ansi_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" 2>&1 >/dev/null)
+ansi_rc=$?
+if [[ $ansi_rc -ne 0 ]]; then
+	fail "no ANSI escapes when stderr is not a terminal" "verify itself failed: exit=$ansi_rc"
+elif [[ "$ansi_err" == *$'\033'* ]]; then
+	fail "no ANSI escapes when stderr is not a terminal" "$ansi_err"
 else pass "no ANSI escapes when stderr is not a terminal"; fi
 assert_status 0 "--no-color is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-color
 assert_status 0 "--no-ansi is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-ansi
@@ -304,10 +333,22 @@ assert_status 64 "pubkey rejects an unknown --format" \
 	"$SIGIL" pubkey --key "$KEY" --format base64
 
 # Reading the public key never needs the passphrase.
-if [[ "$("$SIGIL" pubkey --key "$KEY" --format hex 2>/dev/null)" == \
-      "$("$SIGIL" pubkey --pubkey "$PUB" --format hex 2>/dev/null)" ]]; then
+# Both invocations must SUCCEED and yield something before comparing. Two
+# failed commands each emit "", and "" == "" would pass this test vacuously —
+# certifying agreement between two keys it never actually read. This is the
+# assertion that would notice a spliced keyfile, so it must not be able to
+# agree with itself about nothing.
+from_key=$("$SIGIL" pubkey --key "$KEY" --format hex 2>/dev/null)
+from_key_rc=$?
+from_pub=$("$SIGIL" pubkey --pubkey "$PUB" --format hex 2>/dev/null)
+from_pub_rc=$?
+if [[ $from_key_rc -eq 0 && $from_pub_rc -eq 0 && -n "$from_key" \
+      && "$from_key" == "$from_pub" ]]; then
 	pass "the keyfile and the .pub file agree on the key"
-else fail "the keyfile and the .pub file agree on the key"; fi
+else
+	fail "the keyfile and the .pub file agree on the key" \
+		"from --key: rc=$from_key_rc [$from_key] / from --pubkey: rc=$from_pub_rc [$from_pub]"
+fi
 
 # raw is exactly the key bytes — what an embedder wants to hash or memcmp.
 "$SIGIL" pubkey --key "$KEY" --format raw > "$WORK/raw.key" 2>/dev/null

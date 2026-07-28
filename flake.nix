@@ -190,6 +190,13 @@
             zigPkg
             pkgs.hyperfine
             pkgs.jq
+            # Linters for the masked-return-value class (tests/test_lint).
+            # Zig rejects unused return values at compile time; C and Bash
+            # make the same check opt-in, so these are that opt-in. The gate
+            # FAILS rather than skips when they are absent — a control that
+            # vanishes with its tool is indistinguishable from a clean repo.
+            pkgs.shellcheck
+            pkgs.clang-tools # clang-tidy: cert-err33-c
           ];
         };
       });

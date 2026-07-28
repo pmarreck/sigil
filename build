@@ -22,7 +22,16 @@ elif command -v nix >/dev/null 2>&1; then
 	run nix build "$@"
 	mkdir -p zig-out/bin zig-out/lib
 	run install -m755 result/bin/sigil zig-out/bin/sigil
-	[[ -e result/lib/libsigil.a ]] && run install -m644 result/lib/libsigil.a zig-out/lib/libsigil.a
+	# Install EVERY archive the flake produces. tests/test_no_signing_symbols
+	# inspects zig-out/lib, so an archive missing here is not a cosmetic gap:
+	# the control either cannot run at all on a fresh clone, or it certifies
+	# whatever stale bytes an earlier bare `zig build` happened to leave. Fail
+	# loudly rather than skipping, so the gap cannot go unnoticed again.
+	for lib in libsigil.a libsigil_sign.a; do
+		[[ -e "result/lib/$lib" ]] \
+			|| { echo "FAILED: nix build produced no result/lib/$lib" >&2; exit 1; }
+		run install -m644 "result/lib/$lib" "zig-out/lib/$lib"
+	done
 else
 	run zig build "-Doptimize=$optimize" "$@"
 fi

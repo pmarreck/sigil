@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Tests the TEST HARNESS ITSELF — the controls that decide whether every other
+# suite's "green" means anything.
+#
+# Why this file exists: on 2026-07-28 a review found `./test` ran
+# `./build 2>&1 | tail -3 || { echo FATAL; exit 1; }`. The `||` binds to the
+# PIPELINE, whose exit status is `tail`'s, which is always 0. A completely
+# broken build silently proceeded and the suite certified a STALE binary —
+# observed live as "209 passed" off an artifact nobody had just built.
+#
+# This is the same defect class as a `--help` flag that is documented but never
+# parsed: a control that is believed to bite, and does not. The fix is cheap;
+# the point of this file is that nothing detected it for weeks, so the property
+# gets a mechanical check rather than a promise.
+#
+# Per Mecha conventions: `set -u` only. `set -e` would abort on the very
+# non-zero exits these tests exist to assert on.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PASS=0
+FAIL=0
+
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	[[ $# -gt 1 ]] && printf '       %s\n' "$2" >&2
+	return 0
+}
+
+# Portable bounded run: a buggy ./test marches on into the real suites, so cap
+# it rather than waiting. Absence of the FATAL line is the failure signal
+# whether it exits or is killed.
+timeout_cmd=""
+for t in timeout gtimeout; do
+	command -v "$t" >/dev/null 2>&1 && { timeout_cmd="$t"; break; }
+done
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-harness-XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+
+# ── Control 1: a failed build must abort the suite ──────────────────────────
+# Stage a copy of ./test beside a `build` that always fails. ./test resolves
+# `build` via its own SCRIPT_DIR, so the stub is what it invokes.
+mkdir -p "$work/c1/tests"
+cp "$REPO_ROOT/test" "$work/c1/test"
+cat > "$work/c1/build" <<'STUB'
+#!/usr/bin/env bash
+echo "simulated compile error: expected ';', found '}'" >&2
+exit 1
+STUB
+chmod +x "$work/c1/build" "$work/c1/test"
+
+out=""
+if [[ -n "$timeout_cmd" ]]; then
+	out=$("$timeout_cmd" 60 "$work/c1/test" 2>&1)
+else
+	out=$("$work/c1/test" 2>&1)
+fi
+rc=$?
+
+if grep -q "FATAL: build failed" <<<"$out"; then
+	pass "failed build aborts the suite (FATAL emitted)"
+else
+	fail "failed build aborts the suite (FATAL emitted)" \
+		"./test continued past a failing build; every downstream 'pass' is certifying a stale artifact"
+fi
+
+if [[ $rc -ne 0 ]]; then
+	pass "failed build yields non-zero exit"
+else
+	fail "failed build yields non-zero exit" "got exit 0 from a build that could not compile"
+fi
+
+# ── Control 2: ./build must install every artifact the suite inspects ───────
+# tests/test_no_signing_symbols reads zig-out/lib. If ./build installs only
+# some archives, the control either cannot run on a fresh clone or — worse —
+# certifies whatever stale bytes happen to be lying there.
+missing=""
+for lib in libsigil.a libsigil_sign.a; do
+	grep -q "$lib" "$REPO_ROOT/build" || missing="$missing $lib"
+done
+if [[ -z "$missing" ]]; then
+	pass "./build installs every archive the symbol control inspects"
+else
+	fail "./build installs every archive the symbol control inspects" \
+		"never installed:$missing — tests/test_no_signing_symbols cannot run on a fresh clone"
+fi
+
+printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+exit "$FAIL"
