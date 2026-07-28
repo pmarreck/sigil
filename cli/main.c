@@ -34,6 +34,7 @@
 
 #include "sigil.h"
 #include "sigil_sign.h"
+#include "exit_codes.h"
 
 /* sysexits.h conventions, spelled out so scripts can rely on them. */
 #define EX_OK        0
@@ -248,7 +249,10 @@ static int usage(FILE *out) {
 		"Paths: '-' or '@stdin' reads standard input; '-', '@stdout' or '@stderr'\n"
 		"writes there. Anything after '--' is treated as a path, never a switch.\n"
 		"\n"
-		"Exit codes: 0 verified, 1 rejected, 64 usage, 66 missing input, 74 I/O.\n");
+		"Exit codes: 0 verified; 1 NOT AUTHENTIC (the signature does not check\n"
+		"out); 64 usage; 65 the input is not a well-formed envelope; 66 missing\n"
+		"input; 70 internal error; 74 I/O; 75 temporary failure, retry may work.\n"
+		"Only 1 ever means a document was rejected on its merits.\n");
 	return EX_USAGE;
 }
 
@@ -375,10 +379,19 @@ static int cmd_verify(int argc, char *argv[]) {
 		if (o.json) {
 			printf("{\"verified\":false,\"code\":%d,\"error\":\"%s\"}\n", r, sigil_strerror(r));
 		} else if (!quiet) {
-			fprintf(stderr, "%s%s%s %s: %s\n", C_BAD, mark_bad(), C_OFF,
-				o.positional, sigil_strerror(r));
+			/* Only say "not authentic" when that is what actually happened.
+			 * Anything else gets phrased as an inability to decide, because a
+			 * customer reading "FAILED" next to their paid licence will act on
+			 * it — and a transient allocation failure is not a forgery. */
+			if (r == SIGIL_ERR_BAD_SIGNATURE) {
+				fprintf(stderr, "%s%s%s %s: %s\n", C_BAD, mark_bad(), C_OFF,
+					o.positional, sigil_strerror(r));
+			} else {
+				fprintf(stderr, "sigil: could not verify %s: %s\n",
+					o.positional, sigil_strerror(r));
+			}
 		}
-		status = EX_REJECTED;
+		status = sigil_verify_exit_code(r);
 		goto done;
 	}
 

@@ -58,5 +58,29 @@ echo "$run_out" | grep -E '^  (ok|FAIL)' || true
 passed=$(grep -c '^  ok' <<<"$run_out")
 # +1 for the link check emitted above.
 passed=$((passed + 1))
-printf '\n%d passed, %d failed\n' "$passed" "$run_rc"
-exit "$run_rc"
+total_rc=$run_rc
+
+# The verify exit-code classifier. Header-only and pure, so it is tested
+# directly rather than by trying to induce a real allocation failure — which
+# would be untestable in practice and is exactly why the bug survived.
+ec_bin="$(mktemp "${TMPDIR:-/tmp}/sigil-exitcodes-XXXXXX")"
+trap 'rm -f "$bin" "$ec_bin"' EXIT
+
+ec_build=$("$CC" -std=c11 -Wall -Wextra \
+	-I "$REPO_ROOT/include" -I "$REPO_ROOT/cli" \
+	"$SCRIPT_DIR/conformance/exit_codes_test.c" -o "$ec_bin" 2>&1)
+if [[ $? -ne 0 ]]; then
+	echo "  FAIL exit-code classifier does not compile" >&2
+	echo "$ec_build" | sed 's/^/     /' >&2
+	total_rc=1
+else
+	ec_out=$("$ec_bin")
+	ec_rc=$?
+	grep -E '^  (ok|FAIL)' <<<"$ec_out" || true
+	ec_passed=$(grep -c '^  ok' <<<"$ec_out")
+	passed=$((passed + ec_passed))
+	[[ $ec_rc -ne 0 ]] && total_rc=1
+fi
+
+printf '\n%d passed, %d failed\n' "$passed" "$total_rc"
+exit "$total_rc"

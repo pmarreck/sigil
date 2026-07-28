@@ -209,6 +209,22 @@ else
 		"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB"
 fi
 
+# "Not authentic" and "could not decide" must be distinguishable from the
+# outside. Telling a paying customer their valid licence is forged because an
+# envelope was truncated in transit is the worst failure this tool has.
+printf 'not an envelope at all' > "$WORK/junk.sigil"
+assert_status 65 "a malformed envelope is a DATA error (65), not a forgery (1)" \
+	"$SIGIL" verify "$WORK/junk.sigil" --pubkey "$PUB"
+assert_stderr_matches 'could not verify' \
+	"a malformed envelope says 'could not verify', not 'FAILED'" \
+	"$SIGIL" verify "$WORK/junk.sigil" --pubkey "$PUB"
+
+# ...while a real forgery keeps saying so, in those words. Without this, the
+# fix above could be achieved by never accusing anything.
+assert_stderr_matches 'signature does not verify' \
+	"a real forgery still says the signature does not verify" \
+	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB"
+
 # A different key must not verify this envelope.
 printf 'other' > "$WORK/pw2"
 "$SIGIL" keygen --out "$WORK/other.key" --passphrase-file "$WORK/pw2" >/dev/null 2>&1
