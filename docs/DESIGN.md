@@ -141,6 +141,16 @@ trade at this price point.
 
 ## Key custody — decided 2026-07-28 (Peter)
 
+The keyfile stores **no public key** (removed 2026-07-30). It once did, so
+`sigil pubkey` could run without a passphrase — which meant anyone who could
+write the keyfile chose the key a developer would embed in a shipped product,
+and `sigil pubkey --key` is exactly the command the README told them to run.
+Peter's instruction was *"mechanically force it to be computed"*: the field is
+deleted rather than validated against the derived value, so the mistake is
+inexpressible rather than detected. The public key now comes from the decrypted
+seed, which costs a passphrase prompt on `--key`; the passphrase-free path is
+the sibling `.pub` file that `keygen` already writes.
+
 **The secret key lives in a passphrase-encrypted keyfile** (Argon2id →
 XChaCha20-Poly1305, both from Zig std, so no new dependency). The realistic
 threat is not a burglar; it is a backup, a synced folder, or a stray `tar` that

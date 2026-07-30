@@ -52,13 +52,19 @@ input (66) and I/O trouble (74).
 Embedding the key in a product:
 
 ```console
-$ sigil pubkey --key mecha.key --format zig
+$ sigil pubkey --pubkey mecha.key.pub --format zig
 pub const sigil_public_key: [32]u8 = .{
     0xe5, 0x35, 0x1e, 0xe4, ...
 };
 ```
 
 `--format` also takes `c`, `hex`, `raw` and `text`.
+
+`--pubkey <file>` reads the `.pub` file `keygen` wrote and needs no passphrase.
+`--key <keyfile>` also works but will prompt, because it derives the key by
+decrypting the secret. The keyfile deliberately stores no public key: when it
+did, anyone who could write that file chose which key you embedded in your
+shipped product.
 
 ## Shape
 

@@ -111,17 +111,29 @@ export fn sigil_seal(
     return copyOut(env, out, out_cap, n);
 }
 
-/// Read the public key out of a keyfile. Needs no passphrase, so publishing the
-/// key to embed in a product never involves touching the secret.
+/// Derive the public key from a keyfile. Requires the passphrase, because the
+/// key is computed from the decrypted seed rather than read from a field.
+///
+/// It used to take no passphrase and read a stored `public` value. That made
+/// the key a developer embeds in a shipped product attacker-controlled: anyone
+/// who could write the keyfile chose what `sigil pubkey` printed. The field is
+/// gone, so there is nothing left to splice.
 export fn sigil_keyfile_public_key(
     keyfile: ?[*]const u8,
     keyfile_len: usize,
+    passphrase: ?[*]const u8,
+    passphrase_len: usize,
     public_key_out: ?[*]u8,
 ) c_int {
     const kf = keyfile orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const pw = passphrase orelse return SIGIL_ERR_NULL_ARGUMENT;
     const out = public_key_out orelse return SIGIL_ERR_NULL_ARGUMENT;
 
-    const pk = sign.keyfilePublicKey(alloc, kf[0..keyfile_len]) catch |e| return errorToCode(e);
+    const pk = sign.keyfilePublicKey(
+        alloc,
+        kf[0..keyfile_len],
+        pw[0..passphrase_len],
+    ) catch |e| return errorToCode(e);
     @memcpy(out[0..pk.len], &pk);
     return SIGIL_OK;
 }
@@ -196,7 +208,7 @@ test "FFI: keygen, seal and verify are one working loop" {
     ));
 
     var pk: [32]u8 = undefined;
-    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&keyfile, keyfile_len, &pk));
+    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&keyfile, keyfile_len, "correct horse".ptr, "correct horse".len, &pk));
 
     const verified = try @import("lib.zig").verifyEnvelope(testing.allocator, env[0..env_len], &pk);
     defer testing.allocator.free(verified);
@@ -245,7 +257,7 @@ test "FFI: NULL arguments are rejected without trapping" {
         SIGIL_ERR_NULL_ARGUMENT,
         sigil_seal(null, 0, null, 0, null, 0, null, 0, &len),
     );
-    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_keyfile_public_key(null, 0, null));
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_keyfile_public_key(null, 0, null, 0, null));
 }
 
 test "FFI: a too-small buffer reports the required size instead of overflowing" {
@@ -298,7 +310,7 @@ test "keygen draws fresh randomness every time" {
 
     var a_pk: [32]u8 = undefined;
     var b_pk: [32]u8 = undefined;
-    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&a_buf, a_len, &a_pk));
-    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&b_buf, b_len, &b_pk));
+    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&a_buf, a_len, "same".ptr, 4, &a_pk));
+    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&b_buf, b_len, "same".ptr, 4, &b_pk));
     try testing.expect(!std.mem.eql(u8, &a_pk, &b_pk));
 }

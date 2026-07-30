@@ -124,7 +124,7 @@ fi
 # appears ONLY inside a `fail` diagnostic: the assertion has already been
 # decided by the `if`, so the snippet's exit status cannot change the verdict.
 # shellcheck disable=SC2312
-if grep -q '"sigil":"secret-key-v1"' "$KEY"; then pass "the keyfile declares its format version"
+if grep -q '"sigil":"secret-key-v2"' "$KEY"; then pass "the keyfile declares its format version"
 else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
 
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
@@ -338,23 +338,24 @@ assert_status 0 "--no-ansi is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" -
 # ── pubkey ──────────────────────────────────────────────────────────────────
 
 assert_stdout_matches '^sigil-pubkey-v1 ' "pubkey --key prints the text form" \
-	"$SIGIL" pubkey --key "$KEY"
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW"
 assert_stdout_matches '^[0-9a-f]{64}$' "pubkey --format hex prints 32 bytes of hex" \
-	"$SIGIL" pubkey --key "$KEY" --format hex
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format hex
 assert_stdout_matches 'SIGIL_PUBLIC_KEY\[32\]' "pubkey --format c emits an embeddable C array" \
-	"$SIGIL" pubkey --key "$KEY" --format c
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format c
 assert_stdout_matches 'sigil_public_key: \[32\]u8' "pubkey --format zig emits an embeddable Zig array" \
-	"$SIGIL" pubkey --key "$KEY" --format zig
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format zig
 assert_status 64 "pubkey rejects an unknown --format" \
-	"$SIGIL" pubkey --key "$KEY" --format base64
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format base64
 
-# Reading the public key never needs the passphrase.
+# Deriving from the keyfile now REQUIRES the passphrase; the sibling .pub
+# file is the passphrase-free path.
 # Both invocations must SUCCEED and yield something before comparing. Two
 # failed commands each emit "", and "" == "" would pass this test vacuously —
 # certifying agreement between two keys it never actually read. This is the
 # assertion that would notice a spliced keyfile, so it must not be able to
 # agree with itself about nothing.
-from_key=$("$SIGIL" pubkey --key "$KEY" --format hex 2>/dev/null)
+from_key=$("$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format hex 2>/dev/null)
 from_key_rc=$?
 from_pub=$("$SIGIL" pubkey --pubkey "$PUB" --format hex 2>/dev/null)
 from_pub_rc=$?
@@ -366,8 +367,43 @@ else
 		"from --key: rc=$from_key_rc [$from_key] / from --pubkey: rc=$from_pub_rc [$from_pub]"
 fi
 
+# Deriving from the keyfile means decrypting it, so a wrong passphrase must be
+# refused rather than answered.
+assert_status 1 "pubkey --key with the wrong passphrase is refused" \
+	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$WORK/pw2"
+# ...while the sibling .pub file remains the passphrase-free path.
+assert_status 0 "pubkey --pubkey needs no passphrase" \
+	"$SIGIL" pubkey --pubkey "$PUB" --format hex
+
+# THE SPLICE, which is why the passphrase is now required.
+#
+# `sigil pubkey --key` is the command the README tells you to run to obtain the
+# key you embed in a shipped product. While the keyfile carried a `public`
+# field, anyone who could write that file chose that key — and the developer
+# would ship it. The field is gone; splicing one back in must change nothing,
+# because the answer comes from the decrypted secret.
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+if grep -q '"public"' "$KEY"; then
+	fail "the keyfile carries no public key to splice" "$(head -c 200 "$KEY")"
+else
+	pass "the keyfile carries no public key to splice"
+fi
+
+sed 's/}$/,"public":"XXXX"}/' "$KEY" > "$WORK/spliced.key"
+spliced_out=$("$SIGIL" pubkey --key "$WORK/spliced.key" --passphrase-file "$PW" --format hex 2>/dev/null)
+spliced_rc=$?
+honest_out=$("$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format hex 2>/dev/null)
+honest_rc=$?
+if [[ $spliced_rc -eq 0 && $honest_rc -eq 0 && -n "$honest_out" \
+      && "$spliced_out" == "$honest_out" ]]; then
+	pass "a spliced public field does not change the key that is printed"
+else
+	fail "a spliced public field does not change the key that is printed" \
+		"honest: rc=$honest_rc [$honest_out] / spliced: rc=$spliced_rc [$spliced_out]"
+fi
+
 # raw is exactly the key bytes — what an embedder wants to hash or memcmp.
-"$SIGIL" pubkey --key "$KEY" --format raw > "$WORK/raw.key" 2>/dev/null
+"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format raw > "$WORK/raw.key" 2>/dev/null
 raw_size=$(wc -c < "$WORK/raw.key")
 if [[ "$raw_size" -eq 32 ]]; then pass "pubkey --format raw emits exactly 32 bytes"
 else fail "pubkey --format raw emits exactly 32 bytes" "got $raw_size"; fi

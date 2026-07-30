@@ -527,9 +527,9 @@ static int cmd_keygen(int argc, char *argv[]) {
 	if (status != EX_OK) goto done;
 
 	unsigned char pk[64];
-	r = sigil_keyfile_public_key(keyfile, keyfile_len, pk);
+	r = sigil_keyfile_public_key(keyfile, keyfile_len, pass, pass_len, pk);
 	if (r != SIGIL_OK) {
-		fprintf(stderr, "sigil: wrote %s but could not read its public key: %s\n",
+		fprintf(stderr, "sigil: wrote %s but could not derive its public key: %s\n",
 			key_path, sigil_sign_strerror(r));
 		status = EX_IOERR;
 		goto done;
@@ -587,14 +587,27 @@ static int cmd_pubkey(int argc, char *argv[]) {
 
 	unsigned char pk[64];
 	int r;
-	if (o.key) r = sigil_keyfile_public_key((const char *)raw, raw_len, pk);
-	else r = sigil_public_key_from_text((const char *)raw, raw_len, pk);
+	if (o.key) {
+		/* Deriving the key from a keyfile means decrypting it. That is the
+		 * point: the alternative was a stored field anyone who could write the
+		 * file could swap, which decided what a developer embedded in a shipped
+		 * product. Reading the sibling .pub file still needs no passphrase. */
+		char *pass = NULL;
+		size_t pass_len = 0;
+		rc = obtain_passphrase(o.passphrase_file, "Passphrase: ", &pass, &pass_len);
+		if (rc != EX_OK) { free(raw); return rc; }
+		r = sigil_keyfile_public_key((const char *)raw, raw_len, pass, pass_len, pk);
+		wipe(pass, pass_len);
+		free(pass);
+	} else {
+		r = sigil_public_key_from_text((const char *)raw, raw_len, pk);
+	}
 
 	if (r != SIGIL_OK) {
 		fprintf(stderr, "sigil: cannot read a public key from %s: %s\n", src,
 			o.key ? sigil_sign_strerror(r) : sigil_strerror(r));
 		free(raw);
-		return EX_USAGE;
+		return (o.key && r == SIGIL_ERR_AUTH_FAILED) ? EX_REJECTED : EX_USAGE;
 	}
 	free(raw);
 

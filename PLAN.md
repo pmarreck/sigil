@@ -148,14 +148,17 @@ linking, running or disassembling — none are speculative.
       malformed input is 65, OOM is 75, unknown codes are 70. Both directions
       pinned, so "never accuse anything" cannot pass. — 2026-07-28 19:18 EDT
 
+- [x] **Keyfile `public` field deleted** (queue item 2). Red phase first: with
+      the field present, splicing an attacker's value made `sigil pubkey --key`
+      print the attacker's key — the exact key the README says to embed in a
+      shipped product. Now removed, not validated; format bumped to
+      `secret-key-v2`; public key derived from the decrypted seed; dropped from
+      the AAD (it cannot be bound when it must be derived after decryption).
+      Re-ran the original attack against the fixed binary: splicing a `public`
+      field back in changes nothing. Cost, accepted: `pubkey --key` prompts;
+      `pubkey --pubkey` (the sibling `.pub`) still does not. — 2026-07-30 12:15 EDT
+
 ### Critical, still open
-- [ ] **Delete the keyfile's `public` field** (queue item 2). Peter:
-      *"Mechanically force it to be computed!"* Remove the field, do not
-      validate it. Note the consequence: `sigil pubkey --key` will then need
-      the passphrase, since the key must come from the decrypted seed. The
-      passphrase-free path stays available via the sibling `.pub` file.
-      Also drop the public key from the AAD — it cannot be bound if it must be
-      derived after decryption.
 - [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
       `sigil verify --help` → `unknown option`, exit 64.
 - [ ] **`verify` reports transient OOM as a forged license** — collapses every

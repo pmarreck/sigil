@@ -72,18 +72,31 @@ pub fn seal(
 // Format (one line, same printable-binary-in-JSON shape as an envelope so the
 // same eyes and the same tools work on both):
 //
-//   {"sigil":"secret-key-v1","kdf":"Argon2id","t":3,"m":65536,"p":1,
-//    "salt":"…","nonce":"…","ciphertext":"…","public":"…"}
+//   {"sigil":"secret-key-v2","kdf":"Argon2id","t":3,"m":65536,"p":1,
+//    "salt":"…","nonce":"…","ciphertext":"…"}
 //
-// The KDF parameters, the salt and the public key sit outside the ciphertext,
-// so they are bound as AEAD associated data. Without that, an attacker who can
-// write to the file could downgrade `t`/`m` to 1 and make an offline attack on
-// the passphrase cheap, and the reader would happily go along with it.
+// There is deliberately NO `public` field. It existed so `sigil pubkey` could
+// run without a passphrase — which made the key a developer embeds in a shipped
+// product attacker-controlled: splice one value, and they publish the attacker's
+// key instead of their own. It is REMOVED rather than validated against the
+// derived key, because a validation can be skipped by a later edit while a
+// field that does not exist cannot be spliced at all. The public key is now
+// derived from the decrypted seed, which is the only thing that can vouch for
+// it. Cost, accepted deliberately: `sigil pubkey --key` needs the passphrase.
+// The passphrase-free path is the sibling `.pub` file `keygen` already writes.
+//
+// The KDF parameters and the salt sit outside the ciphertext, so they are bound
+// as AEAD associated data. Without that, an attacker who can write to the file
+// could downgrade `t`/`m` to 1 and make an offline attack on the passphrase
+// cheap, and the reader would happily go along with it.
 
 pub const salt_len = 16;
 pub const nonce_len = XChaCha20Poly1305.nonce_length;
 pub const tag_len = XChaCha20Poly1305.tag_length;
-pub const keyfile_version = "secret-key-v1";
+/// Bumped for the v2 format (no `public` field, and a correspondingly shorter
+/// AAD). A v1 keyfile would otherwise fail with `AuthenticationFailed` — an
+/// alarming and misleading way to say "written by a different sigil".
+pub const keyfile_version = "secret-key-v2";
 pub const kdf_name = "Argon2id";
 
 pub const KdfParams = struct {
@@ -123,7 +136,6 @@ const KeyfileWire = struct {
     salt: []const u8,
     nonce: []const u8,
     ciphertext: []const u8,
-    public: []const u8,
 };
 
 /// Encrypt `seed` under `passphrase`. `salt` and `nonce` are parameters rather
@@ -137,14 +149,12 @@ pub fn wrapKey(
     nonce: *const [nonce_len]u8,
     params: KdfParams,
 ) (KeyfileError || SignError || std.mem.Allocator.Error || envelope.WriteError)![]u8 {
-    const kp = try keyPairFromSeed(seed);
-
     var key: [XChaCha20Poly1305.key_length]u8 = undefined;
     defer std.crypto.secureZero(u8, &key);
     try deriveKey(allocator, &key, passphrase, salt, params);
 
     var aad_buf: [aad_len]u8 = undefined;
-    const aad = buildAad(&aad_buf, params, salt, &kp.public_key);
+    const aad = buildAad(&aad_buf, params, salt);
 
     var blob: [seed_len + tag_len]u8 = undefined;
     XChaCha20Poly1305.encrypt(
@@ -162,15 +172,13 @@ pub fn wrapKey(
     defer allocator.free(nonce_enc);
     const blob_enc = try pb.encode(allocator, &blob, .{});
     defer allocator.free(blob_enc);
-    const public_enc = try pb.encode(allocator, &kp.public_key, .{});
-    defer allocator.free(public_enc);
 
     return std.fmt.allocPrint(
         allocator,
         "{{\"sigil\":\"" ++ keyfile_version ++ "\",\"kdf\":\"" ++ kdf_name ++ "\"," ++
             "\"t\":{d},\"m\":{d},\"p\":{d}," ++
-            "\"salt\":\"{s}\",\"nonce\":\"{s}\",\"ciphertext\":\"{s}\",\"public\":\"{s}\"}}\n",
-        .{ params.t, params.m, params.p, salt_enc, nonce_enc, blob_enc, public_enc },
+            "\"salt\":\"{s}\",\"nonce\":\"{s}\",\"ciphertext\":\"{s}\"}}\n",
+        .{ params.t, params.m, params.p, salt_enc, nonce_enc, blob_enc },
     );
 }
 
@@ -188,11 +196,9 @@ pub fn unwrapKey(
     var salt: [salt_len]u8 = undefined;
     var nonce: [nonce_len]u8 = undefined;
     var blob: [seed_len + tag_len]u8 = undefined;
-    var public_key: [core.public_key_len]u8 = undefined;
     try decodeExact(allocator, w.salt, &salt);
     try decodeExact(allocator, w.nonce, &nonce);
     try decodeExact(allocator, w.ciphertext, &blob);
-    try decodeExact(allocator, w.public, &public_key);
 
     const params: KdfParams = .{ .t = w.t, .m = w.m, .p = w.p };
     var key: [XChaCha20Poly1305.key_length]u8 = undefined;
@@ -200,7 +206,7 @@ pub fn unwrapKey(
     try deriveKey(allocator, &key, passphrase, &salt, params);
 
     var aad_buf: [aad_len]u8 = undefined;
-    const aad = buildAad(&aad_buf, params, &salt, &public_key);
+    const aad = buildAad(&aad_buf, params, &salt);
 
     var seed: [seed_len]u8 = undefined;
     XChaCha20Poly1305.decrypt(
@@ -214,19 +220,25 @@ pub fn unwrapKey(
     return seed;
 }
 
-/// Read the public key out of a keyfile without the passphrase, so `sigil
-/// pubkey` can print the value to embed in a product without touching the
-/// secret. The value is unauthenticated on its own — anyone editing the file
-/// makes `unwrapKey` fail, which is where it matters.
+/// Derive the public key from a keyfile — by decrypting it, which is why the
+/// passphrase is required.
+///
+/// It used to be read straight out of a `public` field with no passphrase, and
+/// that was a real vulnerability rather than a theoretical one: `sigil pubkey
+/// --key` is the command the README tells you to run to obtain the key you
+/// embed in a shipped product, so anyone who could write the keyfile chose that
+/// key. The field is gone. Deriving from the decrypted seed means the only
+/// thing that can vouch for the public key is the secret it belongs to.
 pub fn keyfilePublicKey(
     allocator: std.mem.Allocator,
     keyfile_json: []const u8,
-) (KeyfileError || std.mem.Allocator.Error)![core.public_key_len]u8 {
-    const parsed = try parseKeyfile(allocator, keyfile_json);
-    defer parsed.deinit();
-    var public_key: [core.public_key_len]u8 = undefined;
-    try decodeExact(allocator, parsed.value.public, &public_key);
-    return public_key;
+    passphrase: []const u8,
+) (KeyfileError || SignError || std.mem.Allocator.Error)![core.public_key_len]u8 {
+    var seed = try unwrapKey(allocator, keyfile_json, passphrase);
+    defer std.crypto.secureZero(u8, &seed);
+    var kp = try keyPairFromSeed(&seed);
+    defer std.crypto.secureZero(u8, &kp.secret_key);
+    return kp.public_key;
 }
 
 fn parseKeyfile(
@@ -293,16 +305,18 @@ fn deriveKey(
 }
 
 const aad_prefix = "sigil-" ++ keyfile_version;
-const aad_len = aad_prefix.len + 4 + 4 + 4 + salt_len + core.public_key_len;
+const aad_len = aad_prefix.len + 4 + 4 + 4 + salt_len;
 
 /// Everything outside the ciphertext that must not be alterable, laid out
 /// identically by the writer and the reader. Fixed-width fields, so no
 /// delimiter can be smuggled between them.
+/// The public key is deliberately absent. It is no longer a field, and it could
+/// not be bound here even if we wanted to: it is derived from the seed, which
+/// is only available AFTER the decryption this AAD authenticates.
 fn buildAad(
     buf: *[aad_len]u8,
     params: KdfParams,
     salt: *const [salt_len]u8,
-    public_key: *const [core.public_key_len]u8,
 ) []const u8 {
     var w: usize = 0;
     @memcpy(buf[w..][0..aad_prefix.len], aad_prefix);
@@ -315,8 +329,6 @@ fn buildAad(
     w += 4;
     @memcpy(buf[w..][0..salt_len], salt);
     w += salt_len;
-    @memcpy(buf[w..][0..core.public_key_len], public_key);
-    w += core.public_key_len;
     return buf[0..w];
 }
 
@@ -496,8 +508,10 @@ test "every authenticated keyfile field is bound: tampering with any of them fai
     // the text usually lands mid-glyph and gets caught as invalid UTF-8, which
     // passes the test for the wrong reason and would hide a missing AAD
     // binding. (That path is worth having too — see the test below.)
+    // No "public" here: the field was deleted outright rather than bound, so
+    // there is nothing left to tamper with. See the splice tests below.
     const byte_fields = [_][]const u8{
-        "\"salt\":\"", "\"nonce\":\"", "\"ciphertext\":\"", "\"public\":\"",
+        "\"salt\":\"", "\"nonce\":\"", "\"ciphertext\":\"",
     };
     for (byte_fields) |marker| {
         const bad = try mutateEncodedField(a, file, marker);
@@ -517,8 +531,16 @@ fn mutateEncodedField(
     file: []const u8,
     marker: []const u8,
 ) ![]u8 {
-    const start = std.mem.indexOf(u8, file, marker).? + marker.len;
-    const end = start + std.mem.indexOfScalar(u8, file[start..], '"').?;
+    // Not `.?`: in ReleaseFast an unwrapped null is undefined behaviour, so a
+    // marker that no longer exists silently indexes garbage and the assertion
+    // fails for a reason unrelated to what it is testing. Ask loudly instead.
+    const found = std.mem.indexOf(u8, file, marker) orelse {
+        std.debug.print("no field '{s}' in the keyfile to mutate\n", .{marker});
+        return error.TestUnexpectedResult;
+    };
+    const start = found + marker.len;
+    const end = start + (std.mem.indexOfScalar(u8, file[start..], '"') orelse
+        return error.TestUnexpectedResult);
 
     const decoded = try pb.decode(allocator, file[start..end], .{});
     defer allocator.free(decoded);
@@ -543,16 +565,67 @@ test "a keyfile corrupted mid-glyph is refused as malformed, not decoded blindly
     try testing.expectError(error.MalformedKeyfile, unwrapKey(a, bad, "pass"));
 }
 
-test "the public key is readable without the passphrase" {
-    // So `sigil pubkey` can print the key to embed in a product without ever
-    // asking for, or touching, the secret.
+test "the keyfile carries no public key to splice" {
+    // The field used to exist so `sigil pubkey` could run without a passphrase.
+    // That made the key the README tells you to embed in a shipped product
+    // attacker-controlled: splice one value, and the developer publishes the
+    // attacker's key. Peter's instruction was "mechanically force it to be
+    // computed" — so the field is GONE, not validated. A check can be skipped
+    // by a later edit; a field that does not exist cannot be spliced.
+    const a = testing.allocator;
+    const file = try wrapKey(a, &test_seed, "secret", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+
+    try testing.expect(std.mem.indexOf(u8, file, "\"public\"") == null);
+}
+
+test "the public key is derived from the decrypted secret" {
     const a = testing.allocator;
     const kp = try keyPairFromSeed(&test_seed);
     const file = try wrapKey(a, &test_seed, "secret", &test_salt, &test_nonce, cheap);
     defer a.free(file);
 
-    const got = try keyfilePublicKey(a, file);
+    const got = try keyfilePublicKey(a, file, "secret");
     try testing.expectEqualSlices(u8, &kp.public_key, &got);
+}
+
+test "reading the public key now requires the passphrase" {
+    // The cost of the fix, asserted so it is a decision rather than a surprise.
+    // The passphrase-free path still exists — `keygen` writes a sibling .pub —
+    // it just is not the keyfile.
+    const a = testing.allocator;
+    const file = try wrapKey(a, &test_seed, "secret", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+
+    try testing.expectError(error.AuthenticationFailed, keyfilePublicKey(a, file, "wrong"));
+}
+
+test "splicing a public field back in does not change the answer" {
+    // Unknown fields are deliberately ignored for forward compatibility, so an
+    // attacker can still WRITE `"public":"…"` into a keyfile. This proves it
+    // buys them nothing: the value is never read, so the attack has no surface
+    // rather than a defended one.
+    const a = testing.allocator;
+    const honest = try keyPairFromSeed(&test_seed);
+    const attacker_seed: [seed_len]u8 = @splat(0x77);
+    const attacker = try keyPairFromSeed(&attacker_seed);
+
+    const file = try wrapKey(a, &test_seed, "secret", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+
+    const attacker_enc = try pb.encode(a, &attacker.public_key, .{});
+    defer a.free(attacker_enc);
+
+    // Splice: insert the field just before the closing brace.
+    const close = std.mem.lastIndexOfScalar(u8, file, '}').?;
+    const spliced = try std.mem.concat(a, u8, &.{
+        file[0..close], ",\"public\":\"", attacker_enc, "\"", file[close..],
+    });
+    defer a.free(spliced);
+
+    const got = try keyfilePublicKey(a, spliced, "secret");
+    try testing.expectEqualSlices(u8, &honest.public_key, &got);
+    try testing.expect(!std.mem.eql(u8, &attacker.public_key, &got));
 }
 
 test "different salt or nonce yields different ciphertext for the same seed" {
