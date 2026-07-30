@@ -43,6 +43,11 @@
 #define EX_NOINPUT   66
 #define EX_IOERR     74
 
+/* Internal sentinel, never a process exit code: the parser handled --help or
+ * --about itself and the subcommand should stop without doing any work. Kept
+ * negative so it cannot collide with a real sysexits value. */
+#define EX_HELP_REQUESTED (-1)
+
 #define MAX_INPUT (16u * 1024u * 1024u)   /* a license is bytes; this is mercy */
 
 /* ── Presentation ───────────────────────────────────────────────────────── */
@@ -318,6 +323,18 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 		if (!no_more_switches && strcmp(a, "--") == 0) { no_more_switches = 1; continue; }
 
 		if (!no_more_switches && a[0] == '-' && a[1] != '\0' && strcmp(a, "-") != 0) {
+			/* Recognised on EVERY subcommand, not just as argv[1]. The help
+			 * text advertises them under "Common options:", and someone typing
+			 * --help is asking how to use the thing — answering "you used it
+			 * wrong" would be both unhelpful and circular. Handled before any
+			 * required-option check for the same reason. */
+			if (!strcmp(a, "-h") || !strcmp(a, "--help") || !strcmp(a, "-?")) {
+				usage(stdout);
+				return EX_HELP_REQUESTED;
+			}
+			if (!strcmp(a, "--about")) { about(); return EX_HELP_REQUESTED; }
+			if (!strcmp(a, "--version")) { printf("%s\n", sigil_version()); return EX_HELP_REQUESTED; }
+
 			if (!strcmp(a, "--pubkey"))              { NEEDS_VALUE(a); o->pubkey = argv[++i]; }
 			else if (!strcmp(a, "--key") || !strcmp(a, "-k")) { NEEDS_VALUE(a); o->key = argv[++i]; }
 			else if (!strcmp(a, "--out") || !strcmp(a, "-o")) { NEEDS_VALUE(a); o->out = argv[++i]; }
@@ -344,6 +361,7 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 static int cmd_verify(int argc, char *argv[]) {
 	Opts o = {0};
 	int rc = parse_opts(argc, argv, 2, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
 
 	if (!o.positional) { die_usage("verify needs an envelope path (use '-' for stdin)", NULL); return EX_USAGE; }
@@ -422,6 +440,7 @@ done:
 static int cmd_sign(int argc, char *argv[]) {
 	Opts o = {0};
 	int rc = parse_opts(argc, argv, 2, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
 
 	if (!o.positional) { die_usage("sign needs a payload path (use '-' for stdin)", NULL); return EX_USAGE; }
@@ -478,6 +497,7 @@ done:
 static int cmd_keygen(int argc, char *argv[]) {
 	Opts o = {0};
 	int rc = parse_opts(argc, argv, 2, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
 
 	const char *key_path = o.out ? o.out : o.positional;
@@ -575,6 +595,7 @@ static void emit_byte_array(const char *decl, const unsigned char *pk, size_t n,
 static int cmd_pubkey(int argc, char *argv[]) {
 	Opts o = {0};
 	int rc = parse_opts(argc, argv, 2, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
 
 	const char *src = o.key ? o.key : (o.pubkey ? o.pubkey : o.positional);

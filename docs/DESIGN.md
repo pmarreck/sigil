@@ -76,19 +76,79 @@ Keys `[a-z0-9_]+`, values UTF-8 strings, **the application interprets them**.
 Byte order is the only ordering, which is unambiguous by construction because
 Peter generates every key.
 
+**Authority:** `Obsidian Vaults/Peter Marreck/Professional/Mecha LLC/MECHA_RELEASE_PLAN.md`,
+"License key model". sigil's earlier examples predated that document and used
+different names for the same concepts; Peter's call (2026-07-30) is that the
+spec's names win. This matters more than it looks: sigil signs exact bytes, so
+renaming a key after licence #1 is issued means a legacy parse path forever, or
+reissuing every licence.
+
 ```toml
-email = "..."
-issued = "2026-07-27"
+customer_email = "peter@example.com"
+customer_name_canonical = "peter marreck"
+expiry = "2027-07-30"          # optional for a sale; REQUIRED for a beta token
 max_major = "1"
 offline_days = "365"
-order = "pdl_01J8XYZ"
+payment_provider = "paddle"
+payment_ref = "txn_01J8XYZ"
 product = "mecha-validate"
+purchase_date = "2026-07-30"
 v = "1"
 ```
+
+Renamed from sigil's placeholder examples: `email` → `customer_email`,
+`issued` → `purchase_date`, `order` → the payment pair below. Added:
+`customer_name_canonical`, which the spec requires for activation-time identity
+matching (the user types email *and* name; the app checks both against the
+token's canonical form — lowercase, punctuation stripped, whitespace collapsed).
+
+**One deliberate deviation from the spec, at Peter's prompting.** The spec says
+`paddle_transaction_id`. Paddle is a vendor, not a domain concept, and Paddle
+Billing already forced one rethink by not issuing licence keys at all — so
+naming a signed, immutable field after it is a bet. But a generic
+`payment_provider_transaction_id` loses something real: after a migration, old
+licences genuinely *do* hold Paddle references, and a generic name would make a
+Stripe ID and a Paddle ID indistinguishable.
+
+Both concerns are satisfied by moving the vendor out of the key and into a
+value:
+
+```toml
+payment_provider = "paddle"
+payment_ref = "txn_01J8XYZ"
+```
+
+The key names never need to change; provenance is recorded per licence, so a
+2026 token still says `paddle` and a 2028 one says whatever replaced it; and
+nothing is ever mislabelled. Two short keys instead of one long inaccurate one.
 
 `offline_days` is data rather than a constant in two codebases so the window can
 be widened for a customer with a genuinely air-gapped machine without shipping a
 new build. See the revocation section below for what consumes it.
+
+**Still undecided — do not invent it:** `features`, the entitlement lever for
+the capability tiers (detection always free; repair/creation licence-gated).
+Its shape is a product decision Peter has not made, so the example above omits
+it rather than guessing. The example envelope in `README.md` stays on the old
+placeholder names until `features` is settled, because regenerating it means
+signing a payload we would then have to change again.
+
+## Beta tokens — decided 2026-07-30 (Peter)
+
+The release plan lists the pre-launch beta mechanism as "`BETA-{N}` license
+tokens … free perpetual license". **Peter's decision supersedes that: beta
+tokens must not survive forever.** They carry a mandatory `expiry`.
+
+The reasoning is the same one that makes them attractive to forge in the first
+place. A perpetual token that bypasses trial and refund logic is the single
+highest-value target in the scheme — it is worth more to an attacker than any
+paid licence, because it never expires and never gets revoked by a chargeback.
+Bounding its lifetime turns a permanent compromise into a dated one.
+
+Note this is a payload-level rule, not a sigil-level one: sigil verifies opaque
+bytes and has no opinion about `expiry`. The apps enforce it. But an expiry the
+apps ignore is decoration, so the beta path deserves its own red-team pass
+before the programme runs.
 
 `max_major` makes the commercial rule (same major = free upgrade, major bump =
 paid) a property of the data rather than server logic.

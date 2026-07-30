@@ -158,6 +158,29 @@ linking, running or disassembling — none are speculative.
       field back in changes nothing. Cost, accepted: `pubkey --key` prompts;
       `pubkey --pubkey` (the sibling `.pub`) still does not. — 2026-07-30 12:15 EDT
 
+- [x] **Payload schema reconciled** against the locked spec (authority:
+      `Obsidian Vaults/…/Mecha LLC/MECHA_RELEASE_PLAN.md`, "License key model").
+      Peter's call: the spec's names win. `email` → `customer_email`,
+      `issued` → `purchase_date`, plus `customer_name_canonical` for
+      activation-time identity matching. One deliberate deviation at Peter's
+      prompting: `paddle_transaction_id` → `payment_provider` + `payment_ref`,
+      so a vendor name never sits inside a signed immutable key while
+      per-licence provenance is still recorded. — 2026-07-30 15:20 EDT
+- [x] **Beta tokens must not survive forever** (Peter, 2026-07-30). Supersedes
+      the release plan's "free perpetual license". Mandatory `expiry`. A
+      perpetual token that bypasses trial and refund logic is worth more to an
+      attacker than any paid licence. — 2026-07-30 15:20 EDT
+
+### Blocked on Peter
+- [ ] **`features` shape** — the entitlement lever for the capability tiers
+      (detection free; repair/creation gated). Deliberately not invented. The
+      README's example envelope stays on the old placeholder names until this
+      lands, since regenerating it means signing a payload we would then have
+      to change again.
+- [ ] The release plan needs both decisions above written back into it —
+      Einstein's call, not mine; it is a business document with an existing
+      documented precedence problem (the two-app vs three-app bundle price).
+
 ### Critical, still open
 - [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
       `sigil verify --help` → `unknown option`, exit 64.

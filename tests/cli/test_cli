@@ -96,6 +96,23 @@ else fail "--about emits exactly one line" "got $about_lines lines"; fi
 # not a diagnostic. Usage-on-error goes to stderr instead (checked below).
 assert_stdout_matches 'Usage: sigil' "--help writes usage to stdout" "$SIGIL" --help
 
+# The canonical brief requires -h/--help and --about on every CLI, and the help
+# text advertises them under "Common options:" — but they were parsed only as
+# argv[1], so `sigil verify --help` exited 64 "unknown option". It is the first
+# thing an evaluating developer types.
+for sub in verify sign keygen pubkey; do
+	assert_status 0 "$sub --help exits 0" "$SIGIL" "$sub" --help
+	assert_status 0 "$sub -h exits 0" "$SIGIL" "$sub" -h
+	assert_status 0 "$sub --about exits 0" "$SIGIL" "$sub" --about
+	assert_stdout_matches 'Usage: sigil' "$sub --help writes usage to stdout" \
+		"$SIGIL" "$sub" --help
+done
+
+# Help wins over a malformed rest-of-command: someone typing --help is asking
+# how to use it, and answering "you used it wrong" is unhelpful and circular.
+assert_status 0 "--help wins even with the required options missing" \
+	"$SIGIL" verify --help
+
 assert_status 64 "no arguments exits 64 (EX_USAGE)" "$SIGIL"
 assert_status 64 "unknown command exits 64 (EX_USAGE)" "$SIGIL" definitely-not-a-command
 assert_stderr_matches 'unknown command' "unknown command explains itself on stderr" \
