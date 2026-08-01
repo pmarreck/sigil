@@ -170,7 +170,7 @@
             inherit version;
             src = ./.;
             nativeBuildInputs = with pkgs; [
-              bash coreutils gnugrep gnused diffutils
+              bash coreutils gnugrep gnused diffutils jq
             ];
             dontConfigure = true;
             dontFixup = true;

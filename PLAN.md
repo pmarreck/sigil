@@ -203,9 +203,17 @@ linking, running or disassembling — none are speculative.
       supplies compiler-rt silently, which is why nobody noticed.
 - [ ] Keyfile written 0644 under default umask + TOCTOU in the clobber probe.
       One `open(..., O_CREAT|O_EXCL, 0600)` fixes both.
-- [ ] `--json` emits invalid JSON (unescaped `"` from `sigil_strerror`).
-- [ ] `--quiet` discards the authenticated payload and exits 0, contradicting
-      both `--help` and README. The CLI test pins the wrong contract.
+- [x] `--json` emitted invalid JSON. `sigil_strerror` was spliced into a JSON
+      string literal unescaped, and `sigtype is not "Ed25519"` broke the
+      output at exactly the moment a consumer most needs to read the reason.
+      `cli/json.h` (RFC 8259 escaping, header-only so it is testable), swept
+      over all 256 byte values plus every strerror message, and every `--json`
+      path in the CLI suite now goes through **jq** as the parse oracle.
+      — 2026-08-01 02:10 EDT
+- [x] `--quiet` no longer discards the authenticated payload. It means "no
+      status output", per both `--help` and the README; the payload is data on
+      stdout and the status is commentary on stderr. The old CLI test pinned
+      the wrong contract and was rewritten first. — 2026-08-01 02:12 EDT
 - [ ] **The suite cannot detect FFI leaks** — proven by mutation: deleting
       `defer c_allocator.free(payload)` still gives 124/124. The FFI hardcodes
       `c_allocator`, so `testing.allocator` never covers it.

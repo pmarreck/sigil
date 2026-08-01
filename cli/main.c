@@ -37,6 +37,7 @@
 #include "sigil.h"
 #include "sigil_sign.h"
 #include "exit_codes.h"
+#include "json.h"
 
 /* sysexits.h conventions, spelled out so scripts can rely on them. */
 #define EX_OK        0
@@ -429,7 +430,9 @@ static int cmd_verify(int argc, char *argv[]) {
 
 	if (r != SIGIL_OK) {
 		if (o.json) {
-			printf("{\"verified\":false,\"code\":%d,\"error\":\"%s\"}\n", r, sigil_strerror(r));
+			char esc[512];
+			sigil_json_escape(esc, sizeof esc, sigil_strerror(r));
+			printf("{\"verified\":false,\"code\":%d,\"error\":\"%s\"}\n", r, esc);
 		} else if (!quiet) {
 			/* Only say "not authentic" when that is what actually happened.
 			 * Anything else gets phrased as an inability to decide, because a
@@ -449,12 +452,14 @@ static int cmd_verify(int argc, char *argv[]) {
 
 	if (o.json) {
 		printf("{\"verified\":true,\"payload_bytes\":%zu}\n", payload_len);
-	} else if (o.out) {
-		status = write_all(o.out, payload, payload_len, 0);
-		if (status != EX_OK) goto done;
-	} else if (!quiet) {
-		/* The payload IS the output: stdout stays pipeable. */
-		status = write_all("-", payload, payload_len, 0);
+	} else {
+		/* The payload IS the output, and --quiet does not suppress it.
+		 * --quiet means "no status output; rely on the exit code", per both
+		 * --help and the README. It used to skip this branch, so
+		 * `sigil verify --quiet` discarded the one thing it was asked to
+		 * produce. Data goes to stdout; commentary goes to stderr, and only
+		 * the commentary is optional. */
+		status = write_all(o.out ? o.out : "-", payload, payload_len, 0);
 		if (status != EX_OK) goto done;
 	}
 

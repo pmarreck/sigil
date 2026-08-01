@@ -60,11 +60,11 @@ passed=$(grep -c '^  ok' <<<"$run_out")
 passed=$((passed + 1))
 total_rc=$run_rc
 
-# The verify exit-code classifier. Header-only and pure, so it is tested
-# directly rather than by trying to induce a real allocation failure — which
-# would be untestable in practice and is exactly why the bug survived.
+# Header-only, pure helpers, tested directly: the exit-code classifier (you
+# cannot induce a real allocation failure from a shell) and the JSON escaper.
+je_bin="$(mktemp "${TMPDIR:-/tmp}/sigil-jsonesc-XXXXXX")"
 ec_bin="$(mktemp "${TMPDIR:-/tmp}/sigil-exitcodes-XXXXXX")"
-trap 'rm -f "$bin" "$ec_bin"' EXIT
+trap 'rm -f "$bin" "$ec_bin" "$je_bin"' EXIT
 
 ec_build=$("$CC" -std=c11 -Wall -Wextra \
 	-I "$REPO_ROOT/include" -I "$REPO_ROOT/cli" \
@@ -80,6 +80,22 @@ else
 	ec_passed=$(grep -c '^  ok' <<<"$ec_out")
 	passed=$((passed + ec_passed))
 	[[ $ec_rc -ne 0 ]] && total_rc=1
+fi
+
+je_build=$("$CC" -std=c11 -Wall -Wextra \
+	-I "$REPO_ROOT/include" -I "$REPO_ROOT/cli" \
+	"$SCRIPT_DIR/conformance/json_escape_test.c" "$LIB" -o "$je_bin" 2>&1)
+if [[ $? -ne 0 ]]; then
+	echo "  FAIL JSON escaper does not compile" >&2
+	echo "$je_build" | sed 's/^/     /' >&2
+	total_rc=1
+else
+	je_out=$("$je_bin")
+	je_rc=$?
+	grep -E '^  (ok|FAIL)' <<<"$je_out" || true
+	je_passed=$(grep -c '^  ok' <<<"$je_out")
+	passed=$((passed + je_passed))
+	[[ $je_rc -ne 0 ]] && total_rc=1
 fi
 
 printf '\n%d passed, %d failed\n' "$passed" "$total_rc"

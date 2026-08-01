@@ -343,13 +343,75 @@ assert_stdout_matches '^\{"verified":false,"code":-1,' \
 	"--json reports failure with a machine-readable code" \
 	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --json
 
-assert_stdout_empty "--quiet suppresses the payload" \
-	"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet
-quiet_out=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>&1)
-quiet_rc=$?
-if [[ $quiet_rc -eq 0 && -z "$quiet_out" ]]; then
-	pass "--quiet suppresses status output too"
-else fail "--quiet suppresses status output too"; fi
+# --json exists so something downstream can PARSE it, so the test uses a real
+# parser rather than a regex of our own devising. jq is an oracle nobody here
+# wrote. The error path used to splice sigil_strerror() in unescaped, and one
+# of those messages contains "Ed25519" in quotes, so --json emitted invalid
+# JSON at exactly the moment a consumer most needs to read the reason.
+printf '{"data":"x","sigtype":"none","sig":"y"}' > "$WORK/badtype.sigil"
+printf 'not an envelope' > "$WORK/notjson.sigil"
+
+json_parses() {
+	local desc="$1" file="$2"
+	local out
+	out=$("$SIGIL" verify "$file" --pubkey "$PUB" --json 2>/dev/null)
+	if [[ -z "$out" ]]; then
+		fail "$desc" "--json produced no output at all"
+		return 0
+	fi
+	if printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+		pass "$desc"
+	else
+		fail "$desc" "jq rejected: $out"
+	fi
+}
+
+if command -v jq >/dev/null 2>&1; then
+	json_parses "--json output parses (verified)" "$ENV"
+	json_parses "--json output parses (forged)" "$WORK/forged.sigil"
+	json_parses "--json output parses (unsupported sigtype, the quoted message)" \
+		"$WORK/badtype.sigil"
+	json_parses "--json output parses (malformed envelope)" "$WORK/notjson.sigil"
+
+	# And the escaped message must still SAY the right thing, so escaping
+	# cannot pass by emptying the field.
+	# Captured before parsing rather than piped: a pipeline reports only jq's
+	# status, so a crashed sigil would look like an empty .error field and be
+	# reported as an escaping bug.
+	raw=$("$SIGIL" verify "$WORK/badtype.sigil" --pubkey "$PUB" --json 2>/dev/null)
+	msg=$(jq -r '.error' <<<"$raw" 2>/dev/null)
+	if [[ "$msg" == *'"Ed25519"'* ]]; then
+		pass "the escaped error message still reads correctly through jq"
+	else
+		fail "the escaped error message still reads correctly through jq" "got: $msg"
+	fi
+else
+	fail "jq is available to validate --json" "install jq; --json is untested without it"
+fi
+
+# --quiet means "no STATUS output; rely on the exit code", which is what both
+# --help and the README say. It used to also discard the authenticated payload,
+# so `sigil verify --quiet` threw away the one thing it was asked to produce.
+# The payload is data on stdout; the status is commentary on stderr.
+"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>/dev/null > "$WORK/quiet.toml"
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+if cmp -s "$DOC" "$WORK/quiet.toml"; then
+	pass "--quiet still emits the payload on stdout"
+else
+	fail "--quiet still emits the payload on stdout" \
+		"$(diff "$DOC" "$WORK/quiet.toml" 2>&1 | head -3)"
+fi
+
+quiet_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet 2>&1 >/dev/null)
+if [[ -z "$quiet_err" ]]; then pass "--quiet emits nothing on stderr"
+else fail "--quiet emits nothing on stderr" "$quiet_err"; fi
+
+# A rejected envelope must also stay silent on stderr while still exiting 1.
+rej_err=$("$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --quiet 2>&1 >/dev/null)
+if [[ -z "$rej_err" ]]; then pass "--quiet stays silent on a rejection too"
+else fail "--quiet stays silent on a rejection too" "$rej_err"; fi
+assert_stdout_empty "a rejected envelope emits no payload even with --quiet" \
+	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --quiet
 assert_status 0 "--quiet still reports success through the exit code" \
 	"$SIGIL" verify "$ENV" --pubkey "$PUB" --quiet
 assert_status 1 "--quiet still reports failure through the exit code" \
