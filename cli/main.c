@@ -30,6 +30,8 @@
 #else
 #include <unistd.h>
 #include <termios.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #endif
 
 #include "sigil.h"
@@ -47,6 +49,11 @@
  * --about itself and the subcommand should stop without doing any work. Kept
  * negative so it cannot collide with a real sysexits value. */
 #define EX_HELP_REQUESTED (-1)
+
+/* write_all flags. Named because `write_all(p, b, n, 1, 0)` at a call site
+ * tells a reader nothing about which 1 and which 0. */
+#define WRITE_EXCLUSIVE 1u  /* fail if it already exists (O_EXCL) */
+#define WRITE_SECRET    2u  /* create 0600, not 0644: key material */
 
 #define MAX_INPUT (16u * 1024u * 1024u)   /* a license is bytes; this is mercy */
 
@@ -134,23 +141,50 @@ static int read_all(const char *path, unsigned char **out, size_t *out_len) {
 	return EX_OK;
 }
 
-/* Write bytes to a path, honouring @stdout/@stderr/-. `exclusive` refuses to
- * clobber an existing file — used for keyfiles, where an overwrite destroys the
- * only copy of a signing key. */
-static int write_all(const char *path, const void *buf, size_t len, int exclusive) {
+/* Write bytes to a path, honoring @stdout/@stderr/-. See WRITE_EXCLUSIVE and
+ * WRITE_SECRET for what the flags mean. */
+static int write_all(const char *path, const void *buf, size_t len, int flags) {
+	const int exclusive   = (flags & WRITE_EXCLUSIVE) != 0;
+	const int secret_mode = (flags & WRITE_SECRET) != 0;
 	FILE *f = resolve_out(path);
 	int close_it = 0;
 	if (!f) {
-		if (exclusive) {
-			FILE *probe = fopen(path, "rb");
-			if (probe) {
-				fclose(probe);
-				fprintf(stderr, "sigil: %s already exists; refusing to overwrite it.\n", path);
-				fprintf(stderr, "       Losing a signing key is unrecoverable. Move it aside, or pass --force.\n");
-				return EX_IOERR;
-			}
+		/* One open(2) decides existence AND mode.
+		 *
+		 * The previous version probed with fopen("rb") and then opened for
+		 * writing, which is a TOCTOU: the file can appear between the two
+		 * calls and get clobbered anyway — and the thing being clobbered is a
+		 * signing key with no other copy. O_EXCL makes the kernel do the
+		 * check atomically.
+		 *
+		 * It also fixes the mode. fopen() creates 0666 & ~umask, so a secret
+		 * key landed at 0644 under a normal umask and 0666 under a permissive
+		 * one: readable by every account on the machine. Encryption at rest
+		 * still applies, but it means an attacker needs only the passphrase
+		 * and nothing else. Passing the mode to open(2) does not consult the
+		 * umask for the bits it denies. */
+#if defined(_WIN32)
+		f = fopen(path, exclusive ? "wbx" : "wb");
+#else
+		const int open_flags = O_WRONLY | O_CREAT | O_TRUNC | (exclusive ? O_EXCL : 0);
+		const mode_t mode = secret_mode ? 0600 : 0644;
+		int fd = open(path, open_flags, mode);
+		if (fd < 0 && errno == EEXIST) {
+			fprintf(stderr, "sigil: %s already exists; refusing to overwrite it.\n", path);
+			fprintf(stderr, "       Losing a signing key is unrecoverable. Move it aside, or pass --force.\n");
+			return EX_IOERR;
 		}
-		f = fopen(path, "wb");
+		/* --force reuses the same open(2) so the mode is still explicit, and
+		 * an existing 0644 file gets tightened rather than inherited. */
+		if (fd >= 0 && secret_mode && fchmod(fd, 0600) != 0) {
+			fprintf(stderr, "sigil: cannot restrict permissions on %s: %s\n",
+				path, strerror(errno));
+			close(fd);
+			return EX_IOERR;
+		}
+		f = (fd >= 0) ? fdopen(fd, "wb") : NULL;
+		if (!f && fd >= 0) close(fd);
+#endif
 		if (!f) {
 			fprintf(stderr, "sigil: cannot write %s: %s\n", path, strerror(errno));
 			return EX_IOERR;
@@ -543,7 +577,8 @@ static int cmd_keygen(int argc, char *argv[]) {
 		goto done;
 	}
 
-	status = write_all(key_path, keyfile, keyfile_len, !o.force);
+	status = write_all(key_path, keyfile, keyfile_len,
+		WRITE_SECRET | (o.force ? 0 : WRITE_EXCLUSIVE));
 	if (status != EX_OK) goto done;
 
 	unsigned char pk[64];
@@ -564,7 +599,8 @@ static int cmd_keygen(int argc, char *argv[]) {
 		goto done;
 	}
 
-	status = write_all(pub_path, pub_text, pub_text_len, !o.force);
+	status = write_all(pub_path, pub_text, pub_text_len,
+		o.force ? 0 : WRITE_EXCLUSIVE);
 	if (status != EX_OK) goto done;
 
 	note("%s%s%s wrote %s (secret, encrypted) and %s (public)\n",

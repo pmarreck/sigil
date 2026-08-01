@@ -148,6 +148,36 @@ else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
 if grep -q '^sigil-pubkey-v1 ' "$PUB"; then pass "the public key file carries its prefix"
 else fail "the public key file carries its prefix" "$(head -c 120 "$PUB")"; fi
 
+# A secret key readable by every account on the box is not encrypted at rest in
+# any useful sense — it just means the attacker needs the passphrase and nothing
+# else. The mode must come from the open(2) call, not from whatever umask the
+# operator happened to have.
+key_mode=$(stat -c '%a' "$KEY" 2>/dev/null || stat -f '%Lp' "$KEY" 2>/dev/null)
+if [[ "$key_mode" == "600" ]]; then
+	pass "the keyfile is created 0600"
+else
+	fail "the keyfile is created 0600" "got $key_mode"
+fi
+
+# The .pub is meant to be handed around, so 0644 is correct there. Asserted so
+# the fix above cannot be over-applied into "chmod 600 everything".
+pub_mode=$(stat -c '%a' "$PUB" 2>/dev/null || stat -f '%Lp' "$PUB" 2>/dev/null)
+if [[ "$pub_mode" == "644" ]]; then
+	pass "the .pub file stays world-readable (it is public)"
+else
+	fail "the .pub file stays world-readable (it is public)" "got $pub_mode"
+fi
+
+# Restrictive even under a permissive umask: the mode is passed to open(2)
+# rather than inherited.
+umask_mode=$( umask 000; "$SIGIL" keygen --out "$WORK/umask.key" --passphrase-file "$PW" >/dev/null 2>&1
+              stat -c '%a' "$WORK/umask.key" 2>/dev/null || stat -f '%Lp' "$WORK/umask.key" 2>/dev/null )
+if [[ "$umask_mode" == "600" ]]; then
+	pass "the keyfile is 0600 even under umask 000"
+else
+	fail "the keyfile is 0600 even under umask 000" "got $umask_mode"
+fi
+
 # Overwriting a signing key destroys the only copy. That must take an explicit
 # --force, never a stray shell-history recall.
 assert_status 74 "keygen refuses to clobber an existing keyfile" \
