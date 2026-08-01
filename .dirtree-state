@@ -5,6 +5,7 @@ annotate=[
 	cli/main.c = The CLI, in C on purpose: C cannot @import the Zig core, so bypassing the FFI is inexpressible rather than merely discouraged.
 	docs/DESIGN.md = Envelope format, prior art, and the recorded revocation + key-custody decisions.
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
+	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
 	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
 	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
 	src/ffi_sign.zig = Signing C ABI in a SEPARATE libsigil_sign.a. Only place randomness lives. No secret ever crosses the boundary.

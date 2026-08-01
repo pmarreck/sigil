@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Mutation testing: plant known defects, count how many the suite catches.
+#
+# A green suite says nothing about the defects it would MISS. This plants a
+# specific, realistic defect in the source, runs the suite, and records whether
+# it died. The output is a number — mutants killed / mutants planted — because
+# "the tests pass" is not a measurement.
+#
+# It found a real hole immediately: with `c_allocator` hardcoded in the FFI,
+# deleting a `defer free` left the suite at 48/48 green. c_allocator cannot
+# detect a leak; testing.allocator fails on one.
+#
+# NOT part of ./test — each mutant costs a full rebuild. Run it after changing
+# the suite, or when you want to know whether a green run means anything.
+#
+# Per Mecha conventions: `set -u` only. Mutants are EXPECTED to fail the suite.
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT" || exit 1
+
+BACKUP="${TMPDIR:-/tmp}/sigil-mutate-$$"
+mkdir -p "$BACKUP" || { echo "FATAL: cannot create $BACKUP" >&2; exit 1; }
+
+SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig)
+for f in "${SOURCES[@]}"; do
+	cp "$f" "$BACKUP/$(basename "$f")" || exit 1
+done
+
+restore() {
+	for s in "${SOURCES[@]}"; do
+		cp "$BACKUP/$(basename "$s")" "$s" 2>/dev/null
+	done
+}
+# Restoring the tree matters more than tidiness: an interrupted run must not
+# leave a planted defect behind.
+trap 'restore; rm -rf "$BACKUP"' EXIT INT TERM
+
+KILLED=0
+SURVIVED=0
+SURVIVORS=()
+
+# run_suite_quietly: 0 if the suite passed, non-zero if it failed.
+run_suite_quietly() {
+	nix develop -c zig build test >/dev/null 2>&1
+}
+
+# mutant <description> <file> <perl-expression>
+mutant() {
+	local desc="$1" file="$2" expr="$3"
+	restore
+
+	if ! perl -0pi -e "$expr" "$file" 2>/dev/null; then
+		printf '  \033[33mSKIP\033[0m %s (mutation failed to apply)\n' "$desc"
+		return 0
+	fi
+	if cmp -s "$file" "$BACKUP/$(basename "$file")"; then
+		printf '  \033[33mSKIP\033[0m %s (pattern matched nothing — mutant is stale)\n' "$desc"
+		return 0
+	fi
+
+	if run_suite_quietly; then
+		printf '  \033[31mSURVIVED\033[0m %s\n' "$desc"
+		SURVIVED=$((SURVIVED + 1))
+		SURVIVORS+=("$desc")
+	else
+		printf '  \033[32mkilled\033[0m   %s\n' "$desc"
+		KILLED=$((KILLED + 1))
+	fi
+}
+
+echo "mutation testing — planting defects in the Zig core and FFI"
+echo ""
+
+# Specificity corpus. If the unmutated tree does not pass, every "killed"
+# verdict below is meaningless: the suite would be failing for its own reasons
+# and every mutant would score as caught.
+restore
+if run_suite_quietly; then
+	echo "  baseline: unmutated tree passes (verdicts below are meaningful)"
+else
+	echo "  FATAL: the unmutated tree already fails; fix that before measuring" >&2
+	exit 1
+fi
+echo ""
+
+# ── Memory ──────────────────────────────────────────────────────────────────
+mutant "FFI leaks the verified payload" \
+	src/ffi.zig 's/    defer alloc\.free\(payload\);\n//'
+mutant "FFI leaks the sealed envelope" \
+	src/ffi_sign.zig 's/    defer alloc\.free\(env\);\n//'
+mutant "FFI leaks the generated keyfile" \
+	src/ffi_sign.zig 's/    defer alloc\.free\(keyfile\);\n//'
+# KNOWN SURVIVOR, kept deliberately. Whether a stack buffer was zeroed is not
+# observable from a test that plays by the rules — reading it after the frame
+# returns is undefined behaviour, and a test built on UB is worse than no test.
+# It stays in the list so the number stays honest and nobody later mistakes its
+# absence for coverage. Enforced by review and by the comment at the call site.
+mutant "the decrypted seed is never wiped" \
+	src/ffi_sign.zig 's/    defer std\.crypto\.secureZero\(u8, &seed\);\n//'
+
+# ── Boundaries ──────────────────────────────────────────────────────────────
+mutant "off-by-one: an exactly-sized output buffer is rejected" \
+	src/ffi.zig 's/if \(payload\.len > payload_out_cap\)/if (payload.len >= payload_out_cap)/'
+mutant "the signature length check is dropped" \
+	src/envelope.zig 's/    if \(sig\.len != signature_len\) return EnvelopeError\.BadSignatureLength;\n//'
+
+# ── Authenticity: the mutants that matter ───────────────────────────────────
+mutant "verify always succeeds" \
+	src/verify.zig 's/signature\.verify\(payload, pk\) catch return Error\.BadSignature;/signature.verify(payload, pk) catch {};/'
+mutant "the sigtype check accepts anything" \
+	src/envelope.zig 's/if \(!std\.mem\.eql\(u8, wire\.sigtype, sigtype\)\)/if (false)/'
+mutant "the AAD no longer covers the salt" \
+	src/sign.zig 's/    \@memcpy\(buf\[w\.\.\]\[0\.\.salt_len\], salt\);\n    w \+= salt_len;\n//'
+mutant "the keyfile format version is not checked" \
+	src/sign.zig 's/!std\.mem\.eql\(u8, parsed\.value\.sigil, keyfile_version\) or\n        //'
+
+restore
+echo ""
+TOTAL=$((KILLED + SURVIVED))
+echo "─────────────────────────────────────────────"
+printf 'mutants killed: %d/%d\n' "$KILLED" "$TOTAL"
+
+# Survivors we have accepted, with the reason. The exit code below means "a NEW
+# survivor appeared", which is actionable; "any survivor at all" would be
+# permanently red and therefore ignored.
+KNOWN_SURVIVORS=(
+	"the decrypted seed is never wiped"   # not observable without relying on UB
+)
+
+is_known() {
+	local candidate="$1" k
+	for k in "${KNOWN_SURVIVORS[@]}"; do
+		[[ "$candidate" == "$k" ]] && return 0
+	done
+	return 1
+}
+
+status=0
+for s in "${SURVIVORS[@]:-}"; do
+	[[ -z "$s" ]] && continue
+	if is_known "$s"; then
+		echo "  accepted survivor: $s"
+	else
+		echo "  NEW SURVIVOR: $s"
+		echo "                 the suite cannot see this defect — add a test or"
+		echo "                 add it to KNOWN_SURVIVORS with a reason."
+		status=1
+	fi
+done
+
+# A known survivor that starts dying means the list is stale. Trim it, so the
+# allowlist cannot quietly grow into an excuse.
+for k in "${KNOWN_SURVIVORS[@]}"; do
+	found=0
+	for s in "${SURVIVORS[@]:-}"; do
+		[[ "$s" == "$k" ]] && found=1
+	done
+	if [[ $found -eq 0 ]]; then
+		echo "  STALE ALLOWLIST: '$k' is now killed — remove it from KNOWN_SURVIVORS"
+		status=1
+	fi
+done
+echo "─────────────────────────────────────────────"
+
+exit "$status"

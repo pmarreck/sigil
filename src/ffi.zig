@@ -12,6 +12,14 @@
 
 const std = @import("std");
 const sigil = @import("lib.zig");
+const builtin = @import("builtin");
+
+/// The FFI allocates scratch internally and frees it before returning. Under
+/// test that must be `testing.allocator`, which FAILS the test on a leak;
+/// `c_allocator` cannot detect one at all. With c_allocator hardcoded here,
+/// deleting a `defer free` left the whole suite green — the harness was blind
+/// to an entire defect class in the exact code Validate and Rotshield link.
+const alloc = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
 
 pub const SIGIL_OK: c_int = 0;
 pub const SIGIL_ERR_BAD_SIGNATURE: c_int = -1;
@@ -70,11 +78,11 @@ export fn sigil_verify_envelope(
     if (payload_out == null and payload_out_cap != 0) return SIGIL_ERR_NULL_ARGUMENT;
 
     const payload = sigil.verifyEnvelope(
-        std.heap.c_allocator,
+        alloc,
         e[0..envelope_len],
         k[0..sigil.public_key_len],
     ) catch |err| return errorToCode(err);
-    defer std.heap.c_allocator.free(payload);
+    defer alloc.free(payload);
 
     out_len.* = payload.len;
     if (payload.len > payload_out_cap) return SIGIL_ERR_BUFFER_TOO_SMALL;
@@ -94,10 +102,10 @@ export fn sigil_public_key_to_text(
     const n = out_len orelse return SIGIL_ERR_NULL_ARGUMENT;
 
     const text = sigil.publicKeyToText(
-        std.heap.c_allocator,
+        alloc,
         k[0..sigil.public_key_len],
     ) catch |e| return errorToCode(e);
-    defer std.heap.c_allocator.free(text);
+    defer alloc.free(text);
 
     n.* = text.len;
     if (text.len > out_cap) return SIGIL_ERR_BUFFER_TOO_SMALL;
@@ -118,7 +126,7 @@ export fn sigil_public_key_from_text(
     const out = public_key_out orelse return SIGIL_ERR_NULL_ARGUMENT;
 
     const pk = sigil.publicKeyFromText(
-        std.heap.c_allocator,
+        alloc,
         t[0..text_len],
     ) catch |e| return errorToCode(e);
     @memcpy(out[0..pk.len], &pk);
@@ -229,6 +237,39 @@ test "FFI: envelope verification returns the authenticated payload" {
         sigil_verify_envelope(env.ptr, env.len, &pk, &buf, buf.len, &len),
     );
     try testing.expectEqualStrings(payload, buf[0..len]);
+}
+
+test "FFI: a buffer of exactly the payload size is enough" {
+    // The boundary, not one side of it. Mutation testing found that changing
+    // `>` to `>=` in the capacity check survived the whole suite: every
+    // existing test used a buffer either comfortably large or absurdly small,
+    // so nothing exercised "exactly right" and an off-by-one that rejects a
+    // correctly-sized buffer would have shipped.
+    const a = testing.allocator;
+    const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
+    const pk = kp.public_key.toBytes();
+    const payload = "v = \"1\"\n";
+
+    const sig = try kp.sign(payload, null);
+    const env = try sigil.writeEnvelope(a, payload, &sig.toBytes());
+    defer a.free(env);
+
+    var exact: [payload.len]u8 = undefined;
+    var len: usize = 0;
+    try testing.expectEqual(
+        SIGIL_OK,
+        sigil_verify_envelope(env.ptr, env.len, &pk, &exact, exact.len, &len),
+    );
+    try testing.expectEqual(payload.len, len);
+    try testing.expectEqualStrings(payload, &exact);
+
+    // And one byte short is still refused, so the fix cannot be "accept
+    // everything".
+    var short: [payload.len - 1]u8 = undefined;
+    try testing.expectEqual(
+        SIGIL_ERR_BUFFER_TOO_SMALL,
+        sigil_verify_envelope(env.ptr, env.len, &pk, &short, short.len, &len),
+    );
 }
 
 test "FFI: a too-small buffer reports the required size instead of overflowing" {

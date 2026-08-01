@@ -17,8 +17,12 @@
 
 const std = @import("std");
 const sign = @import("sign.zig");
+const builtin = @import("builtin");
 
-const alloc = std.heap.c_allocator;
+/// See the note in ffi.zig: `testing.allocator` fails on a leak, `c_allocator`
+/// cannot see one, so a hardcoded c_allocator made the suite blind to leaks in
+/// the FFI.
+const alloc = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
 
 pub const SIGIL_OK: c_int = 0;
 pub const SIGIL_ERR_NULL_ARGUMENT: c_int = -3;

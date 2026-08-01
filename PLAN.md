@@ -214,9 +214,24 @@ linking, running or disassembling — none are speculative.
       status output", per both `--help` and the README; the payload is data on
       stdout and the status is commentary on stderr. The old CLI test pinned
       the wrong contract and was rewritten first. — 2026-08-01 02:12 EDT
-- [ ] **The suite cannot detect FFI leaks** — proven by mutation: deleting
-      `defer c_allocator.free(payload)` still gives 124/124. The FFI hardcodes
-      `c_allocator`, so `testing.allocator` never covers it.
+- [x] **The suite can now detect FFI leaks.** Reproduced first: deleting
+      `defer alloc.free(payload)` left the suite at 48/48 green, because
+      `c_allocator` cannot detect a leak at all. The FFI now uses
+      `testing.allocator` under `builtin.is_test`. Re-planting the same defect
+      reports 2 leaks by name. — 2026-08-01 02:15 EDT
+- [x] **Mutation testing exists** (`./mutate`), reporting a number rather than
+      a boolean. **9/10 killed.** It immediately found two more gaps that a
+      green suite was hiding: an off-by-one in the output-capacity check (every
+      existing test used a buffer either comfortably large or absurdly small,
+      so "exactly right" was never exercised) and the keyfile format-version
+      check (the malformed-keyfile test used placeholder values, so it failed
+      at decoding long before the version was consulted). Both now have tests.
+      The one accepted survivor is "the decrypted seed is never wiped" —
+      whether a stack buffer was zeroed is not observable without relying on
+      UB, and a test built on UB is worse than no test. It stays in the list so
+      the number stays honest. The exit code means "a NEW survivor appeared",
+      and a known survivor that starts dying is also flagged so the allowlist
+      cannot quietly grow into an excuse. — 2026-08-01 02:27 EDT
 - [ ] Passphrases silently truncated at 1023 chars on the prompt path only,
       producing an unopenable key reported as "wrong passphrase".
 - [ ] `MALFORMED_ENCODING` unreachable for `data`/`sig` — corrupt files are

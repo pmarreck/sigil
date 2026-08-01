@@ -664,6 +664,45 @@ test "a malformed keyfile is rejected, not misread" {
     }
 }
 
+test "a keyfile claiming a different format version is refused" {
+    // Built from a REAL keyfile with only the version string swapped, so the
+    // rest of the file is perfectly valid and the version check is the only
+    // thing that can reject it.
+    //
+    // The existing malformed-keyfile test used placeholder field values, so it
+    // failed at decoding long before the version was consulted. Mutation
+    // testing caught that: deleting the version check entirely left the suite
+    // green.
+    const a = testing.allocator;
+    const file = try wrapKey(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+
+    const marker = "\"sigil\":\"" ++ keyfile_version ++ "\"";
+    const at = std.mem.indexOf(u8, file, marker) orelse return error.TestUnexpectedResult;
+    const bumped = try std.mem.concat(a, u8, &.{
+        file[0..at], "\"sigil\":\"secret-key-v99\"", file[at + marker.len ..],
+    });
+    defer a.free(bumped);
+
+    try testing.expectError(error.UnsupportedKeyfileVersion, unwrapKey(a, bumped, "pass"));
+
+    // Same for the KDF name: a file naming a KDF we do not implement must be
+    // refused rather than run through Argon2id anyway.
+    const kdf_marker = "\"kdf\":\"" ++ kdf_name ++ "\"";
+    const kat = std.mem.indexOf(u8, file, kdf_marker) orelse return error.TestUnexpectedResult;
+    const other_kdf = try std.mem.concat(a, u8, &.{
+        file[0..kat], "\"kdf\":\"scrypt\"", file[kat + kdf_marker.len ..],
+    });
+    defer a.free(other_kdf);
+
+    try testing.expectError(error.UnsupportedKeyfileVersion, unwrapKey(a, other_kdf, "pass"));
+
+    // Control: the unmodified file still opens, so these cannot pass by
+    // rejecting everything.
+    const seed = try unwrapKey(a, file, "pass");
+    try testing.expectEqualSlices(u8, &test_seed, &seed);
+}
+
 test "the shipped KDF defaults are the strong ones" {
     // Guards against someone lowering the cost to speed up a test run and never
     // putting it back. 64 MiB / t=3 is comfortably above the OWASP floor.
