@@ -2,7 +2,7 @@
  *
  * The bug this exists to prevent: `sigil verify` collapsed every non-OK FFI
  * result to exit 1 ("rejected"). A customer whose machine was briefly under
- * memory pressure was told their valid, paid-for licence is a forgery — the
+ * memory pressure was told their valid, paid-for license is a forgery — the
  * single worst thing a licensing tool can say, indistinguishable from the real
  * thing to whoever reads it.
  *
@@ -63,7 +63,7 @@ static const struct code_case undetermined[] = {
 	{ SIGIL_ERR_NULL_ARGUMENT,    "SIGIL_ERR_NULL_ARGUMENT" },
 };
 
-/* Caller supplied something wrong — a bad key, not a bad licence. */
+/* Caller supplied something wrong — a bad key, not a bad license. */
 static const struct code_case caller_error[] = {
 	{ SIGIL_ERR_BAD_PUBLIC_KEY, "SIGIL_ERR_BAD_PUBLIC_KEY" },
 };
@@ -156,9 +156,9 @@ int main(void) {
 	/* An unknown code must be conservative: never claim forgery for something
 	 * this build has never heard of. */
 	if (sigil_verify_exit_code(-9999) != SIGIL_EX_REJECTED) {
-		ok("an unrecognised code does not report a forgery");
+		ok("an unrecognized code does not report a forgery");
 	} else {
-		bad("an unrecognised code does not report a forgery", "got exit 1");
+		bad("an unrecognized code does not report a forgery", "got exit 1");
 	}
 
 	printf("\n%d passed, %d failed\n", passed, failed);

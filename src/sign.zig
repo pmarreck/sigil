@@ -72,7 +72,7 @@ pub fn seal(
 // Format (one line, same printable-binary-in-JSON shape as an envelope so the
 // same eyes and the same tools work on both):
 //
-//   {"sigil":"secret-key-v2","kdf":"Argon2id","t":3,"m":65536,"p":1,
+//   {"sigil":"secret-key-v1","kdf":"Argon2id","t":3,"m":65536,"p":1,
 //    "salt":"…","nonce":"…","ciphertext":"…"}
 //
 // There is deliberately NO `public` field. It existed so `sigil pubkey` could
@@ -93,10 +93,12 @@ pub fn seal(
 pub const salt_len = 16;
 pub const nonce_len = XChaCha20Poly1305.nonce_length;
 pub const tag_len = XChaCha20Poly1305.tag_length;
-/// Bumped for the v2 format (no `public` field, and a correspondingly shorter
-/// AAD). A v1 keyfile would otherwise fail with `AuthenticationFailed` — an
-/// alarming and misleading way to say "written by a different sigil".
-pub const keyfile_version = "secret-key-v2";
+/// Stays v1 while the format iterates in place. Nothing is released and nothing
+/// is in production, so there are no keyfiles in the world to stay compatible
+/// with and no reason to carry a version bump forever for a pre-release change
+/// (Peter, 2026-08-01). The `public` field was removed under this same version.
+/// Advance it the first time a real keyfile exists that this build must read.
+pub const keyfile_version = "secret-key-v1";
 pub const kdf_name = "Argon2id";
 
 pub const KdfParams = struct {
@@ -531,7 +533,7 @@ fn mutateEncodedField(
     file: []const u8,
     marker: []const u8,
 ) ![]u8 {
-    // Not `.?`: in ReleaseFast an unwrapped null is undefined behaviour, so a
+    // Not `.?`: in ReleaseFast an unwrapped null is undefined behavior, so a
     // marker that no longer exists silently indexes garbage and the assertion
     // fails for a reason unrelated to what it is testing. Ask loudly instead.
     const found = std.mem.indexOf(u8, file, marker) orelse {

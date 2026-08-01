@@ -129,7 +129,7 @@ rather than forbidden, so it cannot be helpfully reintroduced later.
 
 ### `cli/main.c:147` — secret keyfile written 0644, plus TOCTOU
 Verified ambient: `umask 022` → `-rw-r--r--`. The key is Argon2id-encrypted so
-this is defence-in-depth, but `DESIGN.md:145` names backups and synced folders
+this is defense-in-depth, but `DESIGN.md:145` names backups and synced folders
 as the threat, and ssh-keygen/gpg/minisign all force 0600. One
 `open(..., O_CREAT|O_EXCL, 0600)` fixes the permissions **and** the TOCTOU in
 the clobber-probe.
@@ -209,7 +209,7 @@ two notes. The check exists and ships disabled.
   errors. Exit codes conflate data errors with usage (64) and I/O (74).
 - `--format`/`--force`/`--pubkey-out` are parsed but absent from `--help`.
 - Windows `/flag` support works only for single-letter flags; the same
-  normaliser mangles root-level absolute paths (`/license.sigil`) into switches.
+  normalizer mangles root-level absolute paths (`/license.sigil`) into switches.
 - `sigil_verify` has **no C consumer** — the primitive ships undogfooded.
 - The two-pass sizing contract the headers document is never used, and is
   actively unsafe for `sigil_keygen` (each call burns a fresh key).

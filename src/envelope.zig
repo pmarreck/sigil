@@ -203,7 +203,7 @@ pub fn verifyEnvelope(
     // `std.json` validated UTF-8 as a side effect; a hand-rolled parser must do
     // it deliberately. Without this a truncated multi-byte glyph decodes to
     // something plausible and fails as BadSignature — telling a customer their
-    // licence is FORGED when it was merely mangled in transit. Structural
+    // license is FORGED when it was merely mangled in transit. Structural
     // damage and tampering must stay distinguishable.
     if (!std.unicode.utf8ValidateSlice(clean)) return EnvelopeError.MalformedJson;
 

@@ -165,11 +165,11 @@ linking, running or disassembling — none are speculative.
       activation-time identity matching. One deliberate deviation at Peter's
       prompting: `paddle_transaction_id` → `payment_provider` + `payment_ref`,
       so a vendor name never sits inside a signed immutable key while
-      per-licence provenance is still recorded. — 2026-07-30 15:20 EDT
+      per-license provenance is still recorded. — 2026-07-30 15:20 EDT
 - [x] **Beta tokens must not survive forever** (Peter, 2026-07-30). Supersedes
       the release plan's "free perpetual license". Mandatory `expiry`. A
       perpetual token that bypasses trial and refund logic is worth more to an
-      attacker than any paid licence. — 2026-07-30 15:20 EDT
+      attacker than any paid license. — 2026-07-30 15:20 EDT
 
 ### Blocked on Peter
 - [ ] **`features` shape** — the entitlement lever for the capability tiers

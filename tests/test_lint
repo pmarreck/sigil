@@ -166,7 +166,7 @@ CPROBE
 		pass "the C gate still fires on a known violation (specificity corpus)"
 	else
 		fail "the C gate still fires on a known violation (specificity corpus)" \
-			"       a planted double-free went unreported — clang-tidy is not actually analysing"
+			"       a planted double-free went unreported — clang-tidy is not actually analyzing"
 	fi
 	rm -f "$cprobe"
 fi

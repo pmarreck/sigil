@@ -7,7 +7,7 @@
  *
  * Header-only and pure so it can be tested directly. It used to be a single
  * `status = EX_REJECTED;` covering every failure, which meant a customer whose
- * machine was briefly out of memory was told their valid, paid-for licence was
+ * machine was briefly out of memory was told their valid, paid-for license was
  * a forgery. Transient resource failure and cryptographic rejection are
  * different KINDS of event and must not share an exit path.
  *
@@ -41,7 +41,7 @@ static inline int sigil_verify_exit_code(int ffi_code) {
 
 	/* Decided, but a format problem rather than a forgery. Support needs to
 	 * tell "you sent me a screenshot" apart from "someone edited your
-	 * licence", and so does anyone reading a CI log. */
+	 * license", and so does anyone reading a CI log. */
 	case SIGIL_ERR_MALFORMED_JSON:
 	case SIGIL_ERR_MISSING_FIELD:
 	case SIGIL_ERR_UNSUPPORTED_SIGTYPE:
@@ -53,7 +53,7 @@ static inline int sigil_verify_exit_code(int ffi_code) {
 	case SIGIL_ERR_BAD_PUBLIC_KEY:
 		return SIGIL_EX_USAGE;
 
-	/* Transient. The licence may well be perfectly good; we could not tell.
+	/* Transient. The license may well be perfectly good; we could not tell.
 	 * Retrying is a reasonable thing for a caller to do. */
 	case SIGIL_ERR_OUT_OF_MEMORY:
 		return SIGIL_EX_TEMPFAIL;

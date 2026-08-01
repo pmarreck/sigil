@@ -141,7 +141,7 @@ fi
 # appears ONLY inside a `fail` diagnostic: the assertion has already been
 # decided by the `if`, so the snippet's exit status cannot change the verdict.
 # shellcheck disable=SC2312
-if grep -q '"sigil":"secret-key-v2"' "$KEY"; then pass "the keyfile declares its format version"
+if grep -q '"sigil":"secret-key-v1"' "$KEY"; then pass "the keyfile declares its format version"
 else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
 
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
@@ -227,7 +227,7 @@ else
 fi
 
 # "Not authentic" and "could not decide" must be distinguishable from the
-# outside. Telling a paying customer their valid licence is forged because an
+# outside. Telling a paying customer their valid license is forged because an
 # envelope was truncated in transit is the worst failure this tool has.
 printf 'not an envelope at all' > "$WORK/junk.sigil"
 assert_status 65 "a malformed envelope is a DATA error (65), not a forgery (1)" \
@@ -325,7 +325,7 @@ assert_status 0 "--quiet still reports success through the exit code" \
 assert_status 1 "--quiet still reports failure through the exit code" \
 	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --quiet
 
-# Not a terminal here, so colour is already off; --simple must also drop the
+# Not a terminal here, so color is already off; --simple must also drop the
 # non-ASCII marks, for terminals and log scrapers that cannot cope.
 simple_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" --simple 2>&1 >/dev/null)
 if [[ "$simple_err" == *"OK"* ]]; then pass "--simple uses ASCII marks"
@@ -341,7 +341,7 @@ else pass "--simple emits no non-ASCII bytes"; fi
 
 # Piped output must never carry ANSI escapes even without --no-color.
 # Capture status too: a crash produces no ANSI either, and would otherwise be
-# indistinguishable from correct behaviour.
+# indistinguishable from correct behavior.
 ansi_err=$("$SIGIL" verify "$ENV" --pubkey "$PUB" 2>&1 >/dev/null)
 ansi_rc=$?
 if [[ $ansi_rc -ne 0 ]]; then

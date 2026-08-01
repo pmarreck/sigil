@@ -246,8 +246,8 @@ static int usage(FILE *out) {
 		"      --passphrase-file <path>   read the passphrase instead of prompting\n"
 		"      --json             machine-readable result on stdout\n"
 		"  -q, --quiet            no status output; rely on the exit code\n"
-		"      --no-color         never emit ANSI colour\n"
-		"      --simple           plain ASCII, no colour, no symbols\n"
+		"      --no-color         never emit ANSI color\n"
+		"      --simple           plain ASCII, no color, no symbols\n"
 		"  -h, --help             this help\n"
 		"      --about            one-line description, version, platform\n"
 		"\n"
@@ -297,9 +297,9 @@ typedef struct {
 	int force;
 } Opts;
 
-/* Windows callers may spell switches with a leading '/'. Normalise so the rest
+/* Windows callers may spell switches with a leading '/'. Normalize so the rest
  * of the parser only ever sees the Unix form. */
-static const char *normalise(const char *a, char *scratch, size_t cap) {
+static const char *normalize(const char *a, char *scratch, size_t cap) {
 	if (a[0] != '/' || a[1] == '\0') return a;
 	/* Only for short, switch-looking tokens — never mangle an absolute path. */
 	if (strchr(a + 1, '/') || strlen(a) > 24) return a;
@@ -318,12 +318,12 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 	char scratch[32];
 
 	for (int i = start; i < argc; i++) {
-		const char *a = no_more_switches ? argv[i] : normalise(argv[i], scratch, sizeof scratch);
+		const char *a = no_more_switches ? argv[i] : normalize(argv[i], scratch, sizeof scratch);
 
 		if (!no_more_switches && strcmp(a, "--") == 0) { no_more_switches = 1; continue; }
 
 		if (!no_more_switches && a[0] == '-' && a[1] != '\0' && strcmp(a, "-") != 0) {
-			/* Recognised on EVERY subcommand, not just as argv[1]. The help
+			/* Recognized on EVERY subcommand, not just as argv[1]. The help
 			 * text advertises them under "Common options:", and someone typing
 			 * --help is asking how to use the thing — answering "you used it
 			 * wrong" would be both unhelpful and circular. Handled before any
@@ -399,7 +399,7 @@ static int cmd_verify(int argc, char *argv[]) {
 		} else if (!quiet) {
 			/* Only say "not authentic" when that is what actually happened.
 			 * Anything else gets phrased as an inability to decide, because a
-			 * customer reading "FAILED" next to their paid licence will act on
+			 * customer reading "FAILED" next to their paid license will act on
 			 * it — and a transient allocation failure is not a forgery. */
 			if (r == SIGIL_ERR_BAD_SIGNATURE) {
 				fprintf(stderr, "%s%s%s %s: %s\n", C_BAD, mark_bad(), C_OFF,
@@ -672,7 +672,7 @@ int main(int argc, char *argv[]) {
 	if (argc < 2) { usage(stderr); return EX_USAGE; }
 
 	char scratch[32];
-	const char *cmd = normalise(argv[1], scratch, sizeof scratch);
+	const char *cmd = normalize(argv[1], scratch, sizeof scratch);
 
 	if (!strcmp(cmd, "-h") || !strcmp(cmd, "--help") || !strcmp(cmd, "-?")) {
 		usage(stdout);
