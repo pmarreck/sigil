@@ -12,7 +12,11 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] Work Einstein's remediation queue (see below). Item 1 done.
+- [x] **Einstein's remediation queue is complete** — all seven items, each
+      reproduced before it was fixed. `6d5a378`, CI green. 312 tests, and
+      `./mutate` reports 9/10 mutants killed. — 2026-08-01 02:30 EDT
+- [ ] Nothing is in flight. The two things below want Peter; the "High, still
+      open" list below is the next work.
 
 ## Next
 
@@ -181,28 +185,8 @@ linking, running or disassembling — none are speculative.
       Einstein's call, not mine; it is a business document with an existing
       documented precedence problem (the two-app vs three-app bundle price).
 
-### Critical, still open
-- [ ] **`--help`/`--about` documented but never parsed** on any subcommand.
-      `sigil verify --help` → `unknown option`, exit 64.
-- [ ] **`verify` reports transient OOM as a forged license** — collapses every
-      FFI code to exit 1. `envelope.zig:170` documents avoiding exactly this;
-      `sign` already discriminates.
-
 ### High, still open
 
-- [ ] **Delete the `public` field from the keyfile.** Splice confirmed: an
-      attacker's `public` field makes `sigil pubkey` print the attacker's key
-      with no passphrase — and that is the command README tells you to run to
-      get the key you embed in the shipped product. The field is redundant
-      (`keygen` already writes a sibling `.pub`). Deleting it makes the bug
-      inexpressible rather than forbidden; `pubkey` must then derive from the
-      decrypted secret. Peter: "Mechanically force it to be computed!"
-- [ ] **C conformance binary exercising `sigil_verify`** (Peter's ask). The raw
-      primitive currently ships with no C consumer. Compile it with **stock
-      cc**, not `zig cc`, so it also mechanically gates C1 — `zig build`
-      supplies compiler-rt silently, which is why nobody noticed.
-- [ ] Keyfile written 0644 under default umask + TOCTOU in the clobber probe.
-      One `open(..., O_CREAT|O_EXCL, 0600)` fixes both.
 - [x] `--json` emitted invalid JSON. `sigil_strerror` was spliced into a JSON
       string literal unescaped, and `sigtype is not "Ed25519"` broke the
       output at exactly the moment a consumer most needs to read the reason.
@@ -265,7 +249,6 @@ rejection, never a false acceptance. Availability risk, not authenticity risk.
 
 ### Deferred / ideas
 
-- [ ] **Mutation-test the suite.** It has never been mutation-tested; the FFI
       leak gap was found that way and is unlikely to be the only one. Every
       surviving mutant names an invalid region of the suite.
 - [ ] **Elixir: NIF + pure-Elixir sigil, tested differentially** (Peter's idea,
