@@ -69,18 +69,32 @@ Peter wants the private key *provider* configurable — YubiKey or offline
 air-gapped secret — not two finished drivers. The July 28 passphrase-encrypted
 keyfile decision is not reversed; it becomes the first provider.
 
-- [ ] Define the smallest signer/key-provider port that keeps envelope and
+- [x] Define the smallest signer/key-provider port that keeps envelope and
       certificate semantics independent of custody. The existing Argon2id →
       XChaCha20-Poly1305 keyfile is provider #1 and is already tested.
-- [ ] Capability discovery with honest unsupported behavior. Concretely: most
+      — 2026-08-05 02:17 EDT
+      - [x] Inject a provider that receives only the bytes to sign and returns
+            a fixed-size signature. Curiosity poke: keep seed and expanded-key
+            storage inside provider #1, including provider construction.
+      - [x] Preserve the current C CLI, RFC 8032 vectors, envelope bytes, and
+            bare-payload signing transcript while §A remains an owner decision.
+      - [x] Mechanically classify unsupported algorithm, missing hardware
+            driver, external ceremony, and provider failure without claiming a
+            YubiKey or air-gapped driver exists.
+      - [ ] Run canonical tests/build/mutation/Nix and exact terminal
+            Mechatron CI before publishing integration notes.
+- [x] Capability discovery with honest unsupported behavior. Concretely: most
       YubiKey PIV firmware cannot do Ed25519 at all — PIV is RSA and ECDSA
       P-256/P-384, with Ed25519 only on 5.7+. A provider that cannot perform the
       configured algorithm must say so, not fail obscurely at signing time.
-- [ ] Do NOT write a PKCS#11/PIV implementation without hardware to test it
-      against. An untested driver for a device nobody has is worse than none.
-- [ ] Air-gapped ceremony is mostly a workflow question — the keyfile is one
-      line of JSON and never leaves the signing host. Write it up before
-      building anything.
+      — internal capability preflight and set-classifier tests, 2026-08-05
+      02:17 EDT
+- [x] Do NOT write a PKCS#11/PIV implementation without hardware to test it
+      against. No driver or support claim was added. — 2026-08-05 02:17 EDT
+- [x] Air-gapped ceremony is mostly a workflow question — the keyfile is one
+      line of JSON and never leaves the signing host. The port and deferred
+      ceremony requirements are documented in `docs/KEY_PROVIDERS.md`; no
+      workflow was guessed. — 2026-08-05 02:17 EDT
 
 ### C. Exit-code contract inconsistency (found 2026-08-04)
 

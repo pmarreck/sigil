@@ -571,7 +571,11 @@ assert_status 1 "a passphrase agreeing on the first 1023 chars is still rejected
 # truncates — silently cutting the input is the defect that started all this —
 # so an over-long passphrase must exit 64 with an explanation, never 0 with a
 # quietly shortened key.
-overlong_err=$(head -c 17000000 /dev/zero | "$SIGIL" pubkey --key "$LONGKEY" 2>&1 >/dev/null)
+OVERLONG="$WORK/overlong-passphrase"
+if ! head -c 17000000 /dev/zero > "$OVERLONG"; then
+	fail "the over-long passphrase fixture is created" "head failed"
+fi
+overlong_err=$("$SIGIL" pubkey --key "$LONGKEY" < "$OVERLONG" 2>&1 >/dev/null)
 overlong_rc=$?
 if [[ $overlong_rc -eq 64 ]]; then
 	pass "an over-long passphrase is refused, not truncated"

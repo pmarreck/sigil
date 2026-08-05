@@ -16,10 +16,11 @@ const argon2 = std.crypto.pwhash.argon2;
 const pb = @import("printable_binary");
 const core = @import("verify.zig");
 const envelope = @import("envelope.zig");
+pub const provider = @import("key_provider.zig");
 
 pub const seed_len = Ed25519.KeyPair.seed_length;
 
-pub const KeyPair = struct {
+const KeyPair = struct {
     public_key: [core.public_key_len]u8,
     /// The Ed25519 expanded secret key. Never written to disk in this form and
     /// never leaves the process; the seed is what a keyfile stores.
@@ -37,7 +38,7 @@ pub const SignError = error{
 /// Derive a keypair from a 32-byte seed. Deterministic by definition: the same
 /// seed always yields the same key, which is what lets `sigil keygen` be backed
 /// up as 32 bytes and what makes every test in this file reproducible.
-pub fn keyPairFromSeed(seed: *const [seed_len]u8) SignError!KeyPair {
+fn keyPairFromSeed(seed: *const [seed_len]u8) SignError!KeyPair {
     const kp = Ed25519.KeyPair.generateDeterministic(seed.*) catch return SignError.BadSeed;
     return .{
         .public_key = kp.public_key.toBytes(),
@@ -50,20 +51,77 @@ pub fn keyPairFromSeed(seed: *const [seed_len]u8) SignError!KeyPair {
 /// Ed25519 is deterministic (RFC 8032): the same key over the same bytes yields
 /// the same 64 bytes on every implementation. Nothing here consumes randomness,
 /// so a signature is reproducible from the seed alone.
-pub fn signPayload(payload: []const u8, kp: KeyPair) SignError![core.signature_len]u8 {
+fn signPayload(payload: []const u8, kp: KeyPair) SignError![core.signature_len]u8 {
     const sk = Ed25519.SecretKey.fromBytes(kp.secret_key) catch return SignError.BadSecretKey;
     const pair = Ed25519.KeyPair.fromSecretKey(sk) catch return SignError.BadSecretKey;
     const sig = pair.sign(payload, null) catch return SignError.BadSecretKey;
     return sig.toBytes();
 }
 
-/// Sign and package in one step. Caller owns the returned envelope.
+const EncryptedKeyfileContext = struct {
+    key_pair: KeyPair,
+};
+
+/// Provider #1 owns decrypted key material behind an opaque signer port. Its
+/// public value contains pointers and metadata only; seed and expanded key
+/// bytes stay in the private context until `deinit` wipes and destroys it.
+pub const EncryptedKeyfileProvider = struct {
+    signer_port: provider.Signer,
+    allocator: std.mem.Allocator,
+
+    /// Open the existing Argon2id/XChaCha20-Poly1305 keyfile as a signer.
+    pub fn init(
+        allocator: std.mem.Allocator,
+        keyfile_json: []const u8,
+        passphrase: []const u8,
+    ) (KeyfileError || SignError || std.mem.Allocator.Error)!EncryptedKeyfileProvider {
+        var seed = try unwrapKey(allocator, keyfile_json, passphrase);
+        defer std.crypto.secureZero(u8, &seed);
+
+        const context = try allocator.create(EncryptedKeyfileContext);
+        errdefer allocator.destroy(context);
+        context.* = .{ .key_pair = try keyPairFromSeed(&seed) };
+
+        return .{
+            .signer_port = provider.Signer.init(
+                context,
+                provider.Capabilities.keyfile,
+                signWithEncryptedKeyfile,
+            ),
+            .allocator = allocator,
+        };
+    }
+
+    /// Return the custody-independent port. The caller can sign exact bytes
+    /// but cannot request or receive the provider's private key material.
+    pub fn signer(self: *EncryptedKeyfileProvider) provider.Signer {
+        return self.signer_port;
+    }
+
+    pub fn deinit(self: *EncryptedKeyfileProvider) void {
+        const context: *EncryptedKeyfileContext = @ptrCast(@alignCast(self.signer_port.context));
+        std.crypto.secureZero(u8, &context.key_pair.secret_key);
+        self.allocator.destroy(context);
+        self.* = undefined;
+    }
+};
+
+fn signWithEncryptedKeyfile(
+    raw_context: *anyopaque,
+    message: []const u8,
+) provider.Error![core.signature_len]u8 {
+    const context: *EncryptedKeyfileContext = @ptrCast(@alignCast(raw_context));
+    return signPayload(message, context.key_pair) catch provider.Error.ProviderFailure;
+}
+
+/// Ask an injected provider to sign the unchanged payload, then package the
+/// returned signature. This preserves the v1 bare-payload transcript exactly.
 pub fn seal(
     allocator: std.mem.Allocator,
     payload: []const u8,
-    kp: KeyPair,
-) (SignError || envelope.WriteError)![]u8 {
-    const sig = try signPayload(payload, kp);
+    signer_port: provider.Signer,
+) (provider.Error || envelope.WriteError)![]u8 {
+    const sig = try signer_port.sign(.ed25519, payload);
     return envelope.write(allocator, payload, &sig);
 }
 
@@ -186,7 +244,7 @@ pub fn wrapKey(
 
 /// Recover the seed from a keyfile. Returns `AuthenticationFailed` for both a
 /// wrong passphrase and a tampered file, because to an AEAD those are one event.
-pub fn unwrapKey(
+fn unwrapKey(
     allocator: std.mem.Allocator,
     keyfile_json: []const u8,
     passphrase: []const u8,
@@ -426,15 +484,41 @@ test "RFC 8032: signatures reproduce byte-for-byte" {
 
 test "seal produces an envelope the verifier accepts" {
     const a = testing.allocator;
+    const keyfile = try wrapKey(a, &test_seed, "provider pass", &test_salt, &test_nonce, cheap);
+    defer a.free(keyfile);
+    var keyfile_provider = try EncryptedKeyfileProvider.init(a, keyfile, "provider pass");
+    defer keyfile_provider.deinit();
     const kp = try keyPairFromSeed(&test_seed);
     const payload = "max_major = \"1\"\nproduct = \"mecha-validate\"\n";
 
-    const env = try seal(a, payload, kp);
+    const env = try seal(a, payload, keyfile_provider.signer());
     defer a.free(env);
 
     const got = try envelope.verifyEnvelope(a, env, &kp.public_key);
     defer a.free(got);
     try testing.expectEqualStrings(payload, got);
+}
+
+test "encrypted keyfile provider reproduces an RFC 8032 signature" {
+    const a = testing.allocator;
+    var seed: [seed_len]u8 = undefined;
+    var want: [core.signature_len]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&seed, rfc8032[0].seed);
+    _ = try std.fmt.hexToBytes(&want, rfc8032[0].signature);
+
+    const keyfile = try wrapKey(a, &seed, "provider pass", &test_salt, &test_nonce, cheap);
+    defer a.free(keyfile);
+    var keyfile_provider = try EncryptedKeyfileProvider.init(a, keyfile, "provider pass");
+    defer keyfile_provider.deinit();
+
+    const signer = keyfile_provider.signer();
+    try testing.expectEqual(provider.Capabilities.keyfile, signer.capabilities);
+    try testing.expect(!@hasField(EncryptedKeyfileProvider, "secret_key"));
+    try testing.expect(!@hasField(EncryptedKeyfileProvider, "seed"));
+    try testing.expect(@sizeOf(EncryptedKeyfileProvider) < Ed25519.SecretKey.encoded_length);
+
+    const got = try signer.sign(.ed25519, "");
+    try testing.expectEqualSlices(u8, &want, &got);
 }
 
 test "keyfile round-trips through the right passphrase" {

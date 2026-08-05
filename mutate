@@ -22,7 +22,7 @@ cd "$ROOT" || exit 1
 BACKUP="${TMPDIR:-/tmp}/sigil-mutate-$$"
 mkdir -p "$BACKUP" || { echo "FATAL: cannot create $BACKUP" >&2; exit 1; }
 
-SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig)
+SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig src/key_provider.zig)
 
 # Only one run at a time. Two concurrent runs would each snapshot the other's
 # planted defects as "pristine" and then restore garbage.
@@ -156,7 +156,7 @@ mutant "FFI leaks the generated keyfile" \
 # It stays in the list so the number stays honest and nobody later mistakes its
 # absence for coverage. Enforced by review and by the comment at the call site.
 mutant "the decrypted seed is never wiped" \
-	src/ffi_sign.zig 's/    defer std\.crypto\.secureZero\(u8, &seed\);\n//'
+	src/sign.zig 's/        defer std\.crypto\.secureZero\(u8, &seed\);\n//'
 
 # ── Boundaries ──────────────────────────────────────────────────────────────
 mutant "off-by-one: an exactly-sized output buffer is rejected" \
@@ -182,6 +182,14 @@ mutant "the AAD no longer covers the salt" \
 	src/sign.zig 's/    \@memcpy\(buf\[w\.\.\]\[0\.\.salt_len\], salt\);\n    w \+= salt_len;\n//'
 mutant "the keyfile format version is not checked" \
 	src/sign.zig 's/!std\.mem\.eql\(u8, parsed\.value\.sigil, keyfile_version\) or\n        //'
+
+# ── Provider classification: no callback before capability preflight ────────
+mutant "the provider algorithm check accepts anything" \
+	src/key_provider.zig 's/        if \(algorithm != self\.capabilities\.algorithm\) return Error\.UnsupportedAlgorithm;\n//'
+mutant "missing hardware drivers are treated as ready" \
+	src/key_provider.zig 's/            \.driver_required => return Error\.ProviderDriverRequired,/            .driver_required => {},/'
+mutant "external ceremonies are attempted in-process" \
+	src/key_provider.zig 's/            \.external_ceremony_required => return Error\.ExternalCeremonyRequired,/            .external_ceremony_required => {},/'
 
 restore || exit 1
 echo ""

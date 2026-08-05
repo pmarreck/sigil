@@ -99,17 +99,18 @@ export fn sigil_seal(
     const p = payload orelse return SIGIL_ERR_NULL_ARGUMENT;
     const n = out_len orelse return SIGIL_ERR_NULL_ARGUMENT;
 
-    var seed = sign.unwrapKey(
+    var keyfile_provider = sign.EncryptedKeyfileProvider.init(
         alloc,
         kf[0..keyfile_len],
         pw[0..passphrase_len],
     ) catch |e| return errorToCode(e);
-    defer std.crypto.secureZero(u8, &seed);
+    defer keyfile_provider.deinit();
 
-    var kp = sign.keyPairFromSeed(&seed) catch |e| return errorToCode(e);
-    defer std.crypto.secureZero(u8, &kp.secret_key);
-
-    const env = sign.seal(alloc, p[0..payload_len], kp) catch |e| return errorToCode(e);
+    const env = sign.seal(
+        alloc,
+        p[0..payload_len],
+        keyfile_provider.signer(),
+    ) catch |e| return errorToCode(e);
     defer alloc.free(env);
 
     return copyOut(env, out, out_cap, n);
@@ -176,7 +177,7 @@ fn errorToCode(e: anyerror) c_int {
         error.UnsupportedKeyfileVersion => SIGIL_ERR_UNSUPPORTED_KEYFILE,
         error.AuthenticationFailed => SIGIL_ERR_AUTH_FAILED,
         error.BadKdfParams => SIGIL_ERR_BAD_KDF_PARAMS,
-        error.BadSeed, error.BadSecretKey => SIGIL_ERR_BAD_SEED,
+        error.BadSeed, error.BadSecretKey, error.ProviderFailure => SIGIL_ERR_BAD_SEED,
         else => SIGIL_ERR_MALFORMED_KEYFILE,
     };
 }
