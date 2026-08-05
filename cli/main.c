@@ -211,9 +211,61 @@ static void chomp(char *s, size_t *len) {
 	while (*len && (s[*len - 1] == '\n' || s[*len - 1] == '\r')) s[--(*len)] = '\0';
 }
 
+/* Read one whole line, growing as needed. Bounded, but never truncates
+ * silently: past the bound it reports and fails.
+ *
+ * `fgets` into a fixed buffer silently truncates: a 2000-character passphrase
+ * became its first 1023 characters with no error anywhere. Because only the
+ * PROMPT path was capped, a key created from a long --passphrase-file could
+ * never be opened by typing the same passphrase, and the failure presented as
+ * "wrong passphrase" on a passphrase that was correct. An unopenable signing
+ * key, with nothing in the output pointing at the cause.
+ *
+ * Grown by hand rather than with realloc: realloc may copy and free the old
+ * block, leaving a plaintext passphrase in memory that nothing can reach to
+ * wipe. Copy, wipe the old block, then free it. */
+static int read_line_untruncated(FILE *f, char **out, size_t *out_len) {
+	size_t cap = 256, n = 0;
+	char *buf = malloc(cap);
+	if (!buf) return EX_IOERR;
+
+	int c;
+	while ((c = fgetc(f)) != EOF && c != '\n') {
+		/* Bounded, but the bound REPORTS instead of truncating — silently
+		 * cutting the input is the exact defect this function replaced. The
+		 * limit exists so `sigil sign < /dev/zero` cannot eat the machine. */
+		if (n >= MAX_INPUT) {
+			wipe(buf, n);
+			free(buf);
+			fprintf(stderr, "sigil: passphrase exceeds %u bytes; refusing to "
+			                "truncate it\n", MAX_INPUT);
+			return EX_USAGE;
+		}
+		if (n + 1 >= cap) {
+			size_t ncap = cap * 2;
+			char *nb = malloc(ncap);
+			if (!nb) { wipe(buf, n); free(buf); return EX_IOERR; }
+			memcpy(nb, buf, n);
+			wipe(buf, n);
+			free(buf);
+			buf = nb;
+			cap = ncap;
+		}
+		buf[n++] = (char)c;
+	}
+
+	if (c == EOF && n == 0) { wipe(buf, cap); free(buf); return EX_NOINPUT; }
+
+	buf[n] = '\0';
+	chomp(buf, &n);   /* a trailing \r from a CRLF pipe */
+	*out = buf;
+	*out_len = n;
+	return EX_OK;
+}
+
 /* Read a passphrase without echoing it. Falls back to a plain read when stdin
  * is not a terminal, so `echo pw | sigil sign ...` works in a pipeline. */
-static int prompt_passphrase(const char *prompt, char *buf, size_t cap, size_t *out_len) {
+static int prompt_passphrase(const char *prompt, char **out, size_t *out_len) {
 	fputs(prompt, stderr);
 	fflush(stderr);
 
@@ -226,16 +278,14 @@ static int prompt_passphrase(const char *prompt, char *buf, size_t cap, size_t *
 		if (tcsetattr(fileno(stdin), TCSAFLUSH, &quiet_term) == 0) restore = 1;
 	}
 #endif
-	char *got = fgets(buf, (int)cap, stdin);
+	int rc = read_line_untruncated(stdin, out, out_len);
 #if !defined(_WIN32)
 	if (restore) tcsetattr(fileno(stdin), TCSAFLUSH, &old);
 #endif
 	fputs("\n", stderr);
 
-	if (!got) { fputs("sigil: no passphrase supplied\n", stderr); return EX_NOINPUT; }
-	*out_len = strlen(buf);
-	chomp(buf, out_len);
-	return EX_OK;
+	if (rc == EX_NOINPUT) fputs("sigil: no passphrase supplied\n", stderr);
+	return rc;
 }
 
 /* Either from --passphrase-file (which may be "-"/"@stdin") or interactively. */
@@ -251,14 +301,9 @@ static int obtain_passphrase(const char *pass_file, const char *prompt,
 		*out_len = n;
 		return EX_OK;
 	}
-	char *buf = malloc(1024);
-	if (!buf) { fputs("sigil: out of memory\n", stderr); return EX_IOERR; }
-	size_t n = 0;
-	int rc = prompt_passphrase(prompt, buf, 1024, &n);
-	if (rc != EX_OK) { free(buf); return rc; }
-	*out = buf;
-	*out_len = n;
-	return EX_OK;
+	int rc = prompt_passphrase(prompt, out, out_len);
+	if (rc == EX_IOERR) fputs("sigil: out of memory\n", stderr);
+	return rc;
 }
 
 /* ── Help ───────────────────────────────────────────────────────────────── */

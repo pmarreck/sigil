@@ -20,6 +20,18 @@ holds. JSON is pure transport.
 Verify path: parse JSON → take `data` string → printable-binary decode → verify
 Ed25519 over exactly those bytes → only then parse the payload.
 
+**`sigtype` is NOT authenticated, and this is an open question as of
+2026-08-04.** An attacker may rewrite it freely; it exists to turn a bare
+"BadSignature" into a message that says what went wrong. The algorithm's real
+authority is the caller's own public key. If a second algorithm is ever added it
+must be pinned by the verifier's configuration and never selected from this
+field, or the envelope becomes a downgrade oracle — and that rule is currently
+enforced by documentation rather than by construction. Peter has asked for the
+signing method to be identified for futureproofing; the three candidate designs
+and the decision he needs to make are in `PLAN.md` under "A. Identify the
+signing method". Do not implement one before that decision — it changes the
+signed input and is a one-way door once a license is issued.
+
 ### Why printable-binary rather than base64
 
 Not just dogfooding. printable-binary **preserves legible ASCII**, so a mostly
@@ -87,6 +99,7 @@ reissuing every license.
 customer_email = "peter@example.com"
 customer_name_canonical = "peter marreck"
 expiry = "2027-07-30"          # optional for a sale; REQUIRED for a beta token
+features = "repair,batch"      # additive; absent means base tier
 max_major = "1"
 offline_days = "365"
 payment_provider = "paddle"
@@ -120,18 +133,50 @@ payment_ref = "txn_01J8XYZ"
 
 The key names never need to change; provenance is recorded per license, so a
 2026 token still says `paddle` and a 2028 one says whatever replaced it; and
-nothing is ever mislabelled. Two short keys instead of one long inaccurate one.
+nothing is ever mislabeled. Two short keys instead of one long inaccurate one.
 
 `offline_days` is data rather than a constant in two codebases so the window can
 be widened for a customer with a genuinely air-gapped machine without shipping a
 new build. See the revocation section below for what consumes it.
 
-**Still undecided — do not invent it:** `features`, the entitlement lever for
-the capability tiers (detection always free; repair/creation license-gated).
-Its shape is a product decision Peter has not made, so the example above omits
-it rather than guessing. The example envelope in `README.md` stays on the old
-placeholder names until `features` is settled, because regenerating it means
-signing a payload we would then have to change again.
+## `features` — decided 2026-08-04 (Peter)
+
+`features` is the entitlement lever for the capability tiers (detection always
+free; repair/creation license-gated). I argued it was speculative generality,
+on the grounds that every axis that varied between two licenses was already
+carried by `product`, `max_major` and `expiry`. That was wrong: **a Pro upgrade
+is the same SKU with a different capability set**, and no other field can
+express two customers of the *same* product getting different capabilities.
+
+Shape: a comma-separated list of names in one value, no spaces.
+
+```toml
+features = "repair,batch"
+```
+
+sigil neither parses nor enforces this — it signs opaque bytes. The rules below
+are for the apps, and each one is a way this class of check normally goes wrong:
+
+- **Additive allowlist only.** The app asks "does this token grant `X`?" and
+  grants nothing it does not recognize. Never a denylist, never "everything
+  except". An allowlist query fails closed on an unknown name for free; a
+  denylist fails open on every name nobody thought to add.
+- **Absent means base tier.** Every license issued before a feature name exists
+  must keep working, and must *not* acquire that feature the day the build that
+  knows the name ships. This is the one that bites in practice: today's tokens
+  have no `features` key at all, so "missing → grant everything" would hand the
+  entire existing customer base a free Pro upgrade on release day.
+- **Whole-name match.** Names match as whole list elements, never as
+  substrings — `pro` must not match inside `no-pro-trial`, and `repair` must
+  not match inside `repair-preview`. Per the project's testing rule, this gets
+  tested as a **classifier over a set** of names, not one example at a time:
+  build a corpus of names that must match and names that must not, and assert
+  the full partition.
+
+The list is unordered and duplicates are meaningless; the apps should treat it
+as a set. Whether an unknown name is worth a diagnostic (an older build reading
+a newer token) is an app-level call — it is a UX question, not a security one,
+since the capability is already denied.
 
 ## Beta tokens — decided 2026-07-30 (Peter)
 

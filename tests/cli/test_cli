@@ -517,6 +517,116 @@ raw_size=$(wc -c < "$WORK/raw.key")
 if [[ "$raw_size" -eq 32 ]]; then pass "pubkey --format raw emits exactly 32 bytes"
 else fail "pubkey --format raw emits exactly 32 bytes" "got $raw_size"; fi
 
+# ── Long passphrases ────────────────────────────────────────────────────────
+#
+# The prompt path read through a fixed 1024-byte buffer, so anything longer was
+# silently cut to 1023 characters with no error. The two paths then disagreed:
+# a key created from a long --passphrase-file could NEVER be opened by typing
+# the same passphrase at the prompt, and the failure presented as "wrong
+# passphrase" on a passphrase that was in fact correct — an unopenable signing
+# key and a support case with no way to diagnose it.
+#
+# A diceware-style passphrase does not reach 1023 characters, but a generated
+# one from a password manager can, and that is exactly the operator who would
+# use one for a signing key.
+
+LONGPW="$WORK/longpw"
+# 2000 characters: comfortably past the old buffer, and not a round number, so
+# an off-by-one in either direction still lands outside it.
+awk 'BEGIN { s = ""; while (length(s) < 2000) s = s "correct-horse-battery-staple-"; printf "%s", substr(s, 1, 2000) }' > "$LONGPW"
+longpw_len=$(wc -c < "$LONGPW")
+if [[ "$longpw_len" -eq 2000 ]]; then pass "the long-passphrase fixture is 2000 chars"
+else fail "the long-passphrase fixture is 2000 chars" "got $longpw_len"; fi
+
+LONGKEY="$WORK/long.key"
+assert_status 0 "keygen accepts a 2000-character passphrase from a file" \
+	"$SIGIL" keygen --out "$LONGKEY" --passphrase-file "$LONGPW"
+
+# The reference answer, via the path that never truncated.
+long_from_file=$("$SIGIL" pubkey --key "$LONGKEY" --passphrase-file "$LONGPW" 2>/dev/null)
+
+# The same passphrase, through the prompt path. Not a tty here, so it takes the
+# plain-read branch — which is the branch that truncated.
+long_from_prompt=$("$SIGIL" pubkey --key "$LONGKEY" < "$LONGPW" 2>/dev/null)
+prompt_rc=$?
+
+if [[ $prompt_rc -eq 0 && -n "$long_from_file" && "$long_from_prompt" == "$long_from_file" ]]; then
+	pass "a 2000-character passphrase works at the prompt, not just from a file"
+else
+	fail "a 2000-character passphrase works at the prompt, not just from a file" \
+		"rc=$prompt_rc file=[${long_from_file:0:24}...] prompt=[${long_from_prompt:0:24}...]"
+fi
+
+# Control. Without this, a build that ignored the passphrase entirely would
+# pass the assertion above. A passphrase that shares the first 1023 characters
+# and then diverges must still be REJECTED — which is precisely the case
+# truncation used to accept.
+NEARPW="$WORK/nearpw"
+{ head -c 1500 "$LONGPW"; printf 'DIVERGES-HERE'; } > "$NEARPW"
+assert_status 1 "a passphrase agreeing on the first 1023 chars is still rejected" \
+	"$SIGIL" pubkey --key "$LONGKEY" --passphrase-file "$NEARPW"
+
+# Removing the 1024-byte cap replaced it with an unbounded malloc loop over
+# stdin, which is its own hazard. The replacement bound REPORTS rather than
+# truncates — silently cutting the input is the defect that started all this —
+# so an over-long passphrase must exit 64 with an explanation, never 0 with a
+# quietly shortened key.
+overlong_err=$(head -c 17000000 /dev/zero | "$SIGIL" pubkey --key "$LONGKEY" 2>&1 >/dev/null)
+overlong_rc=$?
+if [[ $overlong_rc -eq 64 ]]; then
+	pass "an over-long passphrase is refused, not truncated"
+else
+	fail "an over-long passphrase is refused, not truncated" "exit=$overlong_rc"
+fi
+case "$overlong_err" in
+	*"refusing to truncate"*) pass "the over-long passphrase says why it was refused" ;;
+	*) fail "the over-long passphrase says why it was refused" "stderr: ${overlong_err:0:120}" ;;
+esac
+# ── The README's example is a real signed license ───────────────────────────
+#
+# README.md asserts "That is a real signed license, not a mockup." Nothing
+# checked that, so an edit to the example — reflowing it, "fixing" a field
+# name, regenerating the docs — would quietly turn the project's front page
+# into a plausible-looking fake, and the suite would stay green.
+#
+# The oracle here is the signature itself, which nobody writing documentation
+# can forge. Both halves are read out of README.md, so the test cannot pass by
+# checking a fixture that no reader ever sees.
+#
+# The private key for this example is deliberately NOT in the repo. To change
+# the example, mint a fresh demo key, re-sign, and paste both the envelope and
+# the new `sigil-pubkey-v1` line back into README.md.
+
+README="${SIGIL_README:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/README.md}"
+
+if [[ ! -f "$README" ]]; then
+	fail "README.md is readable" "not found at $README"
+else
+	grep -m1 '^{"data"' "$README" > "$WORK/readme-envelope.json"
+	grep -m1 '^sigil-pubkey-v1 ' "$README" > "$WORK/readme.pub"
+
+	if [[ ! -s "$WORK/readme-envelope.json" ]]; then
+		fail "README.md still contains an example envelope" "no line starting with {\"data\""
+	elif [[ ! -s "$WORK/readme.pub" ]]; then
+		fail "README.md still publishes the example's public key" "no sigil-pubkey-v1 line"
+	else
+		assert_status 0 "the README's example envelope really verifies" \
+			"$SIGIL" verify "$WORK/readme-envelope.json" --pubkey "$WORK/readme.pub"
+
+		# Control. Without this, a verifier that accepted anything would pass
+		# the assertion above and the test would prove nothing. Flip one byte
+		# of the payload inside the envelope and the same command must reject.
+		sed 's/peter@example\.com/peter@example\.cot/' "$WORK/readme-envelope.json" \
+			> "$WORK/readme-tampered.json"
+		if cmp -s "$WORK/readme-envelope.json" "$WORK/readme-tampered.json"; then
+			fail "the README tamper control actually changes the envelope" \
+				"sed matched nothing; the control is vacuous"
+		else
+			assert_status 1 "a one-byte edit to the README example is rejected" \
+				"$SIGIL" verify "$WORK/readme-tampered.json" --pubkey "$WORK/readme.pub"
+		fi
+	fi
+fi
 # ── Summary ─────────────────────────────────────────────────────────────────
 
 echo ""

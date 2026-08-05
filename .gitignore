@@ -39,3 +39,6 @@ secret_key
 
 # Zig 0.16 stages fetched dependencies here (content-addressed, re-fetchable)
 zig-pkg
+
+# ./mutate takes this as a mutual-exclusion lock while it plants defects.
+.mutate.lock/

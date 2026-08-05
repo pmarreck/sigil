@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const Ed25519 = std.crypto.sign.Ed25519;
+const Edwards25519 = std.crypto.ecc.Edwards25519;
 
 pub const public_key_len = Ed25519.PublicKey.encoded_length;
 pub const signature_len = Ed25519.Signature.encoded_length;
@@ -33,12 +34,37 @@ pub const Error = error{
 /// Constant-time in the underlying primitive; returns an error rather than a
 /// bool so a caller cannot accidentally ignore the result the way `if (!ok)`
 /// invites.
+///
+/// `BadPublicKey` and `BadSignature` are kept strictly apart. Only the second
+/// is an accusation against the document; the first says the *key* is wrong,
+/// which is a configuration failure and sends the operator somewhere else
+/// entirely. Collapsing them is the same defect class as reporting an
+/// allocation failure as a forgery.
 pub fn verify(
     payload: []const u8,
     sig: *const [signature_len]u8,
     public_key: *const [public_key_len]u8,
 ) Error!void {
     const pk = Ed25519.PublicKey.fromBytes(public_key.*) catch return Error.BadPublicKey;
+
+    // Low-order keys are screened here rather than left to trip the verifier
+    // downstream. Two reasons, and the second is the load-bearing one:
+    //
+    //  1. Classification. A low-order point has no private counterpart, so no
+    //     document under it is a forgery claim worth adjudicating — the key is
+    //     broken or substituted. Upstream surfaces this as IdentityElement,
+    //     which lands in the same bucket as a genuine forgery unless caught.
+    //  2. It pins the property rather than inheriting it. sigil's security
+    //     otherwise rests on upstream Zig's cofactored verifier happening to
+    //     reject these; if that ever relaxed, a substituted low-order key would
+    //     validate *any* signature over *any* message, and nothing here would
+    //     have noticed. See the small-order corpus in the tests below.
+    //
+    // Costs one extra point decode per verify, which is noise next to the
+    // scalar multiplications that follow.
+    const point = Edwards25519.fromBytes(public_key.*) catch return Error.BadPublicKey;
+    point.rejectLowOrder() catch return Error.BadPublicKey;
+
     const signature = Ed25519.Signature.fromBytes(sig.*);
     signature.verify(payload, pk) catch return Error.BadSignature;
 }
@@ -160,6 +186,144 @@ test "RFC 8032 known-answer vectors" {
             try std.testing.expectError(
                 Error.BadSignature,
                 verify(tampered[0..m.len], &sig, &pk),
+            );
+        }
+    }
+}
+
+// ── Public-key validation ──────────────────────────────────────────────────
+
+/// The eight points of small order on Edwards25519, in canonical encoding.
+///
+/// Published constants (they appear verbatim in the libsodium and ed25519-donna
+/// test suites), but this file does not take them on faith: the first test
+/// below multiplies each by the cofactor and asserts the result is the
+/// identity, which is the definition of small order. A typo in this table
+/// therefore fails loudly instead of silently shrinking the corpus.
+pub const small_order_points = [_][public_key_len]u8{
+    hex32("0100000000000000000000000000000000000000000000000000000000000000"), // identity
+    hex32("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"), // order 2
+    hex32("0000000000000000000000000000000000000000000000000000000000000000"), // order 4
+    hex32("0000000000000000000000000000000000000000000000000000000000000080"), // order 4
+    hex32("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"), // order 8
+    hex32("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"), // order 8
+    hex32("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85"), // order 8
+    hex32("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa"), // order 8
+};
+
+fn hex32(comptime s: *const [64:0]u8) [32]u8 {
+    var out: [32]u8 = undefined;
+    _ = std.fmt.hexToBytes(&out, s) catch unreachable;
+    return out;
+}
+
+test "the small-order corpus really is small-order" {
+    // The independent oracle for the table above. Nothing here trusts the
+    // comments; 8P == identity is checked arithmetically for every entry.
+    for (small_order_points, 0..) |bytes, i| {
+        const p = Edwards25519.fromBytes(bytes) catch |e| {
+            std.debug.print("small_order_points[{d}] does not decode: {s}\n", .{ i, @errorName(e) });
+            return e;
+        };
+        p.clearCofactor().rejectIdentity() catch continue; // 8P == identity: correct
+        std.debug.print("small_order_points[{d}] is NOT small order\n", .{i});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "every low-order public key is reported as a key problem, not a forgery" {
+    // Classifier over the whole set, not one example. A low-order key cannot
+    // have a private counterpart, so a document presented under one is never a
+    // forgery claim to adjudicate — it is a broken or substituted key, and
+    // saying "NOT AUTHENTIC" about the document sends the operator hunting for
+    // the wrong bug. This is the same misclassification as reporting an OOM as
+    // a forgery.
+    //
+    // It also pins a property sigil's whole security rests on but never owned:
+    // upstream Zig happens to trip over these keys downstream and return
+    // IdentityElement. If a future release made cofactored verification accept
+    // them, that is universal forgery — any signature over any message under a
+    // substituted key — and without this test the suite would stay green
+    // through it.
+    const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
+    const payload = "product=mecha-validate\n";
+    const sig = try kp.sign(payload, null);
+
+    for (small_order_points, 0..) |bad_key, i| {
+        verify(payload, &sig.toBytes(), &bad_key) catch |e| {
+            if (e == Error.BadPublicKey) continue;
+            std.debug.print("small_order_points[{d}] gave {s}, want BadPublicKey\n", .{ i, @errorName(e) });
+            return error.TestUnexpectedResult;
+        };
+        std.debug.print("small_order_points[{d}] was ACCEPTED\n", .{i});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "a low-order key cannot be used to forge a signature over arbitrary bytes" {
+    // The attack the check above forecloses: with a small-order A, cofactored
+    // verification can be satisfied by R of small order and s = 0, which
+    // validates *any* message. Asserted directly so the property is pinned
+    // even if the classification above is ever refactored.
+    var forged: [signature_len]u8 = @splat(0); // s = 0
+    forged[0..32].* = small_order_points[1]; // R = the order-2 point
+    for (small_order_points) |bad_key| {
+        try std.testing.expectError(
+            Error.BadPublicKey,
+            verify("a license I did not pay for", &forged, &bad_key),
+        );
+    }
+}
+
+test "non-canonical public key encodings are rejected as key problems" {
+    // y >= p is not a point encoding at all. Distinguished from low-order
+    // because it fails at a different place and must not be misfiled either.
+    const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
+    const payload = "product=mecha-validate\n";
+    const sig = try kp.sign(payload, null);
+
+    const non_canonical = [_][public_key_len]u8{
+        hex32("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        hex32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"), // y == p
+        hex32("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"), // y == p+1
+    };
+    for (non_canonical, 0..) |bad_key, i| {
+        verify(payload, &sig.toBytes(), &bad_key) catch |e| {
+            if (e == Error.BadPublicKey) continue;
+            std.debug.print("non_canonical[{d}] gave {s}, want BadPublicKey\n", .{ i, @errorName(e) });
+            return error.TestUnexpectedResult;
+        };
+        std.debug.print("non_canonical[{d}] was ACCEPTED\n", .{i});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "specificity: real keys are never mistaken for bad keys" {
+    // Without this, "return BadPublicKey always" would pass every test above.
+    // Both arms matter: a good key over its own signature must verify, and a
+    // good key over someone else's signature must still say BadSignature —
+    // the rejection has to keep its own name.
+    const seeds = [_][Ed25519.KeyPair.seed_length]u8{
+        test_seed_a,
+        test_seed_b,
+        @splat(0x00),
+        @splat(0xFF),
+        @splat(0x01),
+    };
+    const payload = "product=mecha-validate\nmax_major=1\n";
+    for (seeds, 0..) |seed, i| {
+        const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+        const sig = try kp.sign(payload, null);
+        verify(payload, &sig.toBytes(), &kp.public_key.toBytes()) catch |e| {
+            std.debug.print("seed {d}: honest key rejected with {s}\n", .{ i, @errorName(e) });
+            return e;
+        };
+
+        const other = try Ed25519.KeyPair.generateDeterministic(seeds[(i + 1) % seeds.len]);
+        if (!std.mem.eql(u8, &kp.public_key.toBytes(), &other.public_key.toBytes())) {
+            try std.testing.expectError(
+                Error.BadSignature,
+                verify(payload, &sig.toBytes(), &other.public_key.toBytes()),
             );
         }
     }

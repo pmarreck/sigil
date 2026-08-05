@@ -23,18 +23,74 @@ BACKUP="${TMPDIR:-/tmp}/sigil-mutate-$$"
 mkdir -p "$BACKUP" || { echo "FATAL: cannot create $BACKUP" >&2; exit 1; }
 
 SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig)
+
+# Only one run at a time. Two concurrent runs would each snapshot the other's
+# planted defects as "pristine" and then restore garbage.
+LOCK="$ROOT/.mutate.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+	echo "FATAL: another ./mutate run holds $LOCK — wait for it, or remove the" >&2
+	echo "       directory if you are certain no run is active." >&2
+	exit 1
+fi
+
+hash_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+CONCURRENT_EDIT=0
+
+# What this script last wrote to each file. Any deviation means something else
+# edited the tree mid-run, and restoring would silently destroy that work —
+# which is exactly what happened once: an editor appended tests to
+# src/envelope.zig while a run was in flight, and the next restore ate them.
+declare -A LAST_WRITTEN
 for f in "${SOURCES[@]}"; do
 	cp "$f" "$BACKUP/$(basename "$f")" || exit 1
+	LAST_WRITTEN["$f"]="$(hash_of "$f")"
 done
 
-restore() {
+# record_written: call after DELIBERATELY changing a source, so the guard does
+# not mistake this script's own planting for someone else's edit.
+record_written() { LAST_WRITTEN["$1"]="$(hash_of "$1")"; }
+
+# copy_back: unconditional restore from the snapshot. Used by the exit path,
+# which has already decided it is safe to overwrite.
+copy_back() {
 	for s in "${SOURCES[@]}"; do
 		cp "$BACKUP/$(basename "$s")" "$s" 2>/dev/null
+		record_written "$s"
 	done
 }
+
+# restore: the guarded version used between mutants. Returns non-zero and
+# touches nothing if a source no longer matches what this script last wrote.
+restore() {
+	local s now
+	for s in "${SOURCES[@]}"; do
+		now="$(hash_of "$s")"
+		if [[ -n "$now" && "$now" != "${LAST_WRITTEN[$s]:-}" ]]; then
+			CONCURRENT_EDIT=1
+			printf '\n\033[31mFATAL\033[0m %s changed while ./mutate was running.\n' "$s" >&2
+			printf '      Your edit is left in place and this run is abandoned.\n' >&2
+			printf '      The pre-run snapshot is kept at %s\n' "$BACKUP" >&2
+			printf '      Do not edit the mutated sources during a run.\n' >&2
+			return 1
+		fi
+	done
+	copy_back
+}
+
 # Restoring the tree matters more than tidiness: an interrupted run must not
-# leave a planted defect behind.
-trap 'restore; rm -rf "$BACKUP"' EXIT INT TERM
+# leave a planted defect behind. But once a concurrent edit is detected, both
+# the tree and the snapshot are left alone — the snapshot may be the only copy
+# of what the sources looked like before the run started.
+cleanup() {
+	if [[ "$CONCURRENT_EDIT" -eq 0 ]]; then
+		copy_back
+		rm -rf "$BACKUP"
+	fi
+	rmdir "$LOCK" 2>/dev/null
+}
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT TERM
 
 KILLED=0
 SURVIVED=0
@@ -48,12 +104,15 @@ run_suite_quietly() {
 # mutant <description> <file> <perl-expression>
 mutant() {
 	local desc="$1" file="$2" expr="$3"
-	restore
+	restore || exit 1
 
 	if ! perl -0pi -e "$expr" "$file" 2>/dev/null; then
 		printf '  \033[33mSKIP\033[0m %s (mutation failed to apply)\n' "$desc"
 		return 0
 	fi
+	# The defect is planted on purpose, so tell the guard about it — otherwise
+	# the next restore would read this script's own edit as somebody else's.
+	record_written "$file"
 	if cmp -s "$file" "$BACKUP/$(basename "$file")"; then
 		printf '  \033[33mSKIP\033[0m %s (pattern matched nothing — mutant is stale)\n' "$desc"
 		return 0
@@ -75,7 +134,7 @@ echo ""
 # Specificity corpus. If the unmutated tree does not pass, every "killed"
 # verdict below is meaningless: the suite would be failing for its own reasons
 # and every mutant would score as caught.
-restore
+restore || exit 1
 if run_suite_quietly; then
 	echo "  baseline: unmutated tree passes (verdicts below are meaningful)"
 else
@@ -93,7 +152,7 @@ mutant "FFI leaks the generated keyfile" \
 	src/ffi_sign.zig 's/    defer alloc\.free\(keyfile\);\n//'
 # KNOWN SURVIVOR, kept deliberately. Whether a stack buffer was zeroed is not
 # observable from a test that plays by the rules — reading it after the frame
-# returns is undefined behaviour, and a test built on UB is worse than no test.
+# returns is undefined behavior, and a test built on UB is worse than no test.
 # It stays in the list so the number stays honest and nobody later mistakes its
 # absence for coverage. Enforced by review and by the comment at the call site.
 mutant "the decrypted seed is never wiped" \
@@ -105,6 +164,15 @@ mutant "off-by-one: an exactly-sized output buffer is rejected" \
 mutant "the signature length check is dropped" \
 	src/envelope.zig 's/    if \(sig\.len != signature_len\) return EnvelopeError\.BadSignatureLength;\n//'
 
+# ── Classification: a wrong key or a mangled file is not a forgery ──────────
+# Both of these once shipped as "the signature does not verify", which accuses
+# the document when the fault is elsewhere. Planted so the distinction cannot
+# quietly regress into a single bucket again.
+mutant "low-order public keys are no longer screened" \
+	src/verify.zig 's/    point\.rejectLowOrder\(\) catch return Error\.BadPublicKey;\n//'
+mutant "the printable-binary alphabet is no longer checked" \
+	src/envelope.zig 's/    if \(pb\.validate\(encoded, 0\)\.is_valid == 0\) return EnvelopeError\.MalformedEncoding;\n//'
+
 # ── Authenticity: the mutants that matter ───────────────────────────────────
 mutant "verify always succeeds" \
 	src/verify.zig 's/signature\.verify\(payload, pk\) catch return Error\.BadSignature;/signature.verify(payload, pk) catch {};/'
@@ -115,7 +183,7 @@ mutant "the AAD no longer covers the salt" \
 mutant "the keyfile format version is not checked" \
 	src/sign.zig 's/!std\.mem\.eql\(u8, parsed\.value\.sigil, keyfile_version\) or\n        //'
 
-restore
+restore || exit 1
 echo ""
 TOTAL=$((KILLED + SURVIVED))
 echo "─────────────────────────────────────────────"

@@ -5,11 +5,19 @@
 Verify Ed25519-signed documents whose payload **stays human-scannable**.
 
 ```json
-{"data":"email␣꞊␣ˮpeter@example.comˮ¶max_major␣꞊␣ˮ1ˮ¶product␣꞊␣ˮmecha˗validateˮ¶","sigtype":"Ed25519","sig":"ȯTŖĹŖĵŽǦ␣Atľď4ĵ⟦ǹǧmCŶUǁǃƕ¯¿ŴŷoűĤĭǵe⌫ṾˮȳkŕȦCƌŤkņqkʼĺĹƘ❵ȧ˗Ťqćǧw∣w⌫"}
+{"data":"customer_email␣꞊␣ˮpeter@example.comˮ¶customer_name_canonical␣꞊␣ˮpeter␣marreckˮ¶features␣꞊␣ˮrepair٫batchˮ¶max_major␣꞊␣ˮ1ˮ¶product␣꞊␣ˮmecha˗validateˮ¶v␣꞊␣ˮ1ˮ¶","sigtype":"Ed25519","sig":"ċŹŸoǰřţċȽˋ∣dbŖƁꞨǩǀ§¶ǓžžĔűɨLT0V§ƕťĵ٫aȕĺ1ŠµȚ¦ĽƳŤǑȦŸY❩_⧷WŬ꞉šŹˮ∣⧷ŷƒϟ"}
 ```
 
-That is a real signed license. You can read it. You can `grep` it. It is still
-plain JSON, and it is still safe for arbitrary binary payloads.
+That is a real signed license, not a mockup. It verifies against this key, and
+the test suite re-checks that on every run, so the example above cannot rot into
+a plausible-looking fake:
+
+```
+sigil-pubkey-v1 @⌦kuȚ˃rŚµǦRŕsnΞȉ❴ǵ¦zţq^țĤČ4ďțǨZr
+```
+
+You can read the payload. You can `grep` it. It is still plain JSON, and it is
+still safe for arbitrary binary payloads.
 
 ## The one invariant
 
@@ -39,10 +47,13 @@ it drops into a JSON string with no escaping. (That property is swept over all
 $ sigil keygen --out mecha.key          # writes mecha.key (encrypted) + mecha.key.pub
 $ sigil sign license.toml --key mecha.key --out license.sigil
 $ sigil verify license.sigil --pubkey mecha.key.pub
-email = "peter@example.com"
+customer_email = "peter@example.com"
+customer_name_canonical = "peter marreck"
+features = "repair,batch"
 max_major = "1"
 product = "mecha-validate"
-✓ verified license.sigil (71 bytes)
+v = "1"
+✓ verified license.sigil (156 bytes)
 ```
 
 stdout is the authenticated payload and nothing else, so it pipes. Status goes

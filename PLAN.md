@@ -15,8 +15,82 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 - [x] **Einstein's remediation queue is complete** — all seven items, each
       reproduced before it was fixed. `6d5a378`, CI green. 312 tests, and
       `./mutate` reports 9/10 mutants killed. — 2026-08-01 02:30 EDT
-- [ ] Nothing is in flight. The two things below want Peter; the "High, still
-      open" list below is the next work.
+- [ ] **New scope from Peter (2026-08-04, relayed by Einstein), broken out
+      below.** His words: *"sigil must serve as a maximally-correct and secure
+      certificate signer; I'm still deciding on how I will provide the private
+      key (yubikey or offline airgapped secret etc.; it should be flexible
+      enough to be configurable for both) but it looks like Ed25519 will be the
+      starting signature format unless something PQC-related is proven/usable;
+      signing method should be specified in the cert or sig somehow for
+      futureproofing."* Followed by *"please add these to a PLAN.md and work
+      down the list."*
+
+### A. Identify the signing method (Peter, 2026-08-04) — BLOCKED on his call
+
+The requirement is real and today's answer is documentation, not construction:
+`sigtype` sits in the envelope **unauthenticated**, and a future maintainer who
+added a second algorithm and switched on that field would have built a
+downgrade oracle. sigil already documents "pin the algorithm in the verifier's
+config, never read it from the envelope" — but that is policy where physics is
+available, exactly the distinction in the MFIC rules.
+
+Three ways to satisfy it. This wants Peter because it is a **one-way door before
+release** and because it turns on how literally THE INVARIANT is meant:
+
+1. **Versioned signing transcript** — sign `domain ‖ version ‖ alg-id ‖
+   payload-length ‖ payload-bytes-verbatim` instead of the bare payload.
+   Payload bytes are never transformed, so reformatting the envelope still
+   works and no canonicalization is needed; but the signed *input* is no longer
+   the payload alone. Generalizes to any future algorithm. Einstein's
+   recommendation, and mine.
+2. **Ed25519ctx** (RFC 8032 §5.1) — mixes a context string into the hash with
+   the message untouched. Two checked facts, not assumptions: Zig 0.16's
+   `std.crypto.sign.Ed25519` does **not** expose it (the only `ctx` parameters
+   in that file belong to the blind-key API), and it does not generalize to
+   non-Ed25519 algorithms.
+3. **Status quo** — verifier-pinned algorithm, `sigtype` informational only.
+   Costs nothing, satisfies "futureproofing" only by convention.
+
+**The question for Peter**: is "the signature is Ed25519 over the raw payload
+bytes, full stop" a wire property you want to keep, or is "the payload bytes are
+never transformed" the property that actually mattered? (1) preserves the second
+and gives up the first. Nothing is released, so either is free *today* and
+neither is free later.
+
+- [ ] Get that decision.
+- [ ] Then: specify field widths, length encoding and domain separation
+      explicitly; write vectors and downgrade tests BEFORE implementing. No
+      improvised encoding — a hand-rolled length prefix is how signature
+      schemes get ambiguity bugs.
+
+### B. Custody flexibility (Peter, 2026-08-04)
+
+Peter wants the private key *provider* configurable — YubiKey or offline
+air-gapped secret — not two finished drivers. The July 28 passphrase-encrypted
+keyfile decision is not reversed; it becomes the first provider.
+
+- [ ] Define the smallest signer/key-provider port that keeps envelope and
+      certificate semantics independent of custody. The existing Argon2id →
+      XChaCha20-Poly1305 keyfile is provider #1 and is already tested.
+- [ ] Capability discovery with honest unsupported behavior. Concretely: most
+      YubiKey PIV firmware cannot do Ed25519 at all — PIV is RSA and ECDSA
+      P-256/P-384, with Ed25519 only on 5.7+. A provider that cannot perform the
+      configured algorithm must say so, not fail obscurely at signing time.
+- [ ] Do NOT write a PKCS#11/PIV implementation without hardware to test it
+      against. An untested driver for a device nobody has is worse than none.
+- [ ] Air-gapped ceremony is mostly a workflow question — the keyfile is one
+      line of JSON and never leaves the signing host. Write it up before
+      building anything.
+
+### C. Exit-code contract inconsistency (found 2026-08-04)
+
+- [ ] `--help` says exit 1 means "NOT AUTHENTIC ... Only 1 ever means a document
+      was rejected on its merits", but a **wrong passphrase** also exits 1. A
+      passphrase is not a document and it is not being rejected on its merits.
+      Same misclassification family as the OOM and low-order-key bugs already
+      fixed. Not changed on the spot: it is a documented CLI contract with an
+      existing test pinning it, so it wants a deliberate choice (probably 77
+      EX_NOPERM, or 65) rather than a midnight edit.
 
 ## Next
 
@@ -216,14 +290,75 @@ linking, running or disassembling — none are speculative.
       the number stays honest. The exit code means "a NEW survivor appeared",
       and a known survivor that starts dying is also flagged so the allowlist
       cannot quietly grow into an excuse. — 2026-08-01 02:27 EDT
-- [ ] Passphrases silently truncated at 1023 chars on the prompt path only,
-      producing an unopenable key reported as "wrong passphrase".
-- [ ] `MALFORMED_ENCODING` unreachable for `data`/`sig` — corrupt files are
-      reported as forgeries, the exact support failure the docstring names.
+- [x] `features` is confirmed necessary and specified (Peter, 2026-08-04): a
+      Pro upgrade is the same SKU with a different capability set, which no
+      other field can express. Shape and the three rules that keep the check
+      honest (additive allowlist, absent-means-base, whole-name match tested as
+      a classifier over a set) are in `docs/DESIGN.md` and the release plan.
+      The README example envelope was regenerated on the real field names.
+      — 2026-08-04 23:10 EDT
+- [x] Revocation and beta-token expiry written into `MECHA_RELEASE_PLAN.md` as
+      dated post-lock amendments, along with the `payment_provider` /
+      `payment_ref` split, sigil as the named implementation, and the
+      confirmation endpoint added to the shared-infrastructure list — without
+      it, `offline_days` never resets and revocation does not exist.
+      — 2026-08-04 23:08 EDT
+- [x] `MALFORMED_ENCODING` was unreachable for `data`/`sig`. printable-binary's
+      decoder is total over valid UTF-8 — an unmapped glyph becomes *some* byte
+      rather than an error — so a file mangled in transit came back as
+      "signature does not verify", telling a paying customer their license is
+      FORGED. Now screened with `pb.validate`, the codec's own oracle rather
+      than a copy of the alphabet kept here, so the two cannot drift apart.
+      Specificity corpus: all 256 byte values round-trip, both together and
+      one at a time. — 2026-08-04 23:33 EDT
+- [x] Bad public keys are now tested, and the finding was worse than this entry
+      claimed. All eight small-order points are **accepted** by
+      `Ed25519.PublicKey.fromBytes`; upstream rejects them further down as
+      `IdentityElement`, which sigil collapsed into `BadSignature`. Two
+      consequences: a broken or substituted key was reported as a forged
+      document (the same misclassification as the OOM bug), and sigil's whole
+      security rested on an upstream property nothing here pinned — if Zig's
+      cofactored verify ever relaxed, a substituted low-order key would
+      validate *any* signature over *any* message with the suite still green.
+      `verify()` now screens low-order points itself and returns
+      `BadPublicKey`. The corpus is self-checking: each point is multiplied by
+      the cofactor and asserted to be the identity, so a typo in the table
+      fails loudly instead of silently shrinking the set. Specificity: five
+      real keypairs must verify, and a wrong key must still say
+      `BadSignature`. — 2026-08-04 23:20 EDT
+- [x] **`./mutate` destroyed uncommitted work.** It snapshots the sources it
+      mutates and restores them between mutants; an edit made during a run was
+      silently reverted at the next restore, and it ate a set of tests
+      mid-session. Against Peter's data-safety rule, and my own tool's fault.
+      It now takes a lock, hashes what it last wrote to each source, and on any
+      deviation aborts, leaves the foreign edit in place, and KEEPS the
+      snapshot rather than overwriting. Verified by editing a source mid-run:
+      aborted, edit survived, snapshot preserved. (The first attempt at that
+      verification raced — the edit landed before the snapshot and legitimately
+      became the baseline — so the check now waits for the baseline line.)
+      — 2026-08-04 23:34 EDT
+- [x] The README's example envelope is now checked to be a real signed license.
+      It claimed "That is a real signed license" and nothing verified that, so
+      any doc edit could have turned the front page into a plausible fake with
+      the suite still green. The public key is published beside it, so a reader
+      can check it too, and the CLI suite re-verifies it on every run with a
+      tamper control that reports *itself* as vacuous if the example changes.
+      — 2026-08-04 23:12 EDT
 - [ ] `--json` implemented only by `verify`; `pubkey --out` silently ignored
       for hex/c/zig (the README's own embedding workflow).
-- [ ] No test for a bad public key. All-zero/small-order *are* rejected, but
-      only by upstream Zig, unpinned, and misclassified as `BadSignature`.
+- [x] Passphrases were silently truncated at 1023 chars on the prompt path only.
+      Because only that path was capped, the two disagreed: a key created from a
+      long `--passphrase-file` could never be opened by typing the same
+      passphrase, and it presented as "wrong passphrase" on a passphrase that
+      was correct — an unopenable signing key with nothing pointing at the
+      cause. Now read unbounded, grown by hand rather than with `realloc`
+      (which may copy and free, leaving a plaintext passphrase in memory that
+      nothing can reach to wipe). Removing the cap introduced an unbounded
+      malloc loop over stdin, so the replacement bound at `MAX_INPUT` REPORTS
+      rather than truncates — silently cutting the input is the defect that
+      started this. Control test: a passphrase agreeing on the first 1023
+      characters and then diverging must still be rejected, which is exactly
+      the case truncation used to accept. — 2026-08-04 23:47 EDT
 
 ### Feature: envelope normalization (Peter, 2026-07-28)
 

@@ -300,10 +300,26 @@ pub fn publicKeyFromText(
 /// printable-binary decode that keeps allocation failure distinguishable from
 /// malformed input — collapsing them would report a transient OOM as a forged
 /// license, which is exactly the wrong thing to tell a paying customer.
+///
+/// The alphabet is checked BEFORE decoding, because the decoder is total over
+/// valid UTF-8: an unmapped glyph becomes *some* byte rather than an error, so
+/// a file mangled in transit came back as "signature does not verify" and
+/// `MalformedEncoding` was unreachable for `data` and `sig`. Structural damage
+/// and tampering are different accusations and must not share an exit code.
+///
+/// `pb.validate` is the codec's own oracle rather than a copy of the alphabet
+/// kept here, so a remapped glyph upstream cannot leave the two disagreeing.
+/// Whitespace flags are 0: `normalize` has already stripped every byte outside
+/// the envelope's ASCII allowlist, which contains no whitespace.
+///
+/// This can only ever reject more, never accept more, so it preserves the
+/// module's central asymmetry — a bug here costs availability, not
+/// authenticity.
 fn decodeField(
     allocator: std.mem.Allocator,
     encoded: []const u8,
 ) (EnvelopeError || std.mem.Allocator.Error)![]u8 {
+    if (pb.validate(encoded, 0).is_valid == 0) return EnvelopeError.MalformedEncoding;
     return pb.decode(allocator, encoded, .{}) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return EnvelopeError.MalformedEncoding;
@@ -764,4 +780,114 @@ test "MFIC: the ASCII allowlist matches what the codec actually emits" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "a glyph outside the alphabet is corruption, not a forgery" {
+    // Classifier over a set of characters that are valid UTF-8 but carry no
+    // printable-binary meaning. The decoder is total over valid UTF-8 — it
+    // turns an unmapped glyph into *some* byte rather than refusing — so
+    // without an explicit alphabet check every one of these came back as
+    // "signature does not verify", i.e. sigil telling a paying customer their
+    // license is FORGED when the file was merely mangled. `MalformedEncoding`
+    // exists in the error set precisely for this and was unreachable.
+    const allocator = testing.allocator;
+    const kp = try testKey(@splat(0x11));
+    const envelope = try sealForTest(allocator, kp, "product = \"mecha-validate\"\n");
+    defer allocator.free(envelope);
+
+    // Sanity: the untouched envelope verifies. Without this the test could
+    // pass because the fixture was broken to begin with.
+    const ok = try verifyEnvelope(allocator, envelope, &kp.public_key.toBytes());
+    allocator.free(ok);
+
+    const intruders = [_][]const u8{
+        "\u{2603}", // snowman
+        "\u{1F600}", // emoji, 4-byte
+        "\u{00E9}", // e-acute, 2-byte
+        "\u{4E2D}", // CJK, 3-byte
+        "\u{0416}", // Cyrillic Zhe
+    };
+
+    for (intruders, 0..) |glyph, i| {
+        // Splice the intruder in just after `data`'s opening quote.
+        const marker = "{\"data\":\"";
+        const at = std.mem.indexOf(u8, envelope, marker) orelse return error.TestUnexpectedResult;
+        const cut = at + marker.len;
+
+        var corrupted = std.ArrayList(u8).empty;
+        defer corrupted.deinit(allocator);
+        try corrupted.appendSlice(allocator, envelope[0..cut]);
+        try corrupted.appendSlice(allocator, glyph);
+        try corrupted.appendSlice(allocator, envelope[cut..]);
+
+        const r = verifyEnvelope(allocator, corrupted.items, &kp.public_key.toBytes());
+        if (r) |payload| {
+            allocator.free(payload);
+            std.debug.print("intruder {d} was ACCEPTED\n", .{i});
+            return error.TestUnexpectedResult;
+        } else |e| {
+            if (e == EnvelopeError.MalformedEncoding) continue;
+            std.debug.print("intruder {d} gave {s}, want MalformedEncoding\n", .{ i, @errorName(e) });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "specificity: every byte value still round-trips through the alphabet check" {
+    // The corpus that stops the fix above from being "reject anything unusual".
+    // Every one of the 256 byte values must survive encode -> envelope ->
+    // verify; one legitimate glyph misclassified as corruption would make some
+    // real licenses permanently unverifiable, which is worse than the bug being
+    // fixed.
+    const allocator = testing.allocator;
+    const kp = try testKey(@splat(0x22));
+
+    var payload: [256]u8 = undefined;
+    for (&payload, 0..) |*b, i| b.* = @intCast(i);
+
+    const envelope = try sealForTest(allocator, kp, &payload);
+    defer allocator.free(envelope);
+
+    const got = try verifyEnvelope(allocator, envelope, &kp.public_key.toBytes());
+    defer allocator.free(got);
+    try testing.expectEqualSlices(u8, &payload, got);
+
+    // And every single-byte payload alone, so one bad glyph cannot hide among
+    // 255 good ones in a single buffer.
+    for (0..256) |i| {
+        const one = [_]u8{@intCast(i)};
+        const env1 = try sealForTest(allocator, kp, &one);
+        defer allocator.free(env1);
+        const out = verifyEnvelope(allocator, env1, &kp.public_key.toBytes()) catch |e| {
+            std.debug.print("byte 0x{X:0>2} rejected as {s}\n", .{ i, @errorName(e) });
+            return e;
+        };
+        defer allocator.free(out);
+        try testing.expectEqualSlices(u8, &one, out);
+    }
+}
+
+test "an unmapped glyph in the sig field is corruption too" {
+    // `sig` goes through the same decoder and needs the same classification.
+    // Checked separately because a fix applied to only one field would leave
+    // this half broken with every existing test still green.
+    const allocator = testing.allocator;
+    const kp = try testKey(@splat(0x33));
+    const envelope = try sealForTest(allocator, kp, "product = \"mecha-validate\"\n");
+    defer allocator.free(envelope);
+
+    const marker = "\"sig\":\"";
+    const at = std.mem.indexOf(u8, envelope, marker) orelse return error.TestUnexpectedResult;
+    const cut = at + marker.len;
+
+    var corrupted = std.ArrayList(u8).empty;
+    defer corrupted.deinit(allocator);
+    try corrupted.appendSlice(allocator, envelope[0..cut]);
+    try corrupted.appendSlice(allocator, "\u{2603}");
+    try corrupted.appendSlice(allocator, envelope[cut..]);
+
+    try testing.expectError(
+        EnvelopeError.MalformedEncoding,
+        verifyEnvelope(allocator, corrupted.items, &kp.public_key.toBytes()),
+    );
 }
