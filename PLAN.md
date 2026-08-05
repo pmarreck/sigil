@@ -81,8 +81,10 @@ keyfile decision is not reversed; it becomes the first provider.
       - [x] Mechanically classify unsupported algorithm, missing hardware
             driver, external ceremony, and provider failure without claiming a
             YubiKey or air-gapped driver exists.
-      - [ ] Run canonical tests/build/mutation/Nix and exact terminal
-            Mechatron CI before publishing integration notes.
+      - [x] Run canonical tests/build/mutation/Nix and exact terminal
+            Mechatron CI before publishing integration notes. Commit
+            `b3456518aca3fe5296fa0ca219b505ab1ad935cc` passed Mechatron in
+            6 seconds. — 2026-08-05 02:21 EDT
 - [x] Capability discovery with honest unsupported behavior. Concretely: most
       YubiKey PIV firmware cannot do Ed25519 at all — PIV is RSA and ECDSA
       P-256/P-384, with Ed25519 only on 5.7+. A provider that cannot perform the
