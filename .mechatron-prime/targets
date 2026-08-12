@@ -8,3 +8,4 @@ packages.x86_64-linux.default
 checks.x86_64-linux.test
 checks.x86_64-linux.test-cli
 checks.x86_64-linux.test-symbols
+checks.x86_64-linux.test-conformance

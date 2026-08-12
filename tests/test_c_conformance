@@ -51,7 +51,13 @@ if [[ $build_rc -ne 0 ]]; then
 fi
 echo "  ok   libsigil.a links with a stock C compiler ($("$CC" --version 2>&1 | head -1))"
 
-run_out=$("$bin")
+# The fixture triple is sigil's own signed output, committed under
+# examples/demo/. It restores the sensitivity the RFC raw vector provided
+# before the transcript change (that vector is now the domain-separation
+# rejection case instead).
+run_out=$("$bin" "$REPO_ROOT/examples/demo/payload.bin" \
+                 "$REPO_ROOT/examples/demo/sig.bin" \
+                 "$REPO_ROOT/examples/demo/pubkey.bin")
 run_rc=$?
 echo "$run_out" | grep -E '^  (ok|FAIL)' || true
 
@@ -96,6 +102,54 @@ else
 	je_passed=$(grep -c '^  ok' <<<"$je_out")
 	passed=$((passed + je_passed))
 	[[ $je_rc -ne 0 ]] && total_rc=1
+fi
+
+# The shipped example must keep compiling and keep being RIGHT. Documentation
+# already rotted once in this repo (ten stale invariant statements survived a
+# format change); an example that is also a test cannot. This is the exact
+# call sequence the integration note hands to Validate/RotShield, run against
+# the committed demo fixtures, with a tamper control so "verifies" is a
+# statement about the crypto and not about a happy accident.
+ex_bin="$(mktemp "${TMPDIR:-/tmp}/sigil-embed-example-XXXXXX")"
+trap 'rm -f "$bin" "$ec_bin" "$je_bin" "$ex_bin"' EXIT
+
+ex_build=$("$CC" -std=c11 -Wall -Wextra \
+	-I "$REPO_ROOT/include" \
+	"$REPO_ROOT/examples/embed_minimal.c" "$LIB" -o "$ex_bin" 2>&1)
+if [[ $? -ne 0 ]]; then
+	echo "  FAIL examples/embed_minimal.c does not compile with a stock cc" >&2
+	echo "$ex_build" | sed 's/^/     /' >&2
+	total_rc=1
+else
+	ex_out=$("$ex_bin" "$REPO_ROOT/examples/demo/license.sigil" \
+	                   "$REPO_ROOT/examples/demo/demo.key.pub" 2>/dev/null)
+	if [[ $? -eq 0 && "$ex_out" == *'"product":"mecha-validate"'* ]]; then
+		echo "  ok   embed_minimal verifies the demo license and emits its payload"
+		passed=$((passed + 1))
+	else
+		echo "  FAIL embed_minimal did not verify the demo license" >&2
+		total_rc=1
+	fi
+
+	# Control: one corrupted byte must flip the verdict to exit 1, or the
+	# check above proves nothing.
+	tampered="$(mktemp "${TMPDIR:-/tmp}/sigil-embed-tampered-XXXXXX")"
+	sed 's/peter@example/hacker@example/' \
+		"$REPO_ROOT/examples/demo/license.sigil" > "$tampered"
+	if cmp -s "$tampered" "$REPO_ROOT/examples/demo/license.sigil"; then
+		echo "  FAIL tamper control is vacuous (sed matched nothing)" >&2
+		total_rc=1
+	else
+		"$ex_bin" "$tampered" "$REPO_ROOT/examples/demo/demo.key.pub" >/dev/null 2>&1
+		if [[ $? -eq 1 ]]; then
+			echo "  ok   embed_minimal rejects a tampered license (exit 1)"
+			passed=$((passed + 1))
+		else
+			echo "  FAIL embed_minimal accepted a tampered license" >&2
+			total_rc=1
+		fi
+	fi
+	rm -f "$tampered"
 fi
 
 printf '\n%d passed, %d failed\n' "$passed" "$total_rc"

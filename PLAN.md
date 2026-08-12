@@ -15,6 +15,29 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 - [x] **Einstein's remediation queue is complete** — all seven items, each
       reproduced before it was fixed. `6d5a378`, CI green. 312 tests, and
       `./mutate` reports 9/10 mutants killed. — 2026-08-01 02:30 EDT
+- [x] **validate_gui integration kit** (Peter, 2026-08-12: "get at least
+      SOMETHING working with ../validate_gui, ASAP"). Committed: demo keypair +
+      demo license (`examples/demo/`, JSON payload on the release-plan field
+      set), `examples/embed_minimal.c` (the exact call sequence the GUI
+      mirrors, compiled with stock cc and run with a tamper control by the
+      conformance suite so the example cannot rot), and an integration note in
+      `validate_gui`'s inbox with the Mac recipe and a Swift sketch.
+      `aarch64-macos` cross-compile of libsigil.a confirmed from Linux.
+      — 2026-08-12 19:15 EDT
+- [x] **The transcript change had broken `tests/test_c_conformance` for a day
+      while CI stayed green** — the suite pinned the RFC 8032 raw vector as
+      must-verify, ran only in `./test`, and was not a nix check, so no machine
+      was obliged to run it. Reworked to mirror the Zig side (RFC raw vector =
+      domain-separation rejection; sensitivity restored by a sigil-signed
+      fixture triple, without which every rejection check had gone vacuous),
+      and added `checks.test-conformance` + the Mechatron target so the
+      customer link path is CI-gated. A gate not wired to CI is documentation
+      of intent, not a control. — 2026-08-12 19:20 EDT
+- [ ] **mecha-commerce Phase E continues** (field names DECIDED 2026-08-12:
+      release-plan set; beta = `payment_provider:"beta"` + mandatory short
+      expiry). Remaining: JS verifier, worker cutover, vector regeneration,
+      durable cross-impl fixture, validate core swap. Tracked in
+      mecha-commerce/PLAN.md Phase E.
 - [ ] **New scope from Peter (2026-08-04, relayed by Einstein), broken out
       below.** His words: *"sigil must serve as a maximally-correct and secure
       certificate signer; I'm still deciding on how I will provide the private
