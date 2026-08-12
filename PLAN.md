@@ -25,44 +25,68 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       futureproofing."* Followed by *"please add these to a PLAN.md and work
       down the list."*
 
-### A. Identify the signing method (Peter, 2026-08-04) — BLOCKED on his call
+### A. Identify the signing method — DECIDED 2026-08-11 (Peter), IMPLEMENTED
 
-The requirement is real and today's answer is documentation, not construction:
-`sigtype` sits in the envelope **unauthenticated**, and a future maintainer who
-added a second algorithm and switched on that field would have built a
-downgrade oracle. sigil already documents "pin the algorithm in the verifier's
-config, never read it from the envelope" — but that is policy where physics is
-available, exactly the distinction in the MFIC rules.
+Peter chose **binding the algorithm inside the signed bytes**. sigil now signs
+a transcript rather than the bare payload:
 
-Three ways to satisfy it. This wants Peter because it is a **one-way door before
-release** and because it turns on how literally THE INVARIANT is meant:
+```
+transcript = "sigil.transcript.v1" ‖ u8(alg_id) ‖ u64be(payload_len) ‖ payload
+```
 
-1. **Versioned signing transcript** — sign `domain ‖ version ‖ alg-id ‖
-   payload-length ‖ payload-bytes-verbatim` instead of the bare payload.
-   Payload bytes are never transformed, so reformatting the envelope still
-   works and no canonicalization is needed; but the signed *input* is no longer
-   the payload alone. Generalizes to any future algorithm. Einstein's
-   recommendation, and mine.
-2. **Ed25519ctx** (RFC 8032 §5.1) — mixes a context string into the hash with
-   the message untouched. Two checked facts, not assumptions: Zig 0.16's
-   `std.crypto.sign.Ed25519` does **not** expose it (the only `ctx` parameters
-   in that file belong to the blind-key API), and it does not generalize to
-   non-Ed25519 algorithms.
-3. **Status quo** — verifier-pinned algorithm, `sigtype` informational only.
-   Costs nothing, satisfies "futureproofing" only by convention.
+Full field table and the reasoning for each choice in `docs/DESIGN.md`, "The
+signing transcript". Specified before it was implemented, per the rule this
+entry used to carry.
 
-**The question for Peter**: is "the signature is Ed25519 over the raw payload
-bytes, full stop" a wire property you want to keep, or is "the payload bytes are
-never transformed" the property that actually mattered? (1) preserves the second
-and gives up the first. Nothing is released, so either is free *today* and
-neither is free later.
+- [x] Decision obtained (2026-08-11). The question that settled it: is
+      "Ed25519 over the raw payload, full stop" a wire property to keep, or was
+      "the payload bytes are never transformed" the property that mattered?
+      Peter chose the second, which the transcript preserves exactly.
+- [x] Field widths, length encoding and domain separation specified in
+      `docs/DESIGN.md` *before* any code. Fixed-width throughout so the
+      encoding is injective; `u64be` rather than a varint because a varint has
+      two spellings of the same value; the version lives in the domain string
+      so versioning and domain separation are one mechanism.
+- [x] `src/transcript.zig` — the single encoder. Signing and verifying both go
+      through it; two implementations of a signed encoding is how the ends
+      drift and one becomes forgeable.
+- [x] `verify()` stays **allocation-free**: the 28-byte header goes on the
+      stack and the payload is streamed into Ed25519's incremental verifier
+      rather than being copied into an assembled buffer.
+- [x] The transcript is built **above** the custody boundary, in `seal()`, not
+      inside a provider. A provider signs whatever bytes it is handed, so a
+      YubiKey and a keyfile cannot disagree about the encoding.
+- [x] Downgrade and domain-separation tests, including the one property that
+      round-trip tests structurally cannot prove: a signature over the raw
+      payload must now be REJECTED. If sign and verify both changed, they agree
+      either way — only an externally-produced raw signature can catch a
+      verifier that quietly skipped the transcript.
+- [x] The RFC 8032 vectors were kept as an oracle rather than deleted when they
+      started failing. They now check the **primitive** directly (which is what
+      they were always pinning) and additionally assert that a valid RFC 8032
+      raw signature is NOT accepted by sigil — turning the breakage into a
+      domain-separation test.
+- [x] Three mutants added so the transcript's enforcement is measured.
 
-- [ ] Get that decision.
-- [ ] Then: specify field widths, length encoding and domain separation
-      explicitly; write vectors and downgrade tests BEFORE implementing. No
-      improvised encoding — a hand-rolled length prefix is how signature
-      schemes get ambiguity bugs.
+**Nothing was owed to existing licenses**: zero had been issued, which is the
+only reason this was free to do. It would not have been free a week later.
 
+### A2. Key rotation — DECIDED 2026-08-11 (Peter): no `kid`
+
+The envelope carries **no key identifier**. Each app embeds exactly one public
+key for its own product, per the release plan ("Signed by per-app private key;
+public key embedded in app").
+
+Rejected alternative: mecha-license v1's `kid`, which lets a verifier pick a key
+without shipping a build. It was declined because choosing a key by an
+identifier read out of the document means **parsing before verifying** — the one
+thing this codebase's types exist to prevent. The danger is not that a wrong
+`kid` would be accepted (it would fail verification); it is that adding one
+legitimate reason to read unauthenticated bytes makes the next one easier to
+justify.
+
+A compromised key is handled by shipping an app update, which the revocation
+design already requires on any version change.
 ### B. Custody flexibility (Peter, 2026-08-04)
 
 Peter wants the private key *provider* configurable — YubiKey or offline

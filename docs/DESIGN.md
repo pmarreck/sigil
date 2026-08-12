@@ -17,20 +17,73 @@ whole trick, and it is the right one: the JSON envelope may be reformatted,
 re-ordered, pretty-printed, or have whitespace inserted, and verification still
 holds. JSON is pure transport.
 
-Verify path: parse JSON → take `data` string → printable-binary decode → verify
-Ed25519 over exactly those bytes → only then parse the payload.
+Verify path: parse JSON → take `data` string → printable-binary decode → build
+the signing transcript → verify Ed25519 over it → only then parse the payload.
 
-**`sigtype` is NOT authenticated, and this is an open question as of
-2026-08-04.** An attacker may rewrite it freely; it exists to turn a bare
-"BadSignature" into a message that says what went wrong. The algorithm's real
-authority is the caller's own public key. If a second algorithm is ever added it
-must be pinned by the verifier's configuration and never selected from this
-field, or the envelope becomes a downgrade oracle — and that rule is currently
-enforced by documentation rather than by construction. Peter has asked for the
-signing method to be identified for futureproofing; the three candidate designs
-and the decision he needs to make are in `PLAN.md` under "A. Identify the
-signing method". Do not implement one before that decision — it changes the
-signed input and is a one-way door once a license is issued.
+## The signing transcript — decided 2026-08-11 (Peter)
+
+Peter asked for the signing method to be identified in the certificate for
+futureproofing, and chose binding it **inside the signed bytes**. What gets
+signed is therefore no longer the bare payload:
+
+```
+transcript = DOMAIN ‖ u8(alg_id) ‖ u64be(payload_len) ‖ payload
+```
+
+| Field | Width | Value |
+|---|---|---|
+| `DOMAIN` | 19 bytes, fixed ASCII | `sigil.transcript.v1` |
+| `alg_id` | 1 byte | `1` = Ed25519. `0` is reserved and never valid. |
+| `payload_len` | 8 bytes, big-endian | `payload.len` |
+| `payload` | `payload_len` bytes | **verbatim, never transformed** |
+
+**THE INVARIANT still holds, in the sense that mattered.** The payload bytes are
+copied in untouched — not canonicalized, re-ordered or re-serialized — so the
+JSON envelope may still be reformatted freely, and sigil still needs no JCS, no
+collation and no locale. What changed is that the signature now covers a header
+as well as the payload. That is the trade Peter chose, and it was free to make
+only because no license had been issued yet.
+
+**Why each field is shaped this way** — every one of these is a known way that
+hand-rolled signing formats break:
+
+- **Fixed-width everything, plus an explicit length.** The encoding is
+  *injective*: given a transcript you can recover `(alg_id, payload)` uniquely,
+  so no two distinct inputs can ever produce the same signed bytes. Length
+  prefixes are not decoration; without one, appending a field in a future
+  version would make the payload boundary ambiguous, and ambiguity in a signed
+  encoding is a forgery primitive.
+- **`u64be` rather than a varint.** Fixed width cannot be encoded two ways. A
+  varint can (`0x00` vs `0x80 0x00`), and "two encodings of one value" is
+  exactly the door this design closes.
+- **The version lives in `DOMAIN`, not in a separate field.** Bumping to
+  `sigil.transcript.v2` changes the domain string, so a v1 signature can never
+  be replayed as v2. Domain separation and versioning are the same mechanism.
+- **`DOMAIN` is a fixed prefix.** A signature over raw bytes — the pre-2026-08-11
+  format, a JWT, any other protocol — is not a valid sigil signature unless
+  those bytes happen to begin with `sigil.transcript.v1` and carry a matching
+  length. Cross-protocol replay is foreclosed by construction.
+- **The public key needs no binding here.** RFC 8032 already includes `A` in the
+  challenge hash, so key-substitution is covered by Ed25519 itself.
+
+**`alg_id` is bound, but the verifier still pins it.** Binding stops a signature
+made under one algorithm from being replayed as another once a second algorithm
+exists. It does *not* license reading the algorithm out of the document: the
+verifier compares against its own configured value and never selects from
+attacker-controlled input. Both halves are needed, and the second is the one
+that keeps `sigtype` harmless.
+
+`sigtype` in the envelope remains **unauthenticated and advisory** — an attacker
+may rewrite it freely and it exists only to turn a bare "BadSignature" into a
+message that says what went wrong. It is no longer load-bearing for anything,
+because the authoritative algorithm identifier now lives inside the signature.
+
+**Key rotation: deliberately absent (Peter, 2026-08-11).** The envelope carries
+no `kid`. Each app embeds exactly one public key for its own product, per the
+release plan. Choosing a key by an identifier read from the document would mean
+parsing before verifying, which is the one thing this module's types exist to
+prevent. A compromised key is handled by shipping an app update — which the
+revocation design already requires on any version change.
 
 ### Why printable-binary rather than base64
 

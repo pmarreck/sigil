@@ -16,6 +16,7 @@
 
 const core = @import("verify.zig");
 const envelope = @import("envelope.zig");
+const transcript_mod = @import("transcript.zig");
 
 // ── The Ed25519 primitive ───────────────────────────────────────────────────
 
@@ -43,7 +44,16 @@ pub const pubkey_prefix = envelope.pubkey_prefix;
 pub const publicKeyToText = envelope.publicKeyToText;
 pub const publicKeyFromText = envelope.publicKeyFromText;
 
+// ── The signed encoding ─────────────────────────────────────────────────────
+//
+// Verifying consumers never build one — `verify` does it internally. Exported
+// because it is the wire contract: any other implementation of the signer (the
+// mecha-commerce Worker signs in JavaScript) has to produce these exact bytes,
+// and a format nobody can read is a format that gets reimplemented wrong.
+pub const transcript = transcript_mod;
+
 test {
     _ = core;
     _ = envelope;
+    _ = transcript_mod;
 }

@@ -5,7 +5,7 @@
 Verify Ed25519-signed documents whose payload **stays human-scannable**.
 
 ```json
-{"data":"customer_email␣꞊␣ˮpeter@example.comˮ¶customer_name_canonical␣꞊␣ˮpeter␣marreckˮ¶features␣꞊␣ˮrepair٫batchˮ¶max_major␣꞊␣ˮ1ˮ¶product␣꞊␣ˮmecha˗validateˮ¶v␣꞊␣ˮ1ˮ¶","sigtype":"Ed25519","sig":"ċŹŸoǰřţċȽˋ∣dbŖƁꞨǩǀ§¶ǓžžĔűɨLT0V§ƕťĵ٫aȕĺ1ŠµȚ¦ĽƳŤǑȦŸY❩_⧷WŬ꞉šŹˮ∣⧷ŷƒϟ"}
+{"data":"customer_email␣꞊␣ˮpeter@example.comˮ¶customer_name_canonical␣꞊␣ˮpeter␣marreckˮ¶features␣꞊␣ˮrepair٫batchˮ¶max_major␣꞊␣ˮ1ˮ¶product␣꞊␣ˮmecha˗validateˮ¶v␣꞊␣ˮ1ˮ¶","sigtype":"Ed25519","sig":"Ě2řŵ·ĤKƋµƵeɄJ¹Ğ˜ȹźĉȦhwǏhĎMKŠXUXĞƃµ²⏎ƃWƀŎIOUčĈ꞉ŇşΞƑ⟧U❩ĕeĕ3ŏ³ƒǃŠǑȯ"}
 ```
 
 That is a real signed license, not a mockup. It verifies against this key, and
@@ -13,7 +13,7 @@ the test suite re-checks that on every run, so the example above cannot rot into
 a plausible-looking fake:
 
 ```
-sigil-pubkey-v1 @⌦kuȚ˃rŚµǦRŕsnΞȉ❴ǵ¦zţq^țĤČ4ďțǨZr
+sigil-pubkey-v1 rP⎋LHȕǰoFZǍĵšŞė⁎꞉ȵ꞊.ṾǧĥğU¡4¶XťĐh
 ```
 
 You can read the payload. You can `grep` it. It is still plain JSON, and it is

@@ -185,6 +185,15 @@ const testing = std.testing;
 const Ed25519 = std.crypto.sign.Ed25519;
 const test_seed_a: [Ed25519.KeyPair.seed_length]u8 = @splat(0xA5);
 
+/// Test-only: sign over the transcript, exactly as the real signer does.
+fn testSign(kp: Ed25519.KeyPair, payload: []const u8) !Ed25519.Signature {
+    var buf: [sigil.transcript.header_len + 1024]u8 = undefined;
+    std.debug.assert(payload.len <= 1024);
+    const t = buf[0..sigil.transcript.size(payload)];
+    sigil.transcript.writeInto(t, .ed25519, payload);
+    return kp.sign(t, null);
+}
+
 test "FFI: NULL arguments are rejected without trapping" {
     try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_verify(null, 0, null, null));
 
@@ -198,7 +207,7 @@ test "FFI: NULL arguments are rejected without trapping" {
 test "FFI: reports the same result as the Zig API" {
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const payload = "product=mecha-rotshield\n";
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
     const sig_bytes = sig.toBytes();
     const pk_bytes = kp.public_key.toBytes();
 
@@ -226,7 +235,7 @@ test "FFI: envelope verification returns the authenticated payload" {
     const pk = kp.public_key.toBytes();
     const payload = "product = \"mecha-validate\"\nmax_major = \"1\"\n";
 
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
     const env = try sigil.writeEnvelope(a, payload, &sig.toBytes());
     defer a.free(env);
 
@@ -250,7 +259,7 @@ test "FFI: a buffer of exactly the payload size is enough" {
     const pk = kp.public_key.toBytes();
     const payload = "v = \"1\"\n";
 
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
     const env = try sigil.writeEnvelope(a, payload, &sig.toBytes());
     defer a.free(env);
 
@@ -278,7 +287,7 @@ test "FFI: a too-small buffer reports the required size instead of overflowing" 
     const pk = kp.public_key.toBytes();
     const payload = "v = \"1\"\nproduct = \"mecha-validate\"\n";
 
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
     const env = try sigil.writeEnvelope(a, payload, &sig.toBytes());
     defer a.free(env);
 

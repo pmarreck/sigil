@@ -16,6 +16,7 @@ const argon2 = std.crypto.pwhash.argon2;
 const pb = @import("printable_binary");
 const core = @import("verify.zig");
 const envelope = @import("envelope.zig");
+const transcript = @import("transcript.zig");
 pub const provider = @import("key_provider.zig");
 
 pub const seed_len = Ed25519.KeyPair.seed_length;
@@ -114,14 +115,27 @@ fn signWithEncryptedKeyfile(
     return signPayload(message, context.key_pair) catch provider.Error.ProviderFailure;
 }
 
-/// Ask an injected provider to sign the unchanged payload, then package the
-/// returned signature. This preserves the v1 bare-payload transcript exactly.
+/// Build the signing transcript, have the injected provider sign it, then
+/// package the signature with the UNCHANGED payload.
+///
+/// The transcript is built here rather than inside a provider on purpose. A
+/// provider is custody — a keyfile, a token, an HSM — and its whole job is to
+/// sign whatever bytes it is handed. If each one assembled its own transcript,
+/// every future provider would have to reimplement the encoding and any one of
+/// them could drift into signing something subtly different. One encoder,
+/// applied above the custody boundary, is what keeps them interchangeable.
+///
+/// Note what does NOT change: `envelope.write` still receives the raw payload,
+/// so the bytes a reader sees are the bytes the signer was given.
 pub fn seal(
     allocator: std.mem.Allocator,
     payload: []const u8,
     signer_port: provider.Signer,
-) (provider.Error || envelope.WriteError)![]u8 {
-    const sig = try signer_port.sign(.ed25519, payload);
+) (provider.Error || envelope.WriteError || std.mem.Allocator.Error)![]u8 {
+    const t = try transcript.build(allocator, .ed25519, payload);
+    defer allocator.free(t);
+
+    const sig = try signer_port.sign(.ed25519, t);
     return envelope.write(allocator, payload, &sig);
 }
 

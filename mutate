@@ -22,16 +22,31 @@ cd "$ROOT" || exit 1
 BACKUP="${TMPDIR:-/tmp}/sigil-mutate-$$"
 mkdir -p "$BACKUP" || { echo "FATAL: cannot create $BACKUP" >&2; exit 1; }
 
-SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig src/key_provider.zig)
+SOURCES=(src/ffi.zig src/ffi_sign.zig src/envelope.zig src/verify.zig src/sign.zig src/key_provider.zig src/transcript.zig)
 
 # Only one run at a time. Two concurrent runs would each snapshot the other's
 # planted defects as "pristine" and then restore garbage.
+#
+# The lock records its owner's PID. Without that, a lock left behind by a run
+# that died without its trap firing — SIGKILL, a terminated background shell, a
+# power cut — is indistinguishable from a live one, and the only remedy is a
+# human deleting a directory on the strength of a guess. That happened once.
 LOCK="$ROOT/.mutate.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
-	echo "FATAL: another ./mutate run holds $LOCK — wait for it, or remove the" >&2
-	echo "       directory if you are certain no run is active." >&2
-	exit 1
+	owner=$(cat "$LOCK/pid" 2>/dev/null)
+	if [[ -n "$owner" ]] && kill -0 "$owner" 2>/dev/null; then
+		echo "FATAL: ./mutate is already running as PID $owner." >&2
+		echo "       Wait for it; do not run two at once." >&2
+		exit 1
+	fi
+	# Either no PID was recorded or that process is gone: the lock is stale.
+	# Say so out loud rather than silently reclaiming it, so a genuine
+	# double-run still looks wrong to whoever is reading.
+	echo "note: clearing a stale lock at $LOCK (owner ${owner:-unknown} is not running)" >&2
+	rm -rf "$LOCK"
+	mkdir "$LOCK" || { echo "FATAL: cannot create $LOCK" >&2; exit 1; }
 fi
+echo $$ > "$LOCK/pid"
 
 hash_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
@@ -87,7 +102,7 @@ cleanup() {
 		copy_back
 		rm -rf "$BACKUP"
 	fi
-	rmdir "$LOCK" 2>/dev/null
+	rm -rf "$LOCK" 2>/dev/null
 }
 trap 'cleanup' EXIT
 trap 'cleanup; exit 130' INT TERM
@@ -173,9 +188,20 @@ mutant "low-order public keys are no longer screened" \
 mutant "the printable-binary alphabet is no longer checked" \
 	src/envelope.zig 's/    if \(pb\.validate\(encoded, 0\)\.is_valid == 0\) return EnvelopeError\.MalformedEncoding;\n//'
 
+# ── The signing transcript ──────────────────────────────────────────────────
+# The algorithm identifier is only bound if these bytes are actually signed.
+# A transcript that is built but not fed to the verifier is indistinguishable
+# from no transcript at all, and round-trip tests cannot see the difference —
+# they pass whenever the two ends agree, including when both are wrong.
+mutant "the verifier skips the transcript header" \
+	src/verify.zig 's/    verifier\.update\(&header\);\n//'
+mutant "the transcript length prefix is dropped" \
+	src/transcript.zig 's/std\.mem\.writeInt\(u64, buf\[domain\.len \+ 1 \.\.\]\[0\.\.8\], payload\.len, \.big\);/std.mem.writeInt(u64, buf[domain.len + 1 ..][0..8], 0, .big);/'
+mutant "the transcript domain is not checked on parse" \
+	src/transcript.zig 's/    if \(!std\.mem\.eql\(u8, transcript\[0\.\.domain\.len\], domain\)\) return Error\.ForeignDomain;\n//'
 # ── Authenticity: the mutants that matter ───────────────────────────────────
 mutant "verify always succeeds" \
-	src/verify.zig 's/signature\.verify\(payload, pk\) catch return Error\.BadSignature;/signature.verify(payload, pk) catch {};/'
+	src/verify.zig 's/verifier\.verify\(\) catch return Error\.BadSignature;/verifier.verify() catch {};/'
 mutant "the sigtype check accepts anything" \
 	src/envelope.zig 's/if \(!std\.mem\.eql\(u8, wire\.sigtype, sigtype\)\)/if (false)/'
 mutant "the AAD no longer covers the salt" \

@@ -15,6 +15,7 @@
 const std = @import("std");
 const pb = @import("printable_binary");
 const core = @import("verify.zig");
+const transcript = @import("transcript.zig");
 
 pub const public_key_len = core.public_key_len;
 pub const signature_len = core.signature_len;
@@ -335,9 +336,14 @@ fn testKey(seed: [Ed25519.KeyPair.seed_length]u8) !Ed25519.KeyPair {
     return Ed25519.KeyPair.generateDeterministic(seed);
 }
 
-/// Sign and package `payload` in one step, for tests only.
+/// Sign and package `payload` in one step, for tests only. Signs the
+/// transcript, exactly as the real signer does — a helper that signed raw
+/// bytes would make every round-trip test here pass against a verifier that
+/// had quietly dropped the transcript.
 fn sealForTest(allocator: std.mem.Allocator, kp: Ed25519.KeyPair, payload: []const u8) ![]u8 {
-    const sig = try kp.sign(payload, null);
+    const t = try transcript.build(allocator, .ed25519, payload);
+    defer allocator.free(t);
+    const sig = try kp.sign(t, null);
     return write(allocator, payload, &sig.toBytes());
 }
 

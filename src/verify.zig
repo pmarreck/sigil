@@ -13,6 +13,7 @@
 const std = @import("std");
 const Ed25519 = std.crypto.sign.Ed25519;
 const Edwards25519 = std.crypto.ecc.Edwards25519;
+const transcript = @import("transcript.zig");
 
 pub const public_key_len = Ed25519.PublicKey.encoded_length;
 pub const signature_len = Ed25519.Signature.encoded_length;
@@ -65,8 +66,23 @@ pub fn verify(
     const point = Edwards25519.fromBytes(public_key.*) catch return Error.BadPublicKey;
     point.rejectLowOrder() catch return Error.BadPublicKey;
 
+    // The signature covers the TRANSCRIPT, not the bare payload: the algorithm
+    // identifier and a length are bound inside the signed bytes so neither can
+    // be swapped by anyone who can edit the envelope. docs/DESIGN.md, "The
+    // signing transcript", carries the field table and the reasoning.
+    //
+    // Streamed rather than assembled, so this function stays allocation-free
+    // and the payload is never copied: the header is 28 bytes of stack, and the
+    // payload is fed straight in. An embedder's whole dependency budget for
+    // answering "is this license real?" is still this file.
     const signature = Ed25519.Signature.fromBytes(sig.*);
-    signature.verify(payload, pk) catch return Error.BadSignature;
+    var header: [transcript.header_len]u8 = undefined;
+    transcript.writeHeader(&header, .ed25519, payload.len);
+
+    var verifier = signature.verifier(pk) catch return Error.BadSignature;
+    verifier.update(&header);
+    verifier.update(payload);
+    verifier.verify() catch return Error.BadSignature;
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -75,20 +91,31 @@ pub fn verify(
 // system RNG has an invisible input and can fail on one run in a million with
 // no way to reproduce it. Deterministic keys make every failure replayable.
 
+/// Test-only: sign the way the real signer does, over the transcript rather
+/// than the bare payload. Every test that wants a VALID signature must go
+/// through here, so that a test signing raw bytes stands out as deliberate.
+fn testSign(kp: Ed25519.KeyPair, payload: []const u8) !Ed25519.Signature {
+    var buf: [transcript.header_len + 1024]u8 = undefined;
+    std.debug.assert(payload.len <= 1024);
+    const t = buf[0..transcript.size(payload)];
+    transcript.writeInto(t, .ed25519, payload);
+    return kp.sign(t, null);
+}
+
 pub const test_seed_a: [Ed25519.KeyPair.seed_length]u8 = @splat(0xA5);
 pub const test_seed_b: [Ed25519.KeyPair.seed_length]u8 = @splat(0x5A);
 
 test "round trip: a signature over the exact bytes verifies" {
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const payload = "product=mecha-validate\nmax_major=1\n";
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
     try verify(payload, &sig.toBytes(), &kp.public_key.toBytes());
 }
 
 test "one flipped payload byte is rejected" {
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const payload = "product=mecha-validate\nmax_major=1\n";
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
 
     var tampered = payload.*;
     tampered[9] ^= 0x01; // 'm' of "mecha" → one bit
@@ -104,7 +131,7 @@ test "the max_major upgrade rule cannot be edited without detection" {
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const honest = "max_major=1\n";
     const greedy = "max_major=9\n";
-    const sig = try kp.sign(honest, null);
+    const sig = try testSign(kp, honest);
     try std.testing.expectError(
         Error.BadSignature,
         verify(greedy, &sig.toBytes(), &kp.public_key.toBytes()),
@@ -115,7 +142,7 @@ test "a signature from a different key is rejected" {
     const mine = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const theirs = try Ed25519.KeyPair.generateDeterministic(test_seed_b);
     const payload = "product=mecha-validate\n";
-    const sig = try theirs.sign(payload, null);
+    const sig = try testSign(theirs, payload);
     try std.testing.expectError(
         Error.BadSignature,
         verify(payload, &sig.toBytes(), &mine.public_key.toBytes()),
@@ -124,7 +151,7 @@ test "a signature from a different key is rejected" {
 
 test "empty payload is verifiable, not an error" {
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
-    const sig = try kp.sign("", null);
+    const sig = try testSign(kp, "");
     try verify("", &sig.toBytes(), &kp.public_key.toBytes());
 }
 
@@ -173,7 +200,17 @@ test "RFC 8032 known-answer vectors" {
         _ = try std.fmt.hexToBytes(&sig, v.sig);
         const m = try std.fmt.hexToBytes(msg[0 .. v.message.len / 2], v.message);
 
-        verify(m, &sig, &pk) catch |e| {
+        // Checked against the PRIMITIVE, not through sigil's `verify`.
+        //
+        // These vectors are signatures over the bare message, as the standard
+        // defines them. Since 2026-08-11 sigil signs a transcript, so they
+        // deliberately do NOT verify through `verify()` — see the domain
+        // separation assertion below. The oracle is still doing its job: it
+        // pins the Ed25519 underneath sigil to RFC 8032, which is the part an
+        // embedder is trusting and the part sigil did not write.
+        const pk_parsed = try Ed25519.PublicKey.fromBytes(pk);
+        const sig_parsed = Ed25519.Signature.fromBytes(sig);
+        sig_parsed.verify(m, pk_parsed) catch |e| {
             std.debug.print("RFC 8032 vector {d} failed to verify: {s}\n", .{ i, @errorName(e) });
             return e;
         };
@@ -184,10 +221,17 @@ test "RFC 8032 known-answer vectors" {
             var tampered = msg;
             tampered[0] ^= 0x01;
             try std.testing.expectError(
-                Error.BadSignature,
-                verify(tampered[0..m.len], &sig, &pk),
+                error.SignatureVerificationFailed,
+                sig_parsed.verify(tampered[0..m.len], pk_parsed),
             );
         }
+
+        // Domain separation, stated as a property rather than a side effect: a
+        // valid RFC 8032 signature over raw bytes is NOT a valid sigil
+        // signature. This is what stops a signature produced by some other
+        // Ed25519 protocol — an SSH agent, a JWT signer, the pre-transcript
+        // sigil — from being replayed into a license.
+        try std.testing.expectError(Error.BadSignature, verify(m, &sig, &pk));
     }
 }
 
@@ -247,7 +291,7 @@ test "every low-order public key is reported as a key problem, not a forgery" {
     // through it.
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const payload = "product=mecha-validate\n";
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
 
     for (small_order_points, 0..) |bad_key, i| {
         verify(payload, &sig.toBytes(), &bad_key) catch |e| {
@@ -280,7 +324,7 @@ test "non-canonical public key encodings are rejected as key problems" {
     // because it fails at a different place and must not be misfiled either.
     const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
     const payload = "product=mecha-validate\n";
-    const sig = try kp.sign(payload, null);
+    const sig = try testSign(kp, payload);
 
     const non_canonical = [_][public_key_len]u8{
         hex32("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
@@ -313,7 +357,7 @@ test "specificity: real keys are never mistaken for bad keys" {
     const payload = "product=mecha-validate\nmax_major=1\n";
     for (seeds, 0..) |seed, i| {
         const kp = try Ed25519.KeyPair.generateDeterministic(seed);
-        const sig = try kp.sign(payload, null);
+        const sig = try testSign(kp, payload);
         verify(payload, &sig.toBytes(), &kp.public_key.toBytes()) catch |e| {
             std.debug.print("seed {d}: honest key rejected with {s}\n", .{ i, @errorName(e) });
             return e;
@@ -327,4 +371,35 @@ test "specificity: real keys are never mistaken for bad keys" {
             );
         }
     }
+}
+
+test "a raw-payload signature no longer verifies (the transcript is enforced)" {
+    // The migration-safety property, and the only test that can prove the
+    // transcript is actually in the signing path. Round-trip tests cannot:
+    // if sign and verify both changed, they agree either way.
+    //
+    // This signs the bare payload the way sigil did before 2026-08-11 and
+    // requires that sigil now REJECT it. Were the transcript quietly skipped
+    // on the verify side, this would pass and nothing else would notice.
+    const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
+    const payload = "product = \"mecha-validate\"\n";
+    const raw_sig = try kp.sign(payload, null); // NOT over a transcript
+
+    try std.testing.expectError(
+        Error.BadSignature,
+        verify(payload, &raw_sig.toBytes(), &kp.public_key.toBytes()),
+    );
+}
+
+test "a signature over the transcript does verify" {
+    // The other half. Together these pin that the signed bytes are exactly the
+    // transcript and nothing else.
+    const kp = try Ed25519.KeyPair.generateDeterministic(test_seed_a);
+    const payload = "product = \"mecha-validate\"\n";
+
+    const t = try transcript.build(std.testing.allocator, .ed25519, payload);
+    defer std.testing.allocator.free(t);
+    const sig = try kp.sign(t, null);
+
+    try verify(payload, &sig.toBytes(), &kp.public_key.toBytes());
 }
