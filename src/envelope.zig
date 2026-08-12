@@ -3,9 +3,10 @@
 //!   {"data":"<printable-binary of payload>","sigtype":"Ed25519",
 //!    "sig":"<printable-binary of the raw 64-byte signature>"}
 //!
-//! The signature covers the DECODED `data` bytes, never the JSON. That is the
-//! whole trick: the envelope may be reformatted, re-ordered, pretty-printed or
-//! have whitespace inserted and verification still holds, so sigil needs no
+//! The signature is verified over the DECODED `data` bytes (as the payload of
+//! the signing transcript — see transcript.zig), never over the JSON. That is
+//! the whole trick: the envelope may be reformatted, re-ordered, pretty-printed
+//! or have whitespace inserted and verification still holds, so sigil needs no
 //! canonicalization scheme (cf. RFC 8785) and no collation.
 //!
 //! Order matters: decode → VERIFY → only then parse the payload. This module
@@ -81,9 +82,9 @@ const ascii_keep: [128]bool = blk: {
 /// copy-paste. O(n), single pass, no allocation beyond the output.
 ///
 /// Safe to be this aggressive because of an ordering property, not a guess:
-/// normalization runs BEFORE verification and the signature covers the DECODED
-/// payload bytes. If this ever removes something meaningful, the decoded bytes
-/// stop matching what was signed and verification FAILS. A bug here can only
+/// normalization runs BEFORE verification, and verification is a function of
+/// the DECODED payload bytes. If this ever removes something meaningful, the
+/// decoded bytes stop matching what was signed and verification FAILS. A bug here can only
 /// cause a false rejection, never a false acceptance — availability risk, not
 /// authenticity risk. That asymmetry is what licenses the whole approach.
 ///
@@ -737,8 +738,9 @@ test "an envelope carrying email quote prefixes still verifies" {
 
 test "MFIC: normalization cannot rescue a tampered payload" {
     // The property that licenses aggressive stripping: normalization runs
-    // BEFORE verification and the signature covers the DECODED bytes, so a
-    // normalization bug can only cause a false rejection, never a false accept.
+    // BEFORE verification, and verification is a function of the DECODED
+    // bytes, so a normalization bug can only cause a false rejection, never a
+    // false accept.
     // Mangling a forged envelope must still be a forgery.
     const a = testing.allocator;
     const kp = try testKey(core.test_seed_a);

@@ -14,6 +14,7 @@ annotate=[
 	src/lib.zig = Importable Zig module root. Re-exports verify + envelope. Emits NO C symbols and needs no libc.
 	src/module_probe.zig = Test fixture (not shipped): forces codegen of the importable Zig module so nm can inspect the sanctioned sibling-Zig consumer path.
 	src/sign.zig = Pure signing and encrypted-keyfile provider #1: owns key unwrap/expansion/signing behind the provider port; never ships
+	src/transcript.zig = The signing transcript (domain ‖ alg ‖ u64be len ‖ verbatim payload) — sole encoder for what Ed25519 signs; injectivity/downgrade/domain-separation tests
 	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.

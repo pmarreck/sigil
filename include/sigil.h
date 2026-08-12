@@ -5,9 +5,14 @@
 
 /* sigil — verify Ed25519-signed documents.
  *
- * INVARIANT: the signature covers the payload bytes EXACTLY as supplied. sigil
- * never canonicalizes or re-serializes, which is why a JSON envelope carrying
- * these bytes may be reformatted freely without breaking verification.
+ * INVARIANT: the payload bytes are signed EXACTLY as supplied — never
+ * canonicalized or re-serialized — which is why a JSON envelope carrying them
+ * may be reformatted freely without breaking verification. The signature
+ * covers the signing transcript: the fixed header
+ * "sigil.transcript.v1" || u8(alg=1) || u64be(payload_len), then those verbatim
+ * bytes. Verification here builds the transcript internally; callers pass the
+ * payload alone. A signature over the bare payload (any other Ed25519
+ * protocol's output) is NOT valid.
  *
  * Verify BEFORE parsing. Never interpret bytes you have not authenticated.
  *

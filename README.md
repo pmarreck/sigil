@@ -21,8 +21,11 @@ still safe for arbitrary binary payloads.
 
 ## The one invariant
 
-**The signature covers the payload bytes exactly as supplied.** sigil never
-canonicalizes, re-orders, or re-serializes anything.
+**The payload bytes are signed exactly as supplied.** sigil never canonicalizes,
+re-orders, or re-serializes anything. What the signature covers is a short fixed
+header — `"sigil.transcript.v1"`, an algorithm byte, a length — followed by your
+bytes, verbatim. The header binds the signing method inside the signature so
+nobody who can edit the envelope can swap it; the payload is never transformed.
 
 Everything else follows from that:
 
@@ -32,6 +35,9 @@ Everything else follows from that:
   There is nothing for two implementations to disagree about.
 - **Verify before parsing.** `verifyEnvelope` is the only way to obtain payload
   bytes, so a caller physically cannot interpret unauthenticated input.
+- A signature produced by any other Ed25519 protocol — an SSH agent, a JWT
+  signer, a bare `crypto_sign` call — is **not** a valid sigil signature. Domain
+  separation is part of the format, not an etiquette request.
 
 ## Why printable-binary rather than base64
 

@@ -10,9 +10,11 @@
 //!   {"data":"<printable-binary of payload>","sigtype":"Ed25519",
 //!    "sig":"<printable-binary of raw signature>"}
 //!
-//! THE ONE INVARIANT: the signature covers the payload bytes EXACTLY as given.
-//! sigil never canonicalizes, re-orders, or re-serializes. Corollary: verify
-//! BEFORE parsing — never interpret bytes you have not authenticated.
+//! THE ONE INVARIANT: the payload bytes are signed EXACTLY as given — never
+//! canonicalized, re-ordered, or re-serialized. The signature covers the
+//! transcript (a fixed header binding the algorithm, then those verbatim
+//! bytes; see `transcript`). Corollary: verify BEFORE parsing — never
+//! interpret bytes you have not authenticated.
 
 const core = @import("verify.zig");
 const envelope = @import("envelope.zig");

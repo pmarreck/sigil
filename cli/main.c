@@ -312,8 +312,9 @@ static int usage(FILE *out) {
 	fprintf(out,
 		"Usage: sigil <command> [options]\n"
 		"\n"
-		"Verify and mint Ed25519-signed documents. The signature covers the payload\n"
-		"bytes exactly as supplied, so the JSON envelope may be reformatted freely.\n"
+		"Verify and mint Ed25519-signed documents. The payload is signed exactly as\n"
+		"supplied (inside a fixed transcript header that binds the algorithm), so\n"
+		"the JSON envelope may be reformatted freely.\n"
 		"\n"
 		"Commands:\n"
 		"  verify <envelope> --pubkey <path>   check a signature; payload to stdout\n"

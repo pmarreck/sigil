@@ -1,14 +1,16 @@
 //! The Ed25519 primitive. Pure, allocation-free, std-only.
 //!
-//! THE ONE INVARIANT: the signature covers the payload bytes EXACTLY as given.
-//! sigil never canonicalizes, re-orders, or re-serializes anything. That is what
-//! lets the JSON envelope be reformatted, pretty-printed, or have whitespace
-//! inserted without breaking verification — and it is also why sigil needs no
-//! collation, no locale, and no JSON canonicalization scheme.
+//! THE ONE INVARIANT: the payload bytes are signed EXACTLY as given — never
+//! canonicalized, re-ordered, or re-serialized. What the signature covers is
+//! the transcript (transcript.zig): a fixed header binding the algorithm and a
+//! length, followed by those verbatim bytes. That is what lets the JSON
+//! envelope be reformatted, pretty-printed, or have whitespace inserted without
+//! breaking verification — and it is also why sigil needs no collation, no
+//! locale, and no JSON canonicalization scheme.
 //!
-//! This file is the entire dependency budget of a verifying consumer:
-//! `std.crypto.sign.Ed25519` and nothing else. Everything an embedder must
-//! trust to answer "is this license real?" lives here.
+//! This file plus transcript.zig is the entire dependency budget of a verifying
+//! consumer: `std.crypto.sign.Ed25519` and nothing else. Everything an embedder
+//! must trust to answer "is this license real?" lives here.
 
 const std = @import("std");
 const Ed25519 = std.crypto.sign.Ed25519;

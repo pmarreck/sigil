@@ -2,10 +2,16 @@
 
 ## Fixed v1 behavior
 
-The provider port does not alter the signed transcript. `sign.seal` gives the
-provider the payload bytes exactly as supplied and packages the returned
-Ed25519 signature in the existing envelope. The pending algorithm-tagged
-transcript decision in `PLAN.md` §A remains open.
+The provider port does not build or alter the signed bytes — it signs exactly
+what it is handed. Since 2026-08-11 (`PLAN.md` §A, decided and implemented),
+what `sign.seal` hands the provider is the **signing transcript**: the fixed
+`sigil.transcript.v1` header binding the algorithm and payload length, followed
+by the payload bytes verbatim (see `src/transcript.zig`). The transcript is
+assembled in `seal`, *above* this boundary, on purpose: if each provider built
+its own, a keyfile and a YubiKey could drift into signing subtly different
+bytes. `seal` then packages the returned Ed25519 signature in the existing
+envelope, whose `data` field carries the raw payload — the header travels in
+the signature's coverage, not in the document.
 
 The port consists of an opaque context pointer, one capability record, and one
 callback:

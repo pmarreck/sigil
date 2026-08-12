@@ -12,7 +12,8 @@ must not live inside either product.
  "sig":"<printable-binary of the raw signature>"}
 ```
 
-**The signature covers the DECODED `data` bytes — never the JSON.** That is the
+**The signature is verified over the DECODED `data` bytes (as the payload of
+the signing transcript below) — never over the JSON.** That is the
 whole trick, and it is the right one: the JSON envelope may be reformatted,
 re-ordered, pretty-printed, or have whitespace inserted, and verification still
 holds. JSON is pure transport.
