@@ -53,11 +53,15 @@ exit 1
 STUB
 chmod +x "$work/c1/build" "$work/c1/test"
 
+# SIGIL_SKIP_BUILD is pinned OFF for this run: the CI sandbox exports it (it
+# builds before invoking ./test), and inheriting it here would skip the very
+# build step this control exists to watch fail. Discovered the day the flag
+# was added, when this guard failed in the sandbox and nowhere else.
 out=""
 if [[ -n "$timeout_cmd" ]]; then
-	out=$("$timeout_cmd" 60 "$work/c1/test" 2>&1)
+	out=$(SIGIL_SKIP_BUILD=0 "$timeout_cmd" 60 bash "$work/c1/test" 2>&1)
 else
-	out=$("$work/c1/test" 2>&1)
+	out=$(SIGIL_SKIP_BUILD=0 bash "$work/c1/test" 2>&1)
 fi
 rc=$?
 
@@ -66,12 +70,35 @@ if grep -q "FATAL: build failed" <<<"$out"; then
 else
 	fail "failed build aborts the suite (FATAL emitted)" \
 		"./test continued past a failing build; every downstream 'pass' is certifying a stale artifact"
+	# What the staged run actually said — a guard that hides the evidence
+	# turns every environment-specific failure into a guessing game.
+	printf "       staged ./test output (first 6 lines):\n" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already decided
+	head -6 <<<"$out" | sed "s/^/       | /" >&2
 fi
 
 if [[ $rc -ne 0 ]]; then
 	pass "failed build yields non-zero exit"
 else
 	fail "failed build yields non-zero exit" "got exit 0 from a build that could not compile"
+fi
+
+# ── Control 1b: the skip-build escape hatch must guard itself ───────────────
+# SIGIL_SKIP_BUILD=1 exists for the CI sandbox, which builds before calling
+# ./test. Run with no binary present, it must FATAL rather than let every
+# downstream suite "pass" against nothing. Same staged copy, no build stub
+# needed — skip mode never invokes build; the missing zig-out is the fault.
+skip_out=$(SIGIL_SKIP_BUILD=1 bash "$work/c1/test" 2>&1)
+skip_rc=$?
+if grep -q "FATAL: SIGIL_SKIP_BUILD=1 but zig-out/bin/sigil is missing" <<<"$skip_out" \
+   && [[ $skip_rc -ne 0 ]]; then
+	pass "skip-build mode refuses to run without a built binary"
+else
+	fail "skip-build mode refuses to run without a built binary" \
+		"exit=$skip_rc; skip mode proceeded with nothing to test"
+	printf "       staged ./test output (first 6 lines):\n" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already decided
+	head -6 <<<"$skip_out" | sed "s/^/       | /" >&2
 fi
 
 # ── Control 2: ./build must install every artifact the suite inspects ───────

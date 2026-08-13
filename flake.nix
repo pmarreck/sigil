@@ -165,13 +165,44 @@
           # The CLI surface, exercised through the installed binary. The CLI is
           # C on purpose (it cannot @import the Zig core), so this check is also
           # the only end-to-end proof that the C ABI actually links and works.
+          # THE CI gate: run ./test — the same entry point a human runs — not a
+          # hand-picked subset of it. The subset approach failed twice in two
+          # days: the transcript change broke the conformance suite while CI
+          # stayed green (that suite wasn't a check), and the "fix" promoted
+          # only the suite that had already bitten, leaving Harness Guards and
+          # Lint still unwired. Peter's phrasing, 2026-08-13: "Isn't the whole
+          # point of CI, TO RUN THE TESTS?" If ./test gains a suite tomorrow,
+          # CI runs it with no flake edit; the two can no longer drift.
+          test-all = pkgs.stdenv.mkDerivation {
+            pname = "${pname}-test-all";
+            inherit version;
+            src = ./.;
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools ]
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
+            dontConfigure = true;
+            dontFixup = true;
+            buildPhase = ''
+              ${zigSetup}
+              zig build
+              zig build test-compile
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
+                for f in $(find .zig-cache zig-out -type f -perm -u+x 2>/dev/null); do
+                  patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
+                done
+              ''}
+              SIGIL_SKIP_BUILD=1 timeout 900 bash ./test
+            '';
+            installPhase = ''
+              mkdir -p $out
+              echo "./test passed" > $out/result
+            '';
+          };
+
           # The customer link path: stock gcc, never zig cc, linking libsigil.a
-          # exactly the way an embedder (Validate's GUI, RotShield) will. This
-          # became a CI check on 2026-08-12 after the transcript change broke
-          # the conformance suite for a full day while CI stayed green — the
-          # suite ran only in ./test, which no machine was required to run.
-          # A gate that exists but is not wired to CI is a documentation of
-          # intent, not a control.
+          # exactly the way an embedder (Validate's GUI, RotShield) will. Kept
+          # as a named check for local debugging granularity; CI runs test-all,
+          # which includes this suite via ./test.
           test-conformance = pkgs.stdenv.mkDerivation {
             pname = "${pname}-test-conformance";
             inherit version;

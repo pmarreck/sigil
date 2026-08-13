@@ -48,6 +48,13 @@ echo "╚═══════════════════════�
 
 # Build first (ReleaseFast, nix-sandboxed) so the CLI tests exercise a real
 # artifact rather than a stale one.
+
+# Sandbox awareness: inside a Nix build (CI runs THIS script as the check
+# checks.test-all) the tools are already on PATH and nested `nix develop` /
+# `nix build` are impossible. Locally, zig is usually absent from PATH and the
+# nix develop wrapper supplies it. One mechanism, no second code path.
+if command -v zig >/dev/null 2>&1; then NIXDEV=""; else NIXDEV="nix develop -c"; fi
+
 echo ""
 echo "Building (ReleaseFast)..."
 # Harness self-check FIRST: it needs no binary, and if the controls below
@@ -59,27 +66,36 @@ fi
 # Masked-return-value gate for Bash and C. Zig rejects this class at compile
 # time; these two languages make it opt-in, so this is the opt-in.
 if [[ -f "$SCRIPT_DIR/tests/test_lint" ]]; then
-	run_suite "Lint (masked returns)" "nix develop -c bash '$SCRIPT_DIR/tests/test_lint'"
+	run_suite "Lint (masked returns)" "$NIXDEV bash '$SCRIPT_DIR/tests/test_lint'"
 fi
 
 # NOT `./build | tail -3 || fatal` — `||` would bind to the pipeline, whose
 # status is `tail`'s (always 0), so a failed build would slip through and the
 # suite would certify a stale binary. Capture first, then judge.
-build_log=$("$SCRIPT_DIR/build" 2>&1)
-build_rc=$?
-echo "$build_log" | tail -3
-if [[ $build_rc -ne 0 ]]; then
-	echo "FATAL: build failed"
-	exit 1
+if [[ "${SIGIL_SKIP_BUILD:-0}" == "1" ]]; then
+	# The caller (the CI sandbox) already built and patched zig-out. Trust,
+	# but verify the one thing the suites below cannot run without.
+	if [[ ! -x "$SCRIPT_DIR/zig-out/bin/sigil" ]]; then
+		echo "FATAL: SIGIL_SKIP_BUILD=1 but zig-out/bin/sigil is missing"
+		exit 1
+	fi
+else
+	build_log=$("$SCRIPT_DIR/build" 2>&1)
+	build_rc=$?
+	echo "$build_log" | tail -3
+	if [[ $build_rc -ne 0 ]]; then
+		echo "FATAL: build failed"
+		exit 1
+	fi
 fi
 
 # Zig unit tests — `--summary all` makes Zig emit "N/N tests passed"
 # which run_suite's grep can pick up.
-run_suite "Zig Unit Tests" "nix develop -c zig build test --summary all 2>&1"
+run_suite "Zig Unit Tests" "$NIXDEV zig build test --summary all 2>&1"
 
 # Architecture invariant: the shipping verifier contains no signing code.
 if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then
-	run_suite "Symbol Separation" "nix develop -c bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
+	run_suite "Symbol Separation" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
 fi
 
 # The customer's link path: stock cc against libsigil.a, exercising the

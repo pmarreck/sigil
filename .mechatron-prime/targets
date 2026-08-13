@@ -1,11 +1,11 @@
 # Mechatron Prime CI targets for sigil (Thelio x86_64-linux worker).
 # One valid Nix flake attribute per line.
 #
-# checks.x86_64-linux.build is deliberately absent: it evaluates to the same
-# derivation as packages.x86_64-linux.default, so listing both would just build
-# the same store path twice in a single-queue worker.
+# test-all runs ./test — the same entry point a human runs — so CI and the
+# local gate cannot drift (2026-08-13, after two days of hand-picked-subset
+# checks proving exactly why that drifts). The granular checks (test,
+# test-cli, test-symbols, test-conformance) stay defined in the flake for
+# local debugging, but each is a subset of test-all; building them here too
+# would re-run the same suites serially on a single-queue worker.
 packages.x86_64-linux.default
-checks.x86_64-linux.test
-checks.x86_64-linux.test-cli
-checks.x86_64-linux.test-symbols
-checks.x86_64-linux.test-conformance
+checks.x86_64-linux.test-all
