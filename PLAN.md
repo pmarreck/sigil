@@ -50,13 +50,14 @@ expiring 60 days from issue** — and the last two clauses conflict, so
 **DO NOT generate the beta key or mint anything** until Peter says which
 reading wins:
 
-- [ ] **Peter: resolve the Oct-15-vs-60-days ambiguity.** Three readings:
-      (a) Oct 15 closes *enrollment*, each license lives 60 days from its own
-      issue date; (b) Oct 15 ends *all* beta access regardless of issue date
-      (then "60 days" is dead and the payload is `expiry:"2026-10-14"`,
-      day-inclusive); (c) both gates apply, earlier one wins (needs per-
-      participant expiry values, min(issue+60d, Oct 14)). Payload bytes are
-      signed, so nothing can be minted until this lands.
+- [x] **Expiry DECIDED (Peter, 2026-08-27 18:04 EDT): beta licenses expire
+      one month after issuance.** No fixed calendar end date. This decouples
+      minting from the launch date entirely — launch is sliding (a death in
+      Peter's family; nothing here presses on him), and it can slide freely:
+      each license's `expiry` = its own `purchase_date` + 1 calendar month,
+      day-inclusive (issued Sept 18 → `expiry:"2026-10-18"`, dead at midnight
+      into Oct 19). Computed at mint time; no schema change.
+      — 2026-08-27 18:10 EDT
 - [ ] **Peter: beta key custody** — recommended: a dedicated beta keypair,
       not the production key. Beta build embeds beta pubkey; 1.0 build embeds
       production pubkey (one key per build; rotation-by-update is already the
