@@ -12,6 +12,22 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
+### Self-update signing boundary (Einstein request, 2026-08-27 01:50)
+
+Position sent same night (reply in `~/Code/inbox/`): **key separation IS the
+purpose separation** — a dedicated update keypair plus one-embedded-key-per-
+verifying-context makes license↔update replay fail signature verification by
+construction, before parsing; no transcript change wanted or needed. Sequence/
+expiry/platform/SHA checks are updater policy, same split as licensing.
+Current sigil APIs suffice as-is.
+
+- [ ] Daytime: full review of `validate_gui/docs/self-update-design.md`
+      @ `5d521f3` against that position.
+- [ ] Daytime: deterministic test-only vectors (valid manifest; tampered
+      payload; tampered sig; wrong-purpose = genuine license envelope offered
+      to the update verifier, must fail SIGNATURE not schema; wrong-key).
+      `examples/demo/` fixture discipline: committed, CI-exercised, key
+      loudly test-only, no production keys.
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
 Free 15-participant Mecha Validate beta, gated by signed licenses. sigil needs
