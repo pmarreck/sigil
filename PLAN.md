@@ -21,13 +21,17 @@ construction, before parsing; no transcript change wanted or needed. Sequence/
 expiry/platform/SHA checks are updater policy, same split as licensing.
 Current sigil APIs suffice as-is.
 
-- [ ] Daytime: full review of `validate_gui/docs/self-update-design.md`
-      @ `5d521f3` against that position.
-- [ ] Daytime: deterministic test-only vectors (valid manifest; tampered
-      payload; tampered sig; wrong-purpose = genuine license envelope offered
-      to the update verifier, must fail SIGNATURE not schema; wrong-key).
-      `examples/demo/` fixture discipline: committed, CI-exercised, key
-      loudly test-only, no production keys.
+- [x] Full review of `validate_gui/docs/self-update-design.md` @ `5d521f3`:
+      the sigil-facing boundary matches the key-separation position verbatim;
+      review notes sent to Einstein 2026-08-27. — 2026-08-27 11:55 EDT
+- [x] Vectors shipped: `examples/update_vectors/` (test-only keypair, valid
+      manifest + tampered-payload/tampered-sig/wrong-key, plus the demo
+      LICENSE as the wrong-purpose case) with
+      `tests/integration/update_vectors.sh` asserting the ERROR CLASS — every
+      rejection must be a SIGNATURE failure, so a future accidental key-share
+      between purposes cannot hide behind schema rejection. Auto-discovered
+      by ./test, therefore CI-gated. Building them needed ZERO sigil changes,
+      which empirically answers "do current APIs suffice". — 2026-08-27 12:00 EDT
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
 Free 15-participant Mecha Validate beta, gated by signed licenses. sigil needs
