@@ -12,6 +12,46 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
+### Founding Beta license path (defined 2026-08-26; dates corrected same night)
+
+Free 15-participant Mecha Validate beta, gated by signed licenses. sigil needs
+**no code**: beta = `payment_provider:"beta"` + mandatory `expiry` (decided
+2026-08-12), the transcript already binds algorithm/version inside the
+signature, and validate_gui has verify-before-parse live against `8c44b19`
+(their 2026-08-19 report). Full definition in the 2026-08-26 reply to Einstein
+(`~/Code/inbox/`), including the time-behavior table (day-inclusive expiry;
+malformed expiry = data error, never "NOT AUTHENTIC"; clock rollback accepted
+for a free short beta).
+
+**Dates: my Sept 1 / Sept 30 proposal was stale on arrival.** Einstein's
+same-night reply carries Peter's later decision (2026-08-25, recorded in the
+orchestrator plan): **Sept 15 launch, Oct 15 00:00 EDT expiry, licenses
+expiring 60 days from issue** — and the last two clauses conflict, so
+**DO NOT generate the beta key or mint anything** until Peter says which
+reading wins:
+
+- [ ] **Peter: resolve the Oct-15-vs-60-days ambiguity.** Three readings:
+      (a) Oct 15 closes *enrollment*, each license lives 60 days from its own
+      issue date; (b) Oct 15 ends *all* beta access regardless of issue date
+      (then "60 days" is dead and the payload is `expiry:"2026-10-14"`,
+      day-inclusive); (c) both gates apply, earlier one wins (needs per-
+      participant expiry values, min(issue+60d, Oct 14)). Payload bytes are
+      signed, so nothing can be minted until this lands.
+- [ ] **Peter: beta key custody** — recommended: a dedicated beta keypair,
+      not the production key. Beta build embeds beta pubkey; 1.0 build embeds
+      production pubkey (one key per build; rotation-by-update is already the
+      design). Leaked-beta-key blast radius: licenses that all die within
+      the beta window. (Awaiting Peter, per Einstein 2026-08-26.)
+- [ ] **Peter: not-before** — recommended: no gate, no `valid_from` field
+      (early use of a free beta is harmless; the field would be speculative).
+      Free to add BEFORE the 15 licenses are signed; a re-issue after.
+- [ ] Then: key ceremony + mint 15 licenses (`sigil keygen` / `sigil sign`,
+      commands in the Einstein reply) and hand validate_gui the beta pubkey
+      via `sigil pubkey --format c`.
+- [ ] validate_gui owns the expiry gate + its tests (injected `today`); they
+      have the definition and an expired-but-genuinely-signed test-license
+      recipe as of tonight. (Correction with the new dates sent 2026-08-26;
+      the gate logic itself is date-agnostic.)
 - [x] **Einstein's remediation queue is complete** — all seven items, each
       reproduced before it was fixed. `6d5a378`, CI green. 312 tests, and
       `./mutate` reports 9/10 mutants killed. — 2026-08-01 02:30 EDT
