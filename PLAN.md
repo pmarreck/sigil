@@ -218,6 +218,18 @@ keyfile decision is not reversed; it becomes the first provider.
 
 ## Next
 
+- [ ] Evaluate whether Sigil belongs in UNIX MAIL REDUX's S/MIME certificate
+      lifecycle at all; default to keeping the standards-specific work in the
+      mail project unless a concrete shared custody abstraction pays for the
+      coupling. If Sigil participates, limit it to operator policy,
+      purpose-separated key custody, or an offline issuance ceremony, and
+      delegate CMS, X.509, ASN.1/DER, and MIME canonicalization to an
+      established independent implementation. Never reuse the custom
+      `sigil.transcript.v1` envelope or any license/update key for mail.
+      - Curiosity poke: the existing provider signs Sigil's domain-separated
+        transcript; standards-compliant CMS signatures require a distinct
+        protocol path and key, plus interoperability tests against Apple Mail
+        and an external verifier.
 - [ ] `PROJECT_OVERVIEW.md`.
 - [ ] Hand Mecha Validate and Mecha Rotshield an integration note: link
       `libsigil.a` only, embed the key via `sigil pubkey --format c|zig`, and
