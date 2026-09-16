@@ -58,6 +58,13 @@ reading wins:
       day-inclusive (issued Sept 18 → `expiry:"2026-10-18"`, dead at midnight
       into Oct 19). Computed at mint time; no schema change.
       — 2026-08-27 18:10 EDT
+- [ ] **Peter: expiry evaluation contract (UTC)** — proposed in the 2026-09-16
+      Einstein reply (LICENSE_OPERATIONS review): all dates UTC —
+      `purchase_date` = mint timestamp's UTC date; `expiry` = +1 calendar
+      month with end-of-month clamping; valid while now_utc <
+      (expiry + 1 day) 00:00 UTC. No tzdata on any client, same end instant
+      everywhere, travel-proof; can gift up to ~24h vs ET intuition, never
+      less than the month. Awaiting Peter's sign-off before minting.
 - [ ] **Peter: beta key custody** — recommended: a dedicated beta keypair,
       not the production key. Beta build embeds beta pubkey; 1.0 build embeds
       production pubkey (one key per build; rotation-by-update is already the
