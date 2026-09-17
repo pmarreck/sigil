@@ -58,13 +58,11 @@ reading wins:
       day-inclusive (issued Sept 18 → `expiry:"2026-10-18"`, dead at midnight
       into Oct 19). Computed at mint time; no schema change.
       — 2026-08-27 18:10 EDT
-- [ ] **Peter: expiry evaluation contract (UTC)** — proposed in the 2026-09-16
-      Einstein reply (LICENSE_OPERATIONS review): all dates UTC —
-      `purchase_date` = mint timestamp's UTC date; `expiry` = +1 calendar
-      month with end-of-month clamping; valid while now_utc <
+- [x] **Expiry evaluation contract (UTC) — APPROVED by Peter 2026-09-17**:
+      all dates UTC — `purchase_date` = mint timestamp's UTC date; `expiry` =
+      +1 calendar month with end-of-month clamping; valid while now_utc <
       (expiry + 1 day) 00:00 UTC. No tzdata on any client, same end instant
-      everywhere, travel-proof; can gift up to ~24h vs ET intuition, never
-      less than the month. Awaiting Peter's sign-off before minting.
+      everywhere, travel-proof. — 2026-09-17 10:05 EDT
 - [x] **Peter: beta key custody — DECIDED** — Peter approved dedicated online
       paid/beta signing keys, separate from the release/update keys (evening
       2026-09-16, relayed by Einstein 2026-09-17). No keys provisioned yet.
@@ -74,9 +72,11 @@ reading wins:
       A multi-key verifier without that binding would honor a leaked-beta-key
       "paid, no expiry" forgery. App policy, not a sigil crypto change;
       guidance added to examples/embed_minimal.c. — 2026-09-17 09:40 EDT
-- [ ] **Peter: not-before** — recommended: no gate, no `valid_from` field
-      (early use of a free beta is harmless; the field would be speculative).
-      Free to add BEFORE the 15 licenses are signed; a re-issue after.
+- [x] **Not-before — DECIDED by Peter 2026-09-17: no `valid_from` field.**
+      Only foreseeable use is term licenses sold in advance (not our model;
+      early activation there is generous, not harmful), and it adds nothing
+      against a stolen key (a forger picks any dates). Can be added before a
+      future product mints future-dated terms. — 2026-09-17 10:05 EDT
 - [ ] Then: key ceremony + mint 15 licenses (`sigil keygen` / `sigil sign`,
       commands in the Einstein reply) and hand validate_gui the beta pubkey
       via `sigil pubkey --format c`.
