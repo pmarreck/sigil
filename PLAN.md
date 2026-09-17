@@ -32,6 +32,34 @@ Current sigil APIs suffice as-is.
       between purposes cannot hide behind schema rejection. Auto-discovered
       by ./test, therefore CI-gated. Building them needed ZERO sigil changes,
       which empirically answers "do current APIs suffice". — 2026-08-27 12:00 EDT
+### LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)
+
+Sigil coordinates the shared contract for validate, validate_gui,
+entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
+"Current directive" section (Obsidian vault). Negotiating text:
+`docs/MECHA_LICENSE_CONTRACT_V1.md` (FROZEN / PROPOSED / OPEN markings).
+
+- [x] Draft contract v1 written and circulated to all four peers + ACK to
+      Einstein. validate_gui pre-agreed to the frozen semantics unprompted
+      (their 2026-09-17 mail) and asked for fixtures + trust-domain naming,
+      answered in the reply. — 2026-09-17 12:45 EDT
+- [ ] Collect peer agreement/counter-proposals: policy-module location
+      (proposal: sibling repo `mecha_policy`, pure Zig core + C FFI),
+      entrypoint inventories from each app owner, reason-code naming.
+- [ ] Mint `test-beta` and `test-paid` keypairs (test-only, public
+      passphrases, committed) + signed fixture licenses per product per
+      class: valid / expired / wrong-product / wrong-class-for-key, plus
+      expiry boundary triple with month-end and leap cases. Extend the
+      update-vectors pattern; error CLASS asserted.
+- [ ] Red-team support package for mecha_license_redteam once erected:
+      public keys, fixed signed fixtures, exact build hashes. NEVER private
+      keys/signing tokens/production access/a signing oracle.
+- [ ] OPEN for Peter (carried in contract §2): name canonicalization
+      (recommend: name as display, verified email as identity); signed
+      evaluation grants (keep 250GB/7-day metering inside a signed grant vs
+      plain short-expiry cert — metering removal deletes the only
+      mutable-counter state worth protecting).
+
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
 Free 15-participant Mecha Validate beta, gated by signed licenses. sigil needs
