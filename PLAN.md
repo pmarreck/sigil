@@ -46,12 +46,18 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [ ] Collect peer agreement/counter-proposals: policy-module location
       (proposal: sibling repo `mecha_policy`, pure Zig core + C FFI),
       entrypoint inventories from each app owner, reason-code naming.
-- [ ] Mint `test-beta` and `test-paid` keypairs (test-only, public
-      passphrases, committed) + signed fixture licenses per product per
-      class: valid / expired / wrong-product / wrong-class-for-key, plus
-      expiry boundary triple with month-end and leap cases. Extend the
-      update-vectors pattern; error CLASS asserted.
-- [ ] Red-team support package for mecha_license_redteam once erected:
+- [x] Fixture matrix SHIPPED at dfbc0e3: test-beta/test-paid keypairs +
+      9 signed vectors + manifest.json (the mecha_policy TDD spec) +
+      tests/integration/license_vectors.sh (22 assertions, CI-gated,
+      suite 430/0). Contract rev 1.1 same commit: validate + validate_gui
+      counters adopted, conflicts ruled (trust-domain orthogonality,
+      64 KiB import bound, import preserves grant on ALL refusals,
+      discovery metadata-only). Both peers + Einstein mailed.
+      — 2026-09-17 12:45 EDT
+- [x] Red-team package delivered to Einstein (2026-09-17 12:45 EDT): repo
+      clone at dfbc0e3 = public keys + fixed signed fixtures + manifest;
+      in-tree .key files are test-only/published-passphrase fair game; no
+      production key exists; no signing oracle. Standing rule:
       public keys, fixed signed fixtures, exact build hashes. NEVER private
       keys/signing tokens/production access/a signing oracle.
 - [ ] OPEN for Peter (carried in contract §2): name canonicalization
