@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Regenerates the license-class fixture vectors from scratch. Ed25519 is
+# deterministic, so with the same keys and payload bytes every regeneration
+# is byte-identical — which is itself an MFIC property the suite leans on.
+#
+# TEST-ONLY trust. Passphrases are public BY DESIGN (these keys must never
+# authorize a production artifact; release acceptance byte-scans them out).
+# Contract: docs/MECHA_LICENSE_CONTRACT_V1.md sections 4 and 6.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SIGIL="${SIGIL_BIN:-$REPO_ROOT/zig-out/bin/sigil}"
+cd "$SCRIPT_DIR"
+
+BETA_PP="test-beta-not-for-production"
+PAID_PP="test-paid-not-for-production"
+
+pp_beta="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"
+pp_paid="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"
+trap 'rm -f "$pp_beta" "$pp_paid"' EXIT
+printf '%s' "$BETA_PP" > "$pp_beta"
+printf '%s' "$PAID_PP" > "$pp_paid"
+
+if [[ ! -f test_beta.key ]]; then
+	"$SIGIL" keygen --out test_beta.key --passphrase-file "$pp_beta" || exit 1
+fi
+if [[ ! -f test_paid.key ]]; then
+	"$SIGIL" keygen --out test_paid.key --passphrase-file "$pp_paid" || exit 1
+fi
+
+# payload <file> <fields...>: single-line JSON, alphabetical keys, NO
+# trailing newline (the exact bytes are what gets signed).
+write_payload() {
+	local file="$1"; shift
+	printf '%s' "$1" > "$file"
+}
+
+# Field template. Alphabetical key order, matching examples/demo/payload.json.
+# expiry slots after customer_name_canonical when present.
+p_beta_valid='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2026-10-17","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0001","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}'
+p_beta_expired='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2026-08-01","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0002","product":"mecha-validate","purchase_date":"2026-07-01","v":"1"}'
+p_beta_month_end='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2026-02-28","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0003","product":"mecha-validate","purchase_date":"2026-01-31","v":"1"}'
+p_beta_leap='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2028-02-29","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0004","product":"mecha-validate","purchase_date":"2028-01-31","v":"1"}'
+p_paid_valid='{"customer_email":"customer@example.com","customer_name_canonical":"paying customer","features":"full","max_major":"1","offline_days":"365","payment_provider":"paddle","payment_ref":"txn_test_0001","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}'
+p_wrong_product='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2026-10-17","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0005","product":"mecha-rotshield","purchase_date":"2026-09-17","v":"1"}'
+p_wrong_class_for_key='{"customer_email":"forger@example.com","customer_name_canonical":"leaked key forgery","features":"full","max_major":"1","offline_days":"365","payment_provider":"paddle","payment_ref":"txn_forged_0001","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}'
+p_beta_missing_expiry='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0006","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}'
+p_malformed_expiry_empty='{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0007","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}'
+
+sign() {
+	local name="$1" key="$2" pp="$3"
+	"$SIGIL" sign "$name.payload.json" --key "$key" --passphrase-file "$pp" \
+		--out "$name.sigil" || { echo "FATAL: signing $name failed" >&2; exit 1; }
+}
+
+for n in beta_valid beta_expired beta_month_end beta_leap wrong_product \
+         wrong_class_for_key beta_missing_expiry malformed_expiry_empty; do
+	var="p_$n"
+	write_payload "$n.payload.json" "${!var}"
+	sign "$n" test_beta.key "$pp_beta"
+done
+write_payload paid_valid.payload.json "$p_paid_valid"
+sign paid_valid test_paid.key "$pp_paid"
+
+echo "generated: $(ls -1 ./*.sigil | wc -l) envelopes"

@@ -76,7 +76,8 @@ One implementation, not three. Proposal:
   prior monotonic clock high-water mark.
 - Output: a typed decision — `authorized` | refusal with a STABLE reason
   code (`no_license`, `not_authentic`, `malformed`, `wrong_product`,
-  `expired`, `version_ceiling`, `class_key_mismatch`, `clock_rollback`) —
+  `expired`, `version_ceiling`, `class_key_mismatch`, `clock_rollback`,
+  `operation_not_granted`) —
   consumed identically by operation gates, `license status` JSON, and
   About. One decision path; GUIs cannot grant.
 - Sequencing per Peter's directive: authenticity (sigil) → schema validity
@@ -160,3 +161,88 @@ immutable-certificate-suffices determination. Clock-rollback high-water
 mark mechanics — retained as a policy-module input but its persistence
 design is a separate work unit. Production key provisioning and customer
 issuance — NOT authorized by this document.
+
+## 9. Revision 1.1 rulings (2026-09-17, lead)
+
+Adopted from validate's and validate_gui's replies (both accepted the FROZEN
+tier and the mecha_policy proposal as written; validate consumes it as a
+native Zig dependency and re-exports the decision through its own C FFI so
+the GUI never links a second verifier):
+
+- Reason codes: validate's `operation_not_granted` ADDED (authentic,
+  current grant that does not cover the requested operation class).
+  Import-adapter codes (`import_too_large`, `store_unwritable`) stay
+  app-side. App-local presentation (validate's AUTH_* verdict family) is
+  the app's own.
+- Clock high-water mark: mecha_policy specifies the persisted store format
+  (opaque bytes in/out) so every app persists the same thing; apps own
+  storage location and I/O.
+- Trust domain vs signer role are ORTHOGONAL. `test-beta`/`test-paid` keys
+  sign real beta/paid-CLASS grants; only test artifacts embed their
+  pubkeys. The invariant is "test authority never authorizes production
+  artifacts" (enforced by which pubkeys a build embeds), NOT "test keys
+  cannot sign paid-class payloads" — the class-binding gate is untestable
+  without wrong-class-under-each-key vectors. An authentic signed
+  wrong-class grant is a POLICY refusal (`class_key_mismatch`); a test key
+  offered to a production artifact is an AUTHENTICITY refusal (that pubkey
+  is simply not embedded).
+- Trust domain is a compile-time build option (validate:
+  `-Dlicense-trust=production|test`); gate code identical; any test clock
+  override compiles out under production trust; `license status` JSON
+  reports `trust_domain`.
+- Release byte-scan asserts ALL FOUR test/demo pubkeys absent
+  (test-beta, test-paid, update-test, demo), plus the functional
+  test-signed-license rejection at SIGNATURE.
+- License import bound: 64 KiB. (The runbook's "Sigil 4 KiB" reference is
+  incorrect — sigil imposes no such bound; its CLI mercy cap is 16 MiB.
+  The 64 KiB bound is app import policy.)
+- Import replaces the stored grant ONLY when the imported certificate's
+  policy decision is `authorized` for this product at import time. Every
+  refusal — signature, schema, AND policy level (expired, wrong-product,
+  wrong-class, version ceiling) — preserves the prior working grant and
+  reports the specific reason.
+- Discovery wording (validate's, adopted verbatim): "Discovery (directory
+  listing and stat) is bootstrap and ungated; it must not open, read,
+  sniff, detect or validate file contents, and must produce no
+  file-validity evidence." validate adds a source-scan control that fails
+  if the walker ever gains an open/read call. Any readability opens the
+  GUI performs before submission are the GUI's own and protected — early
+  refusal there is welcome but the authoritative admission stays in the
+  core.
+- Expiry recheck cadence for long-lived processes: app-tunable but
+  BOUNDED — a gate recheck at least every 60 seconds or every 1000 work
+  units, whichever comes first (validate's 1000-file/60-s proposal adopted
+  as the bound, not a fixed constant). The binding requirement is the
+  test triple per entrypoint: admitted-before-expiry completes; the
+  checkpoint on or after expiry refuses with the expired reason; nothing
+  is admitted after expiry.
+- Product identifiers (frozen): `mecha-validate`, `mecha-rotshield`.
+
+## 10. Trial grants: static signed vs mutable usage state (OPEN — Peter)
+
+Peter reconfirmed certificate-required trials with easy acquisition and
+proposed signed metadata carrying the initial trial date plus processed
+bytes. Evaluation, as requested, of the two mechanisms separately:
+
+- A STATIC signed trial grant (class `trial`, signed `purchase_date` as
+  trial start, short `expiry`, no metering) has the same authenticity and
+  rollback properties as every other certificate: nothing mutable to
+  protect, forgery impossible without the key, deletion yields no license
+  and no work, re-import cannot extend anything. The only residual attack
+  is host-clock manipulation, bounded by the clock high-water mark.
+- PROCESSED-BYTES metering cannot be made authentic client-side: a signed
+  certificate attests only what the ISSUER knew at signing (the trial
+  start). A running byte counter is client-mutable state; with no issuer
+  secret in clients (directive), the client cannot re-sign its own
+  counter, so any local counter — hidden fork, xattr, or file — is
+  honor-system, resettable by a determined user. Only periodic server
+  round-trips could attest usage, which contradicts the no-new-phone-home
+  posture. Recommendation: if byte quotas matter commercially, treat the
+  counter as explicitly best-effort deterrence; otherwise prefer the
+  date-only signed trial, which also deletes the last mutable-counter
+  motivation for hidden storage.
+- RotShield trial terms are UNDISCUSSED (Peter, via Einstein 2026-09-17)
+  and are not derived from Validate's by assumption. RotShield-specific
+  constraint already frozen: expiry never deletes parity or damages
+  originals; recovery of already-protected data after trial expiry needs
+  its own narrowly scoped policy decision.

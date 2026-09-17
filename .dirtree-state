@@ -9,6 +9,7 @@ annotate=[
 	docs/MECHA_LICENSE_CONTRACT_V1.md = DRAFT shared licensing contract sigil leads for validate/validate_gui/entropy_shield/mecha-commerce: frozen payload+expiry rules, proposed policy module, trust roles, acceptance vectors, redteam boundaries
 	examples/demo = DEMO keypair + signed license (release-plan JSON payload) — dev-only fixtures for integrators and the conformance suite; passphrase 'demo-not-for-production'
 	examples/embed_minimal.c = Smallest useful embedder (verify license, print payload) — compiled with stock cc and run with tamper control by tests/test_c_conformance
+	examples/license_vectors = License-class fixture matrix: test-beta/test-paid TEST-ONLY keypairs, 9 signed vectors (valid/expired/boundary/clamp/leap/wrong-product/wrong-class/malformed-expiry), manifest.json = mecha_policy TDD spec, regenerable via ./generate
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
@@ -23,6 +24,7 @@ annotate=[
 	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
+	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards
 	tests/integration/update_vectors.sh = CI-gated vector suite: purpose boundary (license↔update replay must fail at SIGNATURE), tamper/wrong-key cases, vacuity guards
 	tests/test_no_signing_symbols = MFIC control: nm asserts libsigil.a contains no signing code. Verified to fail when violated.
 ]

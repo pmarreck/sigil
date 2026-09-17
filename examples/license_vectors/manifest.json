@@ -1,0 +1,92 @@
+{
+  "schema": "mecha-license-vectors/1",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md",
+  "note": "sigil_verify expectations are asserted by tests/integration/license_vectors.sh today. policy_evals are the forward-looking specification mecha_policy must be TDD'd against: inputs are (now_utc_date, product, app_major, verified_role); the expiry rule is 'authorized while now_utc_date <= expiry, day-inclusive, all UTC'. Role binding: role test-beta may authorize only payment_provider=beta with a dated expiry; role test-paid only payment_provider paddle or comp.",
+  "trust_roles": {
+    "test-beta": {"pubkey": "test_beta.key.pub", "authorizes_classes": ["beta"]},
+    "test-paid": {"pubkey": "test_paid.key.pub", "authorizes_classes": ["paddle", "comp"]}
+  },
+  "vectors": [
+    {
+      "file": "beta_valid.sigil", "payload": "beta_valid.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-16", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "no not-before gate; early use of a dated grant is allowed"},
+        {"now_utc_date": "2026-10-16", "product": "mecha-validate", "app_major": 1, "expect": "authorized"},
+        {"now_utc_date": "2026-10-17", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "expiry day itself is inclusive"},
+        {"now_utc_date": "2026-10-18", "product": "mecha-validate", "app_major": 1, "expect": "expired"},
+        {"now_utc_date": "2026-10-17", "product": "mecha-rotshield", "app_major": 1, "expect": "wrong_product"},
+        {"now_utc_date": "2026-10-17", "product": "mecha-validate", "app_major": 2, "expect": "version_ceiling"}
+      ]
+    },
+    {
+      "file": "beta_expired.sigil", "payload": "beta_expired.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-08-01", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "boundary control: on its own expiry day this grant is still good"},
+        {"now_utc_date": "2026-08-02", "product": "mecha-validate", "app_major": 1, "expect": "expired"},
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "expired"}
+      ]
+    },
+    {
+      "file": "beta_month_end.sigil", "payload": "beta_month_end.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-02-28", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "mint rule clamped Jan 31 + 1 month to Feb 28 (2026 is not a leap year)"},
+        {"now_utc_date": "2026-03-01", "product": "mecha-validate", "app_major": 1, "expect": "expired"}
+      ]
+    },
+    {
+      "file": "beta_leap.sigil", "payload": "beta_leap.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2028-02-29", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "leap-year clamp: Jan 31 + 1 month = Feb 29 in 2028"},
+        {"now_utc_date": "2028-03-01", "product": "mecha-validate", "app_major": 1, "expect": "expired"}
+      ]
+    },
+    {
+      "file": "paid_valid.sigil", "payload": "paid_valid.payload.json",
+      "signed_by_role": "test-paid", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "authorized"},
+        {"now_utc_date": "2099-01-01", "product": "mecha-validate", "app_major": 1, "expect": "authorized", "why": "absent expiry = no time bound"},
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 2, "expect": "version_ceiling"}
+      ]
+    },
+    {
+      "file": "wrong_product.sigil", "payload": "wrong_product.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "wrong_product", "why": "a genuine rotshield grant must not unlock validate"},
+        {"now_utc_date": "2026-09-17", "product": "mecha-rotshield", "app_major": 1, "expect": "authorized", "why": "positive control: same envelope IS good for its own product"}
+      ]
+    },
+    {
+      "file": "wrong_class_for_key.sigil", "payload": "wrong_class_for_key.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "class_key_mismatch", "why": "THE leaked-beta-key forgery: authentic under the beta key but claims payment_provider=paddle with no expiry; the role binding must refuse it"}
+      ]
+    },
+    {
+      "file": "beta_missing_expiry.sigil", "payload": "beta_missing_expiry.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "malformed", "why": "payment_provider=beta REQUIRES a dated expiry; schema refusal, not a signature failure"}
+      ]
+    },
+    {
+      "file": "malformed_expiry_empty.sigil", "payload": "malformed_expiry_empty.payload.json",
+      "signed_by_role": "test-beta", "sigil_verify": "verified",
+      "policy_evals": [
+        {"now_utc_date": "2026-09-17", "product": "mecha-validate", "app_major": 1, "expect": "malformed", "why": "empty-string expiry is a DATA ERROR, never NOT AUTHENTIC"}
+      ]
+    },
+    {
+      "file": "../demo/license.sigil", "payload": "../demo/payload.json",
+      "signed_by_role": "demo", "sigil_verify": "not_authentic_under_test_or_production_trust",
+      "policy_evals": [],
+      "why": "demo trust must never verify in any test- or production-trust artifact; rejection is at SIGNATURE before policy ever runs"
+    }
+  ]
+}
