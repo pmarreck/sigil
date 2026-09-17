@@ -63,6 +63,12 @@ reading wins:
       +1 calendar month with end-of-month clamping; valid while now_utc <
       (expiry + 1 day) 00:00 UTC. No tzdata on any client, same end instant
       everywhere, travel-proof. — 2026-09-17 10:05 EDT
+- [x] **Beta field ruling — APPROVED by Peter 2026-09-17**: `payment_provider:
+      "beta"` with mandatory `expiry`; the competing `"none"` +
+      `entitlement_class` format is rejected. Grant-class bookkeeping beyond
+      the provider value lives in the commerce DB, not the payload. This was
+      the last open ruling from the 2026-09-16 checkpoint — all three are now
+      Peter-approved. — 2026-09-17 11:14 EDT
 - [x] **Peter: beta key custody — DECIDED** — Peter approved dedicated online
       paid/beta signing keys, separate from the release/update keys (evening
       2026-09-16, relayed by Einstein 2026-09-17). No keys provisioned yet.
