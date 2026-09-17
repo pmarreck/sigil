@@ -43,9 +43,16 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       Einstein. validate_gui pre-agreed to the frozen semantics unprompted
       (their 2026-09-17 mail) and asked for fixtures + trust-domain naming,
       answered in the reply. — 2026-09-17 12:45 EDT
-- [ ] Collect peer agreement/counter-proposals: policy-module location
-      (proposal: sibling repo `mecha_policy`, pure Zig core + C FFI),
-      entrypoint inventories from each app owner, reason-code naming.
+- [x] Peer agreement round 1 CLOSED for validate + validate_gui (both
+      accepted frozen tier + mecha_policy; inventories delivered; conflicts
+      ruled in rev 1.1). Outstanding: entropy_shield and mecha-commerce
+      have not replied to the circulation. — 2026-09-17 12:58 EDT
+- [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
+      against the vector manifest (21 evals + 16-case malformed corpus +
+      rollback + binding symmetry), C FFI + mecha-policy CLI (13 assertions),
+      nix sandbox check green, GitHub repo up, ABI pin mailed to peers.
+      Mechatron webhook awaits Peter sudo (dry-run CREATE verified).
+      — 2026-09-17 12:58 EDT
 - [x] Fixture matrix SHIPPED at dfbc0e3: test-beta/test-paid keypairs +
       9 signed vectors + manifest.json (the mecha_policy TDD spec) +
       tests/integration/license_vectors.sh (22 assertions, CI-gated,
