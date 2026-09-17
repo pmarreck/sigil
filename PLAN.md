@@ -65,11 +65,15 @@ reading wins:
       (expiry + 1 day) 00:00 UTC. No tzdata on any client, same end instant
       everywhere, travel-proof; can gift up to ~24h vs ET intuition, never
       less than the month. Awaiting Peter's sign-off before minting.
-- [ ] **Peter: beta key custody** — recommended: a dedicated beta keypair,
-      not the production key. Beta build embeds beta pubkey; 1.0 build embeds
-      production pubkey (one key per build; rotation-by-update is already the
-      design). Leaked-beta-key blast radius: licenses that all die within
-      the beta window. (Awaiting Peter, per Einstein 2026-08-26.)
+- [x] **Peter: beta key custody — DECIDED** — Peter approved dedicated online
+      paid/beta signing keys, separate from the release/update keys (evening
+      2026-09-16, relayed by Einstein 2026-09-17). No keys provisioned yet.
+      Blast-radius CORRECTION (Einstein): "capped at beta-class grants" holds
+      ONLY if the verifier binds which key verified to which grant classes it
+      may authorize (beta key => payment_provider "beta" + expiry present).
+      A multi-key verifier without that binding would honor a leaked-beta-key
+      "paid, no expiry" forgery. App policy, not a sigil crypto change;
+      guidance added to examples/embed_minimal.c. — 2026-09-17 09:40 EDT
 - [ ] **Peter: not-before** — recommended: no gate, no `valid_from` field
       (early use of a free beta is harmless; the field would be speculative).
       Free to add BEFORE the 15 licenses are signed; a re-issue after.

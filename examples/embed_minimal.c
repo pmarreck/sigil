@@ -13,6 +13,14 @@
  * anyone substitute their own. It is a file here only so the example runs
  * against the demo fixtures without editing.
  *
+ * A product that embeds MORE THAN ONE trusted key (say beta and paid) and
+ * tries each in turn must treat WHICH key verified as part of the verdict:
+ * each key authorizes only its own grant classes (the beta key only a
+ * payload with payment_provider "beta" and an expiry present; paid claims
+ * only under the paid key). Without that binding, a leaked beta key can
+ * sign a "paid, no expiry" payload and the multi-key verifier will honor
+ * it.
+ *
  * The payload comes back ONLY after the signature verifies — there is no API
  * to get unverified bytes — so parsing it (JSON, TOML, whatever the issuer
  * chose) is safe by construction. Exit codes: 0 verified, 1 not authentic,
