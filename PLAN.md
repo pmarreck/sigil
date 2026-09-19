@@ -59,7 +59,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       = also grant-free (removing protection is never gated / no-trap
       principle) but a distinct audited entrypoint: safe-unit rollback,
       no file-validity evidence emitted, never chains into verify/repair
-      without a grant.
+      without a grant. Entrypoint inventory RECEIVED: entropy_shield
+      633abde7 docs/LICENSE_ENTRYPOINTS.md (resource-fork mode = conditional
+      protected; debug metadata exports slated for production removal).
+      Lesson banked: my "PLAN.md n artifacts" report was an rg `-rn` flag
+      misparse (-r n = replace-with-n) — retracted to them. — 2026-09-19 10:20 EDT
       — updated 2026-09-19 10:06 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
