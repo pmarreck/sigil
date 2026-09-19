@@ -258,8 +258,14 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
   one file. For coverage: one file WITH its round count fixed at
   admission; additional rounds or repeats beyond that plan are new units
   needing admission. For RotShield: one transaction (create/verify/update/
-  repair of one registration's safe unit). A huge single unit is admitted
-  once and runs to completion or rollback even if expiry passes mid-unit;
+  repair of one registration's safe unit). For validate git work: one
+  repository AS CAPTURED at admission — the refs resolved at the admission
+  instant and the objects reachable from them, with the traversal bounded
+  to that captured set; objects, refs or commits added after admission are
+  not part of the plan and need fresh admission (a live walk of refs that
+  can grow mid-traversal is a gap, ruled 2026-09-19). A huge single unit
+  is admitted once and runs to completion or rollback even if expiry
+  passes mid-unit;
   it never re-admits itself and cannot be extended after admission. App
   owners must confirm their admission APIs capture a finite plan; an API
   lacking that boundary is a contract gap to close before the gate ships.
