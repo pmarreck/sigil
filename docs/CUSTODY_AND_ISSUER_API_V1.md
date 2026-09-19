@@ -1,7 +1,10 @@
-# Key custody and issuer API — DRAFT v1.1 for negotiation
+# Key custody and issuer API — DRAFT v1.2 for negotiation
 
-Status: PROPOSAL, revised 2026-09-19 after Einstein's review of v1 (five
-corrections, all adopted below). Parties: mecha-commerce (issuer, Worker),
+Status: PROPOSAL, revised 2026-09-19 after Einstein's reviews of v1 (five
+corrections) and v1.1 (four more), all adopted below. The sealed hot
+bundle (section 2) and per-product issuer Workers (section 1) are NEW
+owner choices this draft introduces, not already-approved work; they are
+listed in section 8 as such. Parties: mecha-commerce (issuer, Worker),
 validate / entropy_shield (consumers of public keys), Peter (custodian).
 Nothing here provisions a key; sections marked OPEN need Peter. Scope stays
 code/tests/planning until he performs the ceremony. Builds on: online
@@ -65,12 +68,23 @@ exists) are unchanged from v1.
 - PUBLIC = `sigil pubkey` text per role in a public `KEY_REGISTRY.md`
   with each `.pub`'s SHA-256 and exactly which release trusts it.
 
-Recovery is proven, not assumed (correction 1): the ceremony REHEARSAL
-uses the TEST roles end to end — `keygen` → `hot-bundle open` piped into
-a development-environment secret → the Worker issues a license → native
-`sigil verify` under the registry `.pub` — before any production key is
-generated, and the same drill is repeated with production COLD artifacts
-against a non-production Worker environment as the backup/restore test.
+Recovery assurance, stated per check (v1.2): (i) The end-to-end REHEARSAL
+uses the TEST roles ONLY — `keygen` → `hot-bundle open` piped into a
+development secret → the Worker issues → native `sigil verify` under the
+registry `.pub`. It proves the mechanism works; it proves nothing about
+any production key. (ii) Production keys NEVER enter a non-production
+Worker or staging environment: that would extend the production trust
+boundary. Production restore assurance is two checks: (a) OFFLINE
+identity check on the isolated ceremony host — open the sealed hot
+bundle from COLD and verify its PKCS#8 public half equals the registry
+`.pub`; proves the COLD artifact restores the correct identity, does NOT
+prove Worker acceptance; (b) a production-controlled isolated Worker
+environment — same account, same secret handling and access controls,
+issuance routes disabled, no customer traffic — into which the restored
+secret is put, then signs `examples/demo/payload.json`, verified by
+native `sigil verify`; proves Worker-side restore of the real key without
+any customer issuance. Neither check exercises customer fulfillment; that
+is by design.
 
 ## 3. Plaintext never touches persistent storage (correction 2)
 
@@ -79,13 +93,18 @@ storage (GNU documents the assumption); Thelio runs ZFS. The v1 "shred
 the PKCS#8" step and its policy exception are WITHDRAWN. Instead, the
 plaintext PKCS#8 exists only as a pipe: `sigil hot-bundle open ... |
 wrangler secret put ...` (and at generation, `keygen` writes only the two
-SEALED artifacts — no plaintext file is ever created). Ceremony host
-requirements: swap off or encrypted (`swapon --show` empty), core dumps
-disabled (`ulimit -c 0`), TMPDIR on tmpfs, no shell history capture of
-passphrases (they are prompted, never typed on a command line), and the
-session run from a fresh shell. These are checked by a `sigil ceremony
---preflight` helper (OPEN feature; a script is acceptable) that refuses
-to proceed when any check fails.
+SEALED artifacts — sigil itself never creates a plaintext file). What
+this does and does not prove (v1.2): it removes sigil's own persistent
+writes; it does NOT prove that wrangler, the Node runtime, the kernel
+(swap), or any logging layer never persists the piped bytes. Ceremony
+host requirements are therefore stated as REDUCTIONS, not guarantees:
+run on a host with full-disk encryption and no swap configured at the OS
+level (an empty `swapon --show` shows no active swap, not that swap is
+encrypted), core dumps disabled (`ulimit -c 0`), TMPDIR on tmpfs,
+passphrases prompted never typed on a command line, a fresh shell, and
+wrangler run with logging at its minimum. A `ceremony --preflight` helper
+(OPEN; a script is acceptable) checks what is checkable and prints the
+residual assumptions it cannot check, rather than claiming proof.
 
 ## 4. The ceremony (PROPOSED, ~10 minutes for five keys)
 
@@ -147,21 +166,28 @@ ledger field beyond `status`.
 
 Two different procedures (correction 3):
 
-- PLANNED RETIREMENT never removes a pubkey while any grant it signed can
-  still be valid. Paid grants are perpetual within `max_major`, so a
-  retired license key's pubkey stays embedded, role-bound, for the life
-  of that major version; retirement only stops NEW issuance under it.
-  Removal is allowed at a major-version boundary (old grants are outside
-  `max_major` anyway) or once the ledger shows every grant it signed has
-  been re-issued AND delivered (resend confirmation), whichever first.
+- PLANNED RETIREMENT never removes a pubkey while any grant it signed is
+  still within its supported `max_major` — and `max_major` can span
+  several major versions, so a major boundary alone proves nothing;
+  retirement only stops NEW issuance under the key. Removal needs
+  POSITIVE evidence that each still-valid grant has been replaced: the
+  confirmation endpoint observing the replacement grant's hash from that
+  customer, or an explicit customer action; mail delivery of a
+  replacement is NOT proof an offline client imported it, and no lockout
+  is ever forced on delivery evidence alone. Grants with no such evidence
+  keep the old pubkey embedded, role-bound, indefinitely.
 - EMERGENCY COMPROMISE: mint the successor role key; re-issue every active
   entitlement under it from the ledger and deliver through the customer
   channel; ship a release that drops the compromised pubkey. Honest
-  limit: clients that never update keep both the old trust and the
-  attacker's forgeries — automatic online revocation cannot constrain an
-  old offline binary; the update-on-version-change trigger and the
-  `offline_days` window bound how long that lasts for honest customers,
-  and forgers were never customers. The registry records both procedures
+  limit (v1.2): a client running an old binary keeps both the old trust
+  and the attacker's forgeries, and NOTHING here bounds how long —
+  fail-open reconfirmation plus an `offline_days` value imposes no hard
+  exposure bound. Exposure for a given client ends only when that client
+  updates to a release without the pubkey, or receives an authenticated
+  response it acts on; both depend on that client's reachability, its
+  update behavior, and an actual authenticated response. Forgers were
+  never customers; honest customers on old offline binaries are simply
+  unaffected by the compromise until they update. The registry records both procedures
   with dates and versions.
 
 ## 8. What Peter decides (OPEN)
