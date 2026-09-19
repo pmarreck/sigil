@@ -197,9 +197,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
       refusals via the real CLI) and commit emitted envelopes with hashes
       for reviewer hash-matching. Requested 18:24 EDT.
-- [ ] Draft custody + issuer-API contract (key roles, Worker secret
-      storage, rotation-by-update, backup/restore test, confirmation
-      endpoint bounds); code/tests only until Peter provisions.
+- [x] Custody + issuer-API contract DRAFTED at 7d5c9e0 (docs/
+      CUSTODY_AND_ISSUER_API_V1.md): roles (per-product license keys +
+      confirmation), HOT/COLD from one seed, ceremony script + backup/
+      restore test, issuer/confirmation API bounds, rotation. Sent to
+      commerce (sections 5-6) and Einstein (5 OPEN items routed to Peter).
+      — 2026-09-19 18:35 EDT
+- [ ] On Peter's yes: implement `sigil keygen --pkcs8-out` (TDD: PKCS#8
+      public half == .pub; seed wiped; no export-from-keyfile path).
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
