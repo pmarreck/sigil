@@ -212,7 +212,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       refused, wrong-product preserves store, tamper, demo, forgery shape
       accepted only under paid key. fixtures/issued/ byte-identical to my
       envelopes with SHA256SUMS; static signing-path control bite-checked.
-      Directive item 4 satisfied with delivery = outbox. Original ask: commerce to exercise a
+      Directive item 4 satisfied with delivery = outbox. Einstein (18:36
+      EDT): treat bb134a0 as PRODUCER-REPORTED passing integration pending
+      two hardening fixes he sent commerce — external SHA-256 of the
+      artifact file + spoof-negative (not self-reported --about), and
+      injected dates for EVERY call (beta import and month-end cases
+      currently depend on wall clock). Not a bypass. Custody 5ddd256
+      corrections accepted; owner approvals still pending. Original ask: commerce to exercise a
       Worker-issued envelope against validate 0a89aaa1b test-trust core
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
       refusals via the real CLI) and commit emitted envelopes with hashes
