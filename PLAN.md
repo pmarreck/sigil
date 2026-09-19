@@ -60,7 +60,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       ALL FOUR PEERS NOW IN AGREEMENT. My follow-ups: commit PKCS#8 TEST
       seeds (test_beta/test_paid) as fixtures for byte-identical Worker
       test signatures (seed-export subcommand DECLINED as foot-gun);
-      commit mecha_policy flake.lock (their catch). Rev 1.2 wording fixes at 0455563 (finite
+      commit mecha_policy flake.lock (their catch). BOTH DONE 18:12 EDT:
+      sigil 7dae2fc (PEMs + pubkey.hex sidecars + README + 4 vector-suite
+      assertions; 434/0), mecha_policy 9ad81b9 (flake.lock, standalone
+      nix build verified). Pubkeys cross-checked: PEM-derived == CLI-derived. Rev 1.2 wording fixes at 0455563 (finite
       admitted plan; nomination sets target not evidence validity); finite-
       plan confirmations: validate CONFIRMED (one file / (file, rounds,
       modes, seed) captured at call; checkpoint-between-units ruled and
