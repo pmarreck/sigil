@@ -81,7 +81,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       d61d90d + mecha_policy 6c61dbe. Nominated to redteam by validate and
       RELAYED by lead with section 11/12 expectations. Production-trust
       positive control BLOCKED on Peter's key ceremony (recorded as
-      owner-provisioning gap, not a defect). Contract rev 1.2 at
+      owner-provisioning gap, not a defect).
+- [ ] Red-team slice 1 (2026-09-19 15:50 EDT): artifact hashes matched;
+      CLI behavior clean on both builds (no bypass). OPEN FINDING: export
+      fn validate() at validate ffi/c_api.zig:1280 has no admitUnit —
+      source-evidenced ungated FFI export; validate asked to gate/remove +
+      direct-FFI denial test; validate_gui asked whether full_validate
+      calls it. Also open: git captured-vs-live refs confirmation,
+      provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
+      at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
       redteam RECONCILED all three 2026-09-19 10:22 EDT (I3a/b/c at 64 KiB,
       K-rows on four axes, T3 split per section 11; history kept); entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
