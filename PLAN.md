@@ -217,7 +217,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       two hardening fixes he sent commerce — external SHA-256 of the
       artifact file + spoof-negative (not self-reported --about), and
       injected dates for EVERY call (beta import and month-end cases
-      currently depend on wall clock). Not a bypass. Custody 5ddd256
+      currently depend on wall clock). Not a bypass. Redteam (18:37 EDT)
+      INDEPENDENTLY hashed fixtures/issued at bb134a0 via git show (no
+      issuer, no PEM): all six MATCH sigil 6d58b69 and SHA256SUMS —
+      byte-identical issuance confirmed by an oracle the producer did not
+      write. Commerce's suite is not the reviewer's oracle (correct). Custody 5ddd256
       corrections accepted; owner approvals still pending. Original ask: commerce to exercise a
       Worker-issued envelope against validate 0a89aaa1b test-trust core
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
