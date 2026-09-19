@@ -99,7 +99,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       that set, connectivity bounded to captured heads, post-capture test.
       Sequencing: validate() fix pin first, git captured-plan pin second,
       each a separate nomination; 006fb6b2b preserved.
-- [ ] OPEN (separately, per Einstein): E2 closure — validate() gated with
+- [ ] OPEN — E2 is now an EXECUTED CRIT (redteam 2026-09-19 16:01 EDT):
+      production libvalidate_core.a validate() on 006fb6b2b scans with no
+      license (rc=0, examined_bytes=14/67; CLI on same files = AUTH_MISSING);
+      test-trust archive also scans with store absent. Reproduction: zig cc
+      -o consumer consumer.c -I <artifact>/include <artifact>/lib/
+      libvalidate_core.a -lstdc++ -lm -lpthread -ldl. Build candidates only,
+      nothing shipped. Closure — validate() gated with
       admit-before-open + paired direct-C-ABI test + inventory row; fixed
       commit nominated with fresh hashes. Link command (zig cc/lld) and
       archive hashes already sent to the reviewer.
