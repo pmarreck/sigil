@@ -53,7 +53,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       EDT: Peter approved; Einstein started a fresh Claude agent in
       ~/Code/mecha-commerce (Herdr w0:p1); kickoff mail sent with read
       order, current pins (sigil 99e3249, mecha_policy 6c61dbe) and the
-      four first deliverables. Scope: code/tests/integration only. Rev 1.2 wording fixes at 0455563 (finite
+      four first deliverables. Scope: code/tests/integration only.
+      COMMERCE AGREED 18:07 EDT: plan c190c10 (Phase E1-E9) pinned to
+      sigil 99e3249 + mecha_policy 6c61dbe; four-step migration, loud-fail
+      acceptance suite, sigil+mecha_policy as flake inputs, v1 deleted.
+      ALL FOUR PEERS NOW IN AGREEMENT. My follow-ups: commit PKCS#8 TEST
+      seeds (test_beta/test_paid) as fixtures for byte-identical Worker
+      test signatures (seed-export subcommand DECLINED as foot-gun);
+      commit mecha_policy flake.lock (their catch). Rev 1.2 wording fixes at 0455563 (finite
       admitted plan; nomination sets target not evidence validity); finite-
       plan confirmations: validate CONFIRMED (one file / (file, rounds,
       modes, seed) captured at call; checkpoint-between-units ruled and
