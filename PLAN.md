@@ -139,7 +139,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       --connectivity-only --no-dangling <captured heads>` when git exists;
       fsck --full and count-objects gone; section 11 unit tests without a
       git binary (late object + moved ref never judged; fresh capture sees
-      them). Fresh hashes relayed to redteam. Closes on reviewer retest. Also open: git captured-vs-live refs confirmation,
+      them). Fresh hashes relayed to redteam. RETEST 19:13 EDT: NOT CLOSED
+      — with git on PATH the connectivity fsck never executes (strace: no
+      git); checksum capture works (3->6->7 across admissions, flipped
+      object reported corrupt); CLI --json overclaims depth "fully
+      validated" on checksum-only success; validate_git(.git) -> corrupt
+      with 0 objects; mid-unit race not executable at ~0.3 ms. E2 stays
+      closed. Next pin: observable fsck run (argv+exit in result, tests
+      both ways), full depth only when it ran, .git path handling, a
+      documented slow reproduction. 274a16bda preserved. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
