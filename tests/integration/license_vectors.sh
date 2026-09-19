@@ -154,5 +154,26 @@ else
 	fail "malformed_expiry_empty payload carries the empty-string expiry"
 fi
 
+# PKCS#8 TEST seeds for WebCrypto issuers: well-formed RFC 8410 DER (16-byte
+# prefix + 32-byte seed = 48 bytes), and the recorded public half equals what
+# the sigil CLI derives from the committed .pub — the seed->pubkey link itself
+# is proven by mecha-commerce's issuer suite under native sigil verify.
+for role in test_beta test_paid; do
+	der_len="$(sed -n '2p' "$LV/$role.pkcs8.pem" | base64 -d 2>/dev/null | wc -c)"
+	prefix="$(sed -n '2p' "$LV/$role.pkcs8.pem" | base64 -d 2>/dev/null | head -c 16 | od -An -tx1 | tr -d ' \n')"
+	if [[ "$der_len" == "48" && "$prefix" == "302e020100300506032b657004220420" ]]; then
+		pass "$role.pkcs8.pem is a well-formed Ed25519 PKCS#8 (RFC 8410)"
+	else
+		fail "$role.pkcs8.pem is a well-formed Ed25519 PKCS#8 (RFC 8410)" "len=$der_len prefix=$prefix"
+	fi
+	want="$(cat "$LV/$role.pubkey.hex")"
+	got="$("$SIGIL" pubkey --pubkey "$LV/$role.key.pub" --format hex 2>/dev/null)"
+	if [[ -n "$want" && "$want" == "$got" ]]; then
+		pass "$role.pubkey.hex matches the CLI-derived public key of $role.key.pub"
+	else
+		fail "$role.pubkey.hex matches the CLI-derived public key of $role.key.pub" "want=$want got=$got"
+	fi
+done
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 exit "$FAIL"
