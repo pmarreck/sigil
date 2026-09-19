@@ -66,7 +66,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       licensing-design issue; validate is scoping authenticated pinned
       source acquisition outside the Zig FOD + a recovered/upgraded SDK
       source. No public mirrors, no token-in-store, no acceptance waiver.
-      First validate candidate nomination slips behind these. Contract rev 1.2 at
+      First validate candidate nomination slips behind these.
+- [x] FIRST CONSUMING COMMIT: validate ba3d1f6be (2026-09-19 13:13 EDT)
+      pins sigil 9ac32c1 + mecha_policy 2d2a0be as git deps, verifies
+      under each embedded role key then decides via mecha_policy, embeds
+      the full vector manifest as unit tests, re-exports through its FFI,
+      -Dlicense-trust build domain with release byte-scan. mecha_policy
+      ABI now LOCKED (versioned bumps only). NOT yet a gated candidate:
+      admission verdict at batch/coverage/git is their next pin (rounds
+      cap 10000 recorded). Nothing relayed to redteam until then. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
       redteam RECONCILED all three 2026-09-19 10:22 EDT (I3a/b/c at 64 KiB,
       K-rows on four axes, T3 split per section 11; history kept); entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
