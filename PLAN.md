@@ -55,7 +55,8 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       admitted plan; nomination sets target not evidence validity); finite-
       plan confirmations requested from validate + entropy_shield. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
-      redteam asked to reconcile 4 KiB drift / K2 axes / severity; entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
+      redteam RECONCILED all three 2026-09-19 10:22 EDT (I3a/b/c at 64 KiB,
+      K-rows on four axes, T3 split per section 11; history kept); entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
       + mecha_policy, initial entrypoint audit, milestone plan of matrix ->
       failing admission tests -> gate). Rulings issued: Clear/Clear All is
       BOOTSTRAP (Peter requires registrations clearable; bound: no customer
