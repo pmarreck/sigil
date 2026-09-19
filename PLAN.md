@@ -92,7 +92,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       backend single-file path: validate_one + VALIDATE_SAMPLE), and the
       coverage NULL-fallback at main.zig:208 — so E2 is the GUI's normal
       path, not an opt-in edge. Recorded by them as acceptance blockers;
-      call sites sent to validate. Also open: git captured-vs-live refs confirmation,
+      call sites sent to validate. validate CONFIRMED (15:59 EDT) both
+      git routes are LIVE walks (fsck --full whole object DB; own checksum
+      walk iterates .git/objects live) — section 11 gap confirmed; closure
+      = capture heads + loose/pack listing at unit start, validate exactly
+      that set, connectivity bounded to captured heads, post-capture test.
+      Sequencing: validate() fix pin first, git captured-plan pin second,
+      each a separate nomination; 006fb6b2b preserved. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
