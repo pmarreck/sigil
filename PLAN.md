@@ -132,9 +132,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       admit-before-open + paired direct-C-ABI test + inventory row; fixed
       commit nominated with fresh hashes. Link command (zig cc/lld) and
       archive hashes already sent to the reviewer.
-- [ ] OPEN (separately, stays open after E2): validate_git finite-plan
-      compliance — captured heads/loose/pack set at unit start, bounded
-      connectivity, post-capture-object test; its own nomination. Also open: git captured-vs-live refs confirmation,
+- [x] validate_git finite-plan FIX NOMINATED 2026-09-19 19:06 EDT: validate
+      274a16bda (separate; 006fb6b2b + 0a89aaa1b preserved) — git_validator
+      captures first (heads via HEAD/refs/packed-refs, loose + pack
+      listing, index), judges ONLY the capture, then `git fsck
+      --connectivity-only --no-dangling <captured heads>` when git exists;
+      fsck --full and count-objects gone; section 11 unit tests without a
+      git binary (late object + moved ref never judged; fresh capture sees
+      them). Fresh hashes relayed to redteam. Closes on reviewer retest. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
