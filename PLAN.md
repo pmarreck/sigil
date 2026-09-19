@@ -52,7 +52,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       BOOTSTRAP (Peter requires registrations clearable; bound: no customer
       content reads, no auto-recreate), scan variants classified by content
       access not name. UNGATED at b2f6fec5d2f5; not a redteam candidate
-      until they nominate.
+      until they nominate. Clear provenance SETTLED 2026-09-19: direct
+      Peter quote (Sept 15, in their INTENT.md) establishes legacy-clear
+      functionality; entitlement classification is the lead ruling. Split
+      ruling: store-removal Clear = bootstrap; legacy embedded-parity strip
+      = also grant-free (removing protection is never gated / no-trap
+      principle) but a distinct audited entrypoint: safe-unit rollback,
+      no file-validity evidence emitted, never chains into verify/repair
+      without a grant.
       — updated 2026-09-19 10:06 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
