@@ -203,8 +203,16 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       test_paid.key.pub. This SUPERSEDES the hand-minting plan in the
       Founding Beta section below: the ceremony yields the keys, the CLI
       mints.
-- [ ] Integration acceptance (Einstein 18:21 EDT) — ACCEPTED by commerce
-      18:25 EDT, no counter: commerce to exercise a
+- [x] Integration acceptance DONE (E10) 2026-09-19 18:35 EDT: mecha-commerce
+      bb134a0, Mechatron PASS — validate 0a89aaa1b test-trust pinned as
+      flake input (nominated hashes reproduced + self-reported hash
+      asserted); 9 E2E tests via the real validate CLI: no-license
+      control, Worker-issued paid (authorized, unbounded), planner beta
+      (10-17 ok / 10-18 expired), month-end clamp, expired-at-import
+      refused, wrong-product preserves store, tamper, demo, forgery shape
+      accepted only under paid key. fixtures/issued/ byte-identical to my
+      envelopes with SHA256SUMS; static signing-path control bite-checked.
+      Directive item 4 satisfied with delivery = outbox. Original ask: commerce to exercise a
       Worker-issued envelope against validate 0a89aaa1b test-trust core
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
       refusals via the real CLI) and commit emitted envelopes with hashes
