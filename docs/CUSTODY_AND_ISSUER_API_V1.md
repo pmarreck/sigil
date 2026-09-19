@@ -86,7 +86,7 @@ native `sigil verify`; proves Worker-side restore of the real key without
 any customer issuance. Neither check exercises customer fulfillment; that
 is by design.
 
-## 3. Plaintext never touches persistent storage (correction 2)
+## 3. Minimizing plaintext persistence (correction 2; reductions, not guarantees)
 
 `shred` is not secure erasure on ZFS, snapshotted, compressed or SSD
 storage (GNU documents the assumption); Thelio runs ZFS. The v1 "shred
@@ -114,11 +114,16 @@ the passphrase in the COLD locations; (2) `sigil keygen --out ROLE.key
 artifacts sealed; seed wiped); (3) `sigil hot-bundle open ROLE.hot.sealed
 | wrangler secret put SIGNING_KEY_<ROLE> --env production` (passphrase
 prompted); (4) `sigil pubkey --pubkey ROLE.key.pub --format c` into the
-consumer trust set; registry entry with fingerprint. Then the
-BACKUP/RESTORE TEST from COLD only, on a clean machine, into a
-non-production Worker environment, ending in a native `sigil verify` of
-a Worker-issued envelope — mandatory before any issuance. Record the
-drill's output in the registry commit.
+consumer trust set; registry entry with fingerprint. Then the restore
+assurance exactly as section 2 splits it, in this order and all
+mandatory before any issuance: (i) the TEST-roles-only end-to-end
+rehearsal (already done before generation; repeat if tooling changed);
+(ii) the OFFLINE production identity check on the isolated ceremony host
+(open each sealed hot bundle from COLD, compare the PKCS#8 public half to
+the registry .pub); (iii) the separately approved production-controlled
+isolated restore (section 2 (ii)(b)) — never a staging or
+non-production environment. Record each check's output and its stated
+scope in the registry commit.
 
 ## 5. Issuer API bounds (PROPOSED, binding on mecha-commerce)
 
@@ -169,13 +174,13 @@ Two different procedures (correction 3):
 - PLANNED RETIREMENT never removes a pubkey while any grant it signed is
   still within its supported `max_major` — and `max_major` can span
   several major versions, so a major boundary alone proves nothing;
-  retirement only stops NEW issuance under the key. Removal needs
-  POSITIVE evidence that each still-valid grant has been replaced: the
-  confirmation endpoint observing the replacement grant's hash from that
-  customer, or an explicit customer action; mail delivery of a
-  replacement is NOT proof an offline client imported it, and no lockout
-  is ever forced on delivery evidence alone. Grants with no such evidence
-  keep the old pubkey embedded, role-bound, indefinitely.
+  retirement only stops NEW issuance under the key. DEFAULT: retired
+  verification keys stay embedded, role-bound, for ALL still-valid
+  supported grants — a customer confirming a replacement hash from one
+  install proves nothing about their other Windows/Mac/Linux or offline
+  installs, and mail delivery proves nothing at all. Any earlier removal
+  is a separate, explicit owner policy decision, never inferred from
+  delivery or partial confirmation evidence, and never a forced lockout.
 - EMERGENCY COMPROMISE: mint the successor role key; re-issue every active
   entitlement under it from the ledger and deliver through the customer
   channel; ship a release that drops the compromised pubkey. Honest
