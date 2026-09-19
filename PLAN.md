@@ -58,7 +58,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       contracted at 6825c4a); entropy_shield recorded the requirement in
       their PLAN — cannot certify until a gate exists, though
       parity_session.start already snapshots the entry array+count per
-      repository, i.e. the finite shape is present. — 2026-09-19 10:27 EDT Contract rev 1.2 at
+      repository, i.e. the finite shape is present. — 2026-09-19 10:27 EDT
+      CANDIDATE TIMING (Einstein 11:13 EDT): validate's licensing pin
+      cannot complete a clean Nix fetch — libjxlz is PRIVATE (exact commit
+      exists only via authenticated API) and the pinned Monkey's Audio
+      MAC_1273_SDK.zip URL is gone. Two build-source problems, not a
+      licensing-design issue; validate is scoping authenticated pinned
+      source acquisition outside the Zig FOD + a recovered/upgraded SDK
+      source. No public mirrors, no token-in-store, no acceptance waiver.
+      First validate candidate nomination slips behind these. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
       redteam RECONCILED all three 2026-09-19 10:22 EDT (I3a/b/c at 64 KiB,
       K-rows on four axes, T3 split per section 11; history kept); entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
