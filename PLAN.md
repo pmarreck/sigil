@@ -99,7 +99,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       that set, connectivity bounded to captured heads, post-capture test.
       Sequencing: validate() fix pin first, git captured-plan pin second,
       each a separate nomination; 006fb6b2b preserved.
-- [ ] OPEN — E2 is now an EXECUTED CRIT (redteam 2026-09-19 16:01 EDT):
+- [x] E2 CLOSED by independent retest (redteam 2026-09-19 17:26 EDT) on
+      validate 0a89aaa1b, Linux x86_64 C ABI: all four artifact hashes
+      matched; production empty and hand-placed-test-grant cases refuse
+      (auth_missing / auth_invalid, no examined_bytes) on both validate()
+      and validate_batch_sized; test-trust admits only after paid_valid
+      import and refuses auth_expired at NOW=2026-10-18. Other OS/arch not
+      run; 006fb6b2b untouched. History of the finding: EXECUTED CRIT
+      (redteam 16:01 EDT):
       production libvalidate_core.a validate() on 006fb6b2b scans with no
       license (rc=0, examined_bytes=14/67; CLI on same files = AUTH_MISSING);
       test-trust archive also scans with store absent. Reproduction: zig cc
