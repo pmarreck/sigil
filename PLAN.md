@@ -46,8 +46,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Peer agreement round 1 CLOSED for validate + validate_gui (both
       accepted frozen tier + mecha_policy; inventories delivered; conflicts
       ruled in rev 1.1). Outstanding: mecha-commerce has not
-      replied; entropy_shield ACKed rev 1.1 (2026-09-19, empty body) but
-      still owes its entrypoint inventory — requested same day.
+      replied; entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
+      + mecha_policy, initial entrypoint audit, milestone plan of matrix ->
+      failing admission tests -> gate). Rulings issued: Clear/Clear All is
+      BOOTSTRAP (Peter requires registrations clearable; bound: no customer
+      content reads, no auto-recreate), scan variants classified by content
+      access not name. UNGATED at b2f6fec5d2f5; not a redteam candidate
+      until they nominate.
       — updated 2026-09-19 10:06 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
