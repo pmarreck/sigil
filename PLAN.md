@@ -46,7 +46,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Peer agreement round 1 CLOSED for validate + validate_gui (both
       accepted frozen tier + mecha_policy; inventories delivered; conflicts
       ruled in rev 1.1). Outstanding: mecha-commerce has not
-      replied; entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
+      replied AND (Einstein review 2026-09-19) still signs the June token
+      with the WRONG payload at HEAD 32e661d — RELEASE BLOCKER; precise
+      migration spec mailed 2026-09-19 10:25 EDT. Contract rev 1.2 at
+      d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
+      redteam asked to reconcile 4 KiB drift / K2 axes / severity; entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
       + mecha_policy, initial entrypoint audit, milestone plan of matrix ->
       failing admission tests -> gate). Rulings issued: Clear/Clear All is
       BOOTSTRAP (Peter requires registrations clearable; bound: no customer
