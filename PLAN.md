@@ -226,6 +226,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       scope = 2026-07-28 decision, hash-only, unknown = fail-open.
       Commerce accepted sections 5/6 (source-scan control on signing paths
       coming; votes yes on per-product keys + separate confirmation key).
+      v1.2 at fae90c6 (18:31 EDT) after Einstein's second review: TEST-
+      key-only rehearsal, production restore assurance per check (offline
+      identity + production-controlled isolated Worker env, never
+      staging), no delivery-based lockout, no exposure-bound claim, pipe
+      = reduction not proof. Hot bundle + per-product Workers marked NEW
+      owner choices.
 - [ ] BLOCKER for live PAID issuance (not beta): Worker does not persist
       envelope bytes, so a later-day resend would re-mint with a new
       purchase_date — idempotency violation. Closes with Phase D durable
