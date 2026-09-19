@@ -76,7 +76,7 @@
             cp -r ${zigDeps}/zig-pkg ./zig-pkg
             chmod -R u+w ./zig-pkg
           fi
-          ${pkgs.lib.optionalString pkgs.stdenv.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
+          ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
         '';
       in {
         packages.default = pkgs.stdenv.mkDerivation {
