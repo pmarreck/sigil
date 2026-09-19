@@ -1,6 +1,6 @@
 # Mecha License Contract v1 — DRAFT for peer agreement
 
-Status: PROPOSAL, 2026-09-17. Sigil is coordination lead per Peter's
+Status: rev 1.2, 2026-09-19 (rev 1.1 rulings in section 9; rev 1.2 adds sections 11-12). Sigil is coordination lead per Peter's
 directive of 2026-09-17 12:27 EDT (canonical text: LICENSE_OPERATIONS.md,
 "Current directive" section, in Peter's Obsidian vault). Sections marked
 FROZEN are Peter-approved and not open to peer negotiation; PROPOSED needs
@@ -246,3 +246,54 @@ bytes. Evaluation, as requested, of the two mechanisms separately:
   constraint already frozen: expiry never deletes parity or damages
   originals; recovery of already-protected data after trial expiry needs
   its own narrowly scoped policy decision.
+
+## 11. Admission vs already-admitted work (rev 1.2 clarification, 2026-09-19)
+
+Clarifies, does not relax, the rev 1.1 checkpoint bound.
+
+- ADMISSION is the instant a unit of protected work is accepted for
+  execution. The gate decides at admission; nothing else grants.
+- The UNIT is the app's safe transactional unit: one file for validate
+  batch/coverage work; one RotShield transaction (create/verify/update/
+  repair of one registration's safe unit) for RotShield. A huge single file
+  is ONE unit — admitted once, it runs to completion or rollback even if
+  expiry passes mid-file; it never re-admits itself.
+- Before admitting EACH subsequent unit the gate consults its cached
+  decision; that cache is refreshed by a full re-evaluation at least every
+  60 seconds or every 1000 units, whichever comes first, AND — the binding
+  rule — a cached decision may never admit a unit whose admission instant is
+  past the license's known UTC expiry boundary. The cache is an optimization
+  for cost, not a grace period: the boundary is computed from the injected
+  clock at every admission, so the 60 s/1000-unit refresh can only delay
+  learning about a NEW license (import), never extend an expired one.
+- Test requirements (per entrypoint): (a) unit admitted before expiry
+  completes; (b) first admission at or after the boundary refuses with
+  `expired`; (c) no admission after the boundary regardless of cache age —
+  driven by an injected clock stepping across the boundary, which needs
+  neither 1000 files nor 60 real seconds; (d) the huge-single-unit case:
+  admitted before, completes after, nothing new admitted.
+- Severity guidance for review: any NEW unauthorized unit admitted after the
+  boundary is a gate bypass (the reviewer's CRIT class); an already-admitted
+  unit completing after the boundary is by-design and not a finding.
+
+## 12. Acceptance candidates and review provenance (rev 1.2, 2026-09-19)
+
+A consumer becomes a review candidate ONLY by explicit nomination carrying:
+exact commit; artifact SHA-256 per target; trust domain (`test` or
+`production`) and which trust-role pubkeys the artifact embeds; reproducible
+build provenance (flake attribute or documented command). Until nominated,
+an app is not a candidate and its binaries prove nothing either way.
+
+Acceptance pairs every denial case with REAL authorized work through the
+SAME entrypoint on the SAME candidate (a gate that refuses everything passes
+every denial test). The review's independent matrix must derive from the
+accepted contract revision, tracking its revision history — not from an
+obsolete draft value or from whatever limit a binary happens to document;
+the adopted import ceiling is 64 KiB and boundary tests cover below / at /
+above it, with an oversized import preserving the prior grant. Trust domain
+and signer role are separate axes in every case: state build-domain,
+key-domain, signer-role and grant-class explicitly, and include missing-key
+and wrong-key refusals on the same candidate. Test-trust positives are
+development evidence; production-artifact acceptance additionally needs a
+production-trust positive control, which depends on owner key provisioning
+and is never satisfied by giving the reviewer a key or a signing oracle.
