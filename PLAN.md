@@ -45,8 +45,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       answered in the reply. — 2026-09-17 12:45 EDT
 - [x] Peer agreement round 1 CLOSED for validate + validate_gui (both
       accepted frozen tier + mecha_policy; inventories delivered; conflicts
-      ruled in rev 1.1). Outstanding: entropy_shield and mecha-commerce
-      have not replied to the circulation. — 2026-09-17 12:58 EDT
+      ruled in rev 1.1). Outstanding: mecha-commerce has not
+      replied; entropy_shield ACKed rev 1.1 (2026-09-19, empty body) but
+      still owes its entrypoint inventory — requested same day.
+      — updated 2026-09-19 10:06 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
       rollback + binding symmetry), C FFI + mecha-policy CLI (13 assertions),
