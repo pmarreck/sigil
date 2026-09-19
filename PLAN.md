@@ -192,6 +192,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       mecha_policy 9ad81b9. Issuer structurally cannot emit wrong-class or
       beta-without-expiry. Remaining before sales: Peter's key ceremony,
       custody/issuer-API negotiation (sigil to draft), Phase F beta command.
+- [ ] Integration acceptance (Einstein 18:21 EDT): commerce to exercise a
+      Worker-issued envelope against validate 0a89aaa1b test-trust core
+      (pinned flake input; real work + wrong-product/tamper/expiry/demo
+      refusals via the real CLI) and commit emitted envelopes with hashes
+      for reviewer hash-matching. Requested 18:24 EDT.
 - [ ] Draft custody + issuer-API contract (key roles, Worker secret
       storage, rotation-by-update, backup/restore test, confirmation
       endpoint bounds); code/tests only until Peter provisions.
