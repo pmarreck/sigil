@@ -98,7 +98,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       = capture heads + loose/pack listing at unit start, validate exactly
       that set, connectivity bounded to captured heads, post-capture test.
       Sequencing: validate() fix pin first, git captured-plan pin second,
-      each a separate nomination; 006fb6b2b preserved. Also open: git captured-vs-live refs confirmation,
+      each a separate nomination; 006fb6b2b preserved.
+- [ ] OPEN (separately, per Einstein): E2 closure — validate() gated with
+      admit-before-open + paired direct-C-ABI test + inventory row; fixed
+      commit nominated with fresh hashes. Link command (zig cc/lld) and
+      archive hashes already sent to the reviewer.
+- [ ] OPEN (separately, stays open after E2): validate_git finite-plan
+      compliance — captured heads/loose/pack set at unit start, bounded
+      connectivity, post-capture-object test; its own nomination. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
