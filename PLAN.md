@@ -221,7 +221,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       INDEPENDENTLY hashed fixtures/issued at bb134a0 via git show (no
       issuer, no PEM): all six MATCH sigil 6d58b69 and SHA256SUMS —
       byte-identical issuance confirmed by an oracle the producer did not
-      write. Commerce's suite is not the reviewer's oracle (correct). Custody 5ddd256
+      write. Commerce's suite is not the reviewer's oracle (correct). Both
+      hardening fixes landed at commerce b902c46 (Mechatron PASS 18:40 EDT):
+      external SHA-256 of the artifact bytes decides identity (--about is
+      supplemental only) with a spoof-negative wrapper control that turns
+      the whole suite red; every validate spawn strips inherited
+      VALIDATE_LICENSE_NOW/STORE and injects an explicit date (suite passes
+      unchanged under NOW=2000-01-01 + bogus store). 11 E2E tests. Custody 5ddd256
       corrections accepted; owner approvals still pending. Original ask: commerce to exercise a
       Worker-issued envelope against validate 0a89aaa1b test-trust core
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
