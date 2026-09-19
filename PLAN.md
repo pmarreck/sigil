@@ -48,10 +48,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       ruled in rev 1.1). Outstanding: mecha-commerce has not
       replied AND (Einstein review 2026-09-19) still signs the June token
       with the WRONG payload at HEAD 32e661d — RELEASE BLOCKER; precise
-      migration spec mailed 2026-09-19 10:25 EDT. REACHABILITY: no live
-      mecha-commerce agent exists in Herdr; all three mails to it are
-      unread — reported to Einstein 10:35 EDT with a request to erect the
-      agent (or authorize me to). Rev 1.2 wording fixes at 0455563 (finite
+      migration spec mailed 2026-09-19 10:25 EDT. REACHABILITY: no live mecha-commerce
+      agent existed 09-19 10:35 EDT (reported to Einstein). RESOLVED 18:01
+      EDT: Peter approved; Einstein started a fresh Claude agent in
+      ~/Code/mecha-commerce (Herdr w0:p1); kickoff mail sent with read
+      order, current pins (sigil 99e3249, mecha_policy 6c61dbe) and the
+      four first deliverables. Scope: code/tests/integration only. Rev 1.2 wording fixes at 0455563 (finite
       admitted plan; nomination sets target not evidence validity); finite-
       plan confirmations: validate CONFIRMED (one file / (file, rounds,
       modes, seed) captured at call; checkpoint-between-units ruled and
