@@ -184,6 +184,18 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       plain short-expiry cert — metering removal deletes the only
       mutable-counter state worth protecting).
 
+- [x] RELEASE BLOCKER CLOSED (code side) 2026-09-19 18:20 EDT: mecha-commerce
+      304b391 / 2cc002c / 25e10b1 — frozen v1 issuance byte-identical to
+      fixtures, native sigil + mecha-policy differential (23 evals, wrong-
+      role + tamper refusals, WebCrypto seed->pub link), 4-mutation bite
+      check, signToken/v1 deleted, Mechatron PASS. Pins sigil 7dae2fc +
+      mecha_policy 9ad81b9. Issuer structurally cannot emit wrong-class or
+      beta-without-expiry. Remaining before sales: Peter's key ceremony,
+      custody/issuer-API negotiation (sigil to draft), Phase F beta command.
+- [ ] Draft custody + issuer-API contract (key roles, Worker secret
+      storage, rotation-by-update, backup/restore test, confirmation
+      endpoint bounds); code/tests only until Peter provisions.
+
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
 Free 15-participant Mecha Validate beta, gated by signed licenses. sigil needs
