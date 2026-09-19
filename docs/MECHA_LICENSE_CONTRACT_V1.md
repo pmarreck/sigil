@@ -263,6 +263,13 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
   it never re-admits itself and cannot be extended after admission. App
   owners must confirm their admission APIs capture a finite plan; an API
   lacking that boundary is a contract gap to close before the gate ships.
+- The checkpoint bound applies BETWEEN units (between files in a batch,
+  between coverage calls, between RotShield transactions), never inside
+  one admitted unit (validate's reconciliation, ruled 2026-09-19). Apps
+  SHOULD cap the size of a single admitted plan (e.g. rounds per coverage
+  admission) so a plan admitted just before the boundary cannot become
+  unbounded post-expiry work; the cap is app policy, recorded in the
+  entrypoint matrix.
 - Before admitting EACH subsequent unit the gate consults its cached
   decision; that cache is refreshed by a full re-evaluation at least every
   60 seconds or every 1000 units, whichever comes first, AND — the binding
