@@ -86,8 +86,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       CLI behavior clean on both builds (no bypass). OPEN FINDING: export
       fn validate() at validate ffi/c_api.zig:1280 has no admitUnit —
       source-evidenced ungated FFI export; validate asked to gate/remove +
-      direct-FFI denial test; validate_gui asked whether full_validate
-      calls it. Also open: git captured-vs-live refs confirmation,
+      direct-FFI denial test. validate_gui CONFIRMED three callers of the
+      ungated export (2026-09-19 15:51 EDT): gui/src/ffi.rs:61
+      (full_validate), validate-serve main.zig:389 doValidate (the ORDINARY
+      backend single-file path: validate_one + VALIDATE_SAMPLE), and the
+      coverage NULL-fallback at main.zig:208 — so E2 is the GUI's normal
+      path, not an opt-in edge. Recorded by them as acceptance blockers;
+      call sites sent to validate. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
