@@ -147,7 +147,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       with 0 objects; mid-unit race not executable at ~0.3 ms. E2 stays
       closed. Next pin: observable fsck run (argv+exit in result, tests
       both ways), full depth only when it ran, .git path handling, a
-      documented slow reproduction. 274a16bda preserved. Also open: git captured-vs-live refs confirmation,
+      documented slow reproduction. 274a16bda preserved. Einstein adds
+      (19:14 EDT): durable FAILING tests reproducing both findings first;
+      malformed-structure coverage before any full-depth claim (process
+      execution alone proves nothing); .git-vs-root = API path contract,
+      not automatically a defect. Forwarded to validate. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
