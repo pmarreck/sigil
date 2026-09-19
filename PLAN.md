@@ -192,7 +192,19 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       mecha_policy 9ad81b9. Issuer structurally cannot emit wrong-class or
       beta-without-expiry. Remaining before sales: Peter's key ceremony,
       custody/issuer-API negotiation (sigil to draft), Phase F beta command.
-- [ ] Integration acceptance (Einstein 18:21 EDT): commerce to exercise a
+- [x] Phase F BETA COMMAND SHIPPED (code side) 2026-09-19 18:25 EDT:
+      mecha-commerce bee6dfb — `mecha-commerce beta invite --product
+      --email ...|--file [--cohort] [--dry-run|--yes] [--json]`, `beta
+      list`, `license resend`; same product+email returns the existing
+      grant, late tester gets a fresh one-month window, ledger written
+      BEFORE delivery, resend never mints, outbox of license.sigil files
+      only (no real sends until Peter authorizes); 58 CLI assertions incl.
+      native sigil verify under test_beta.key.pub and refusal under
+      test_paid.key.pub. This SUPERSEDES the hand-minting plan in the
+      Founding Beta section below: the ceremony yields the keys, the CLI
+      mints.
+- [ ] Integration acceptance (Einstein 18:21 EDT) — ACCEPTED by commerce
+      18:25 EDT, no counter: commerce to exercise a
       Worker-issued envelope against validate 0a89aaa1b test-trust core
       (pinned flake input; real work + wrong-product/tamper/expiry/demo
       refusals via the real CLI) and commit emitted envelopes with hashes
@@ -257,9 +269,11 @@ reading wins:
       early activation there is generous, not harmful), and it adds nothing
       against a stolen key (a forger picks any dates). Can be added before a
       future product mints future-dated terms. — 2026-09-17 10:05 EDT
-- [ ] Then: key ceremony + mint 15 licenses (`sigil keygen` / `sigil sign`,
-      commands in the Einstein reply) and hand validate_gui the beta pubkey
-      via `sigil pubkey --format c`.
+- [ ] Then: key ceremony (docs/CUSTODY_AND_ISSUER_API_V1.md section 4)
+      -> `mecha-commerce beta invite --product mecha-validate --file
+      testers.csv` (15 names/emails from Peter) mints and ledgers the
+      licenses; hand validate_gui the beta pubkey via `sigil pubkey
+      --format c`. (Superseded the hand-signing plan 2026-09-19.)
 - [ ] validate_gui owns the expiry gate + its tests (injected `today`); they
       have the definition and an expired-but-genuinely-signed test-license
       recipe as of tonight. (Correction with the new dates sent 2026-08-26;
