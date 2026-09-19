@@ -105,7 +105,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       test-trust archive also scans with store absent. Reproduction: zig cc
       -o consumer consumer.c -I <artifact>/include <artifact>/lib/
       libvalidate_core.a -lstdc++ -lm -lpthread -ldl. Build candidates only,
-      nothing shipped. Closure — validate() gated with
+      nothing shipped. FIX NOMINATED 2026-09-19 17:21 EDT: validate
+      0a89aaa1b (separate; 006fb6b2b preserved) — validate() admits before
+      stat/open; reviewer's consumer is now suite test tests/cli/
+      c_abi_admission executed on both artifacts; fresh hashes relayed to
+      redteam for retest. Closes only on reviewer retest. Closure — validate() gated with
       admit-before-open + paired direct-C-ABI test + inventory row; fixed
       commit nominated with fresh hashes. Link command (zig cc/lld) and
       archive hashes already sent to the reviewer.
