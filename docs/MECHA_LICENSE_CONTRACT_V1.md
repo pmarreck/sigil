@@ -253,11 +253,16 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
 
 - ADMISSION is the instant a unit of protected work is accepted for
   execution. The gate decides at admission; nothing else grants.
-- The UNIT is the app's safe transactional unit: one file for validate
-  batch/coverage work; one RotShield transaction (create/verify/update/
-  repair of one registration's safe unit) for RotShield. A huge single file
-  is ONE unit — admitted once, it runs to completion or rollback even if
-  expiry passes mid-file; it never re-admits itself.
+- The UNIT is a FIXED, FINITE work plan captured at admission — never a
+  mutable or open-ended job attached to a file. For validate batch work:
+  one file. For coverage: one file WITH its round count fixed at
+  admission; additional rounds or repeats beyond that plan are new units
+  needing admission. For RotShield: one transaction (create/verify/update/
+  repair of one registration's safe unit). A huge single unit is admitted
+  once and runs to completion or rollback even if expiry passes mid-unit;
+  it never re-admits itself and cannot be extended after admission. App
+  owners must confirm their admission APIs capture a finite plan; an API
+  lacking that boundary is a contract gap to close before the gate ships.
 - Before admitting EACH subsequent unit the gate consults its cached
   decision; that cache is refreshed by a full re-evaluation at least every
   60 seconds or every 1000 units, whichever comes first, AND — the binding
@@ -281,8 +286,12 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
 A consumer becomes a review candidate ONLY by explicit nomination carrying:
 exact commit; artifact SHA-256 per target; trust domain (`test` or
 `production`) and which trust-role pubkeys the artifact embeds; reproducible
-build provenance (flake attribute or documented command). Until nominated,
-an app is not a candidate and its binaries prove nothing either way.
+build provenance (flake attribute or documented command). Nomination sets
+the ACCEPTANCE target and its provenance; it does not decide whether
+evidence is valid. No acceptance claim exists without a nominated
+candidate, but findings about any other exact artifact remain valid with
+its status stated explicitly (baseline / WIP / released) — a shipped
+artifact never escapes a finding because nobody nominated it.
 
 Acceptance pairs every denial case with REAL authorized work through the
 SAME entrypoint on the SAME candidate (a gate that refuses everything passes
