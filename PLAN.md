@@ -215,8 +215,28 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       restore test, issuer/confirmation API bounds, rotation. Sent to
       commerce (sections 5-6) and Einstein (5 OPEN items routed to Peter).
       — 2026-09-19 18:35 EDT
-- [ ] On Peter's yes: implement `sigil keygen --pkcs8-out` (TDD: PKCS#8
-      public half == .pub; seed wiped; no export-from-keyfile path).
+- [x] Custody draft v1.1 at cac7c8a (2026-09-19 18:28 EDT) after Einstein's
+      five corrections: sealed hot bundle (ROLE.hot.sealed + `hot-bundle
+      open` to stdout only) as the tested restore-to-online path; shred
+      step WITHDRAWN (ZFS) — plaintext only ever a pipe, ceremony preflight
+      (swap/coredump/tmpfs); planned retirement vs emergency compromise
+      separated; binding limits stated (per-product = cross-product
+      authenticity only; same-product still policy; one Worker = one
+      compromise domain, confirmation key in its own Worker); confirmation
+      scope = 2026-07-28 decision, hash-only, unknown = fail-open.
+      Commerce accepted sections 5/6 (source-scan control on signing paths
+      coming; votes yes on per-product keys + separate confirmation key).
+- [ ] BLOCKER for live PAID issuance (not beta): Worker does not persist
+      envelope bytes, so a later-day resend would re-mint with a new
+      purchase_date — idempotency violation. Closes with Phase D durable
+      ledger (waits on Peter's D1-vs-Durable-Object decision).
+- [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
+      `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
+      ROLE.key alone still cannot be opened into a seed; no plaintext file
+      ever written) and a ceremony preflight check.
+- [ ] HOUSEKEEPING RULE (validate, 18:27 EDT): batch sigil/mecha_policy
+      bookkeeping commits; push only right after validate's nomination
+      mails — each push cancels their 45-min gate chain.
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
