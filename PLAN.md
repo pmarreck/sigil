@@ -74,7 +74,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       -Dlicense-trust build domain with release byte-scan. mecha_policy
       ABI now LOCKED (versioned bumps only). NOT yet a gated candidate:
       admission verdict at batch/coverage/git is their next pin (rounds
-      cap 10000 recorded). Nothing relayed to redteam until then. Contract rev 1.2 at
+      cap 10000 recorded).
+- [x] FIRST GATED CANDIDATE: validate 006fb6b2b (2026-09-19 15:42 EDT) —
+      admission live (auth_* family, section 11 units/cache/binding rule,
+      exhaustive decision mapping, wedged-evaluator test), pinned to sigil
+      d61d90d + mecha_policy 6c61dbe. Nominated to redteam by validate and
+      RELAYED by lead with section 11/12 expectations. Production-trust
+      positive control BLOCKED on Peter's key ceremony (recorded as
+      owner-provisioning gap, not a defect). Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
       redteam RECONCILED all three 2026-09-19 10:22 EDT (I3a/b/c at 64 KiB,
       K-rows on four axes, T3 split per section 11; history kept); entropy_shield delivered a full checkpoint (2026-09-19: accepts rev 1.1
