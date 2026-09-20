@@ -180,7 +180,16 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       capture, but do not by themselves prove git fsck ignores ALL late
       object/index/reflog state; reviewer asked for an adversarial
       late-only corruption test (pending, not a new defect). Malformed
-      pack/index/missing-tree cases were NOT independently rerun. Also open: git captured-vs-live refs confirmation,
+      pack/index/missing-tree cases were NOT independently rerun.
+      GUI STATUS (Einstein 20:29 EDT): validate_gui still pins validate
+      639aaaad1 — PRE-fix, contains the single-threaded spawn defect and
+      the cached git-unavailable failure; GUI's own Zig launch routes
+      have no matching defect (source inspection only). GUI repin
+      requirements recorded on their side: real-backend generated-repo
+      tests for observable git execution, missing-tool handling, honest
+      depth/reach. GUI licensing adapters still pending. Acceptance
+      checklist rule: carry the EXACT accepted validate pin + GUI/backend
+      evidence; the core fix is NOT shipped in the GUI until repinned. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
