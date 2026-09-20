@@ -179,8 +179,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       captured argv + local object counts show the unit judged only the
       capture, but do not by themselves prove git fsck ignores ALL late
       object/index/reflog state; reviewer asked for an adversarial
-      late-only corruption test (pending, not a new defect). Malformed
-      pack/index/missing-tree cases were NOT independently rerun.
+      late-only corruption test — ANSWERED 20:30 EDT: reviewer created a
+      new commit during fsck and deleted its late-only tree; the running
+      captured-head unit succeeded (git_conn_exit=0, valid, objects=3)
+      while a fresh admission failed (exit 2, corrupt, obj_corrupt=2).
+      Traversal-bound question closed for this Linux artifact. T2 expiry
+      denied with no examined_bytes. Still NOT independently rerun:
+      malformed pack trailer and truncated index (the missing-tree case
+      now IS covered by the late-only experiment).
       GUI STATUS (Einstein 20:29 EDT): validate_gui still pins validate
       639aaaad1 — PRE-fix, contains the single-threaded spawn defect and
       the cached git-unavailable failure; GUI's own Zig launch routes
