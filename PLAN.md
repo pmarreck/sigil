@@ -151,7 +151,23 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       (19:14 EDT): durable FAILING tests reproducing both findings first;
       malformed-structure coverage before any full-depth claim (process
       execution alone proves nothing); .git-vs-root = API path contract,
-      not automatically a defect. Forwarded to validate. Also open: git captured-vs-live refs confirmation,
+      not automatically a defect. Forwarded to validate.
+- [x] GIT PIN 2 NOMINATED 2026-09-19 20:21 EDT: validate 357301648
+      (separate; 006fb6b2b/0a89aaa1b/274a16bda preserved). ROOT CAUSE of
+      "git never execs": two latent defects older than the captured-plan
+      pin — the core's global Io was Io.Threaded.init_single_threaded
+      with Allocator.failing (std.process.run always OOM), and Threaded's
+      empty environ resolved argv[0] against a built-in PATH where sh
+      exists but git does not (library entered from C never populates
+      Zig's environ). So fsck had NEVER run from the library and the
+      format_validation promotion hid it. Fix: runtime.spawnIo() for all
+      subprocess work; git_conn = not_attempted_no_git|vacuous_no_heads|
+      ran + git_conn_exit on the wire; depth full only when the bounded
+      check ran or held vacuously; typed reach_reason claims; path
+      contract = root or .git, else "not a git repository"; malformed
+      coverage (pack trailer, truncated index, dangling head); executed
+      CLI gate with a git shim that commits + moves a ref mid-unit; C
+      consumer sees git_conn=ran. Relayed to redteam. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
