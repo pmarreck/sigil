@@ -174,7 +174,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       (3 vs 6 on fresh admission); no-git fallback typed; CLI no longer
       overclaims. E2 closed. Residual: non-repo input still verdict=corrupt
       (wording; ordinary pin). validate Linux x86_64 clean on both gate
-      findings; remaining gaps = other OS/arch cells, production positive. Also open: git captured-vs-live refs confirmation,
+      findings; remaining gaps = other OS/arch cells, production positive.
+      SCOPE (Einstein 20:27 EDT): closure is scoped to EXECUTED probes —
+      captured argv + local object counts show the unit judged only the
+      capture, but do not by themselves prove git fsck ignores ALL late
+      object/index/reflog state; reviewer asked for an adversarial
+      late-only corruption test (pending, not a new defect). Malformed
+      pack/index/missing-tree cases were NOT independently rerun. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
