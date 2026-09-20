@@ -186,7 +186,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       Traversal-bound question closed for this Linux artifact. T2 expiry
       denied with no examined_bytes. Still NOT independently rerun:
       malformed pack trailer and truncated index (the missing-tree case
-      now IS covered by the late-only experiment).
+      now IS covered by the late-only experiment). Residual CLOSED: validate
+      87be07bd5 (ordinary pin, no nomination) makes a non-repository path
+      the UNKNOWN class on both routes (verdict indeterminate, err_detail
+      "Not a git repository"), never corrupt; pins sigil fc55608 +
+      mecha_policy 1603f7a. — 2026-09-19 21:31 EDT
       GUI STATUS (Einstein 20:29 EDT): validate_gui still pins validate
       639aaaad1 — PRE-fix, contains the single-threaded spawn defect and
       the cached git-unavailable failure; GUI's own Zig launch routes
