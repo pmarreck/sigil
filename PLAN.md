@@ -167,7 +167,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       contract = root or .git, else "not a git repository"; malformed
       coverage (pack trailer, truncated index, dangling head); executed
       CLI gate with a git shim that commits + moves a ref mid-unit; C
-      consumer sees git_conn=ran. Relayed to redteam. Also open: git captured-vs-live refs confirmation,
+      consumer sees git_conn=ran. Relayed to redteam. RETEST 20:26 EDT:
+      SECTION 11 CLOSED on 357301648 (Linux x86_64 FFI/CLI) — strace shows
+      the bounded fsck with the captured head only; reviewer's own shim
+      committed mid-unit and the running unit judged only the capture
+      (3 vs 6 on fresh admission); no-git fallback typed; CLI no longer
+      overclaims. E2 closed. Residual: non-repo input still verdict=corrupt
+      (wording; ordinary pin). validate Linux x86_64 clean on both gate
+      findings; remaining gaps = other OS/arch cells, production positive. Also open: git captured-vs-live refs confirmation,
       provenance doc fix (2d2a0be->6c61dbe). Git unit ruling contracted
       at 7c40289. Contract rev 1.2 at
       d7f6d7e (sections 11 admission-vs-admitted, 12 candidate provenance);
