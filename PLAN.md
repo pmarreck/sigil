@@ -359,6 +359,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       mecha_policy 1603f7a / sigil 12baa15; RELAYED to redteam with the
       recheck list; owner's own precedence test not yet committed (next
       pin) — reviewer's precedence probe is the load-bearing check.
+      RETEST 18:35 EDT: CLOSED on Linux x86_64 C ABI — precedence holds
+      (unlicensed bad args -> auth_missing, never invalid_argument);
+      EOF/UINT64_MAX starts refuse with no rounds key and zero callbacks;
+      last-byte clamp = one event; 200 on 90 bytes = 90 events; mixed
+      modes refuse with zero events. E2 re-run clean.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
