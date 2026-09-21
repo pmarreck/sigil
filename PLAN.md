@@ -333,7 +333,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       sweeps retired as individually admitted calls, FFI witness of a
       three-range sweep across the injected boundary. NEW protected export
       validate_test_coverage_map — inventory row + next-nomination coverage
-      requested. — 15:17 EDT
+      requested. — 15:17 EDT. DONE at validate 13adfe3f4 (16:30 EDT):
+      inventory row added (same unit/class/admitUnit/cap; start_round
+      shifts never widens; event callback post-run, offsets only); the
+      CLI --test-coverage now uses the new export; section 12 nomination
+      of the export mailed WITHOUT per-target hashes — requested before
+      relay.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
