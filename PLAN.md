@@ -342,7 +342,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       paths) and RELAYED to redteam 16:33 EDT with probes: admission
       before open, no events on refusal, start_round never widens the
       plan, section 11 sweep witness. Pins mecha_policy 1603f7a, sigil
-      10713f1.
+      10713f1. RETEST 16:39 EDT: GATED on Linux x86_64 C ABI —
+      unlicensed call 0 events/0 bytes; licensed fires exactly its rounds
+      on the main thread; 20000 clamps to 10000; start_round never widens;
+      expiry boundary 10-17 admits, 10-18 refuses with 0 events. E2 still
+      closed.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
