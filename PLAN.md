@@ -346,7 +346,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       unlicensed call 0 events/0 bytes; licensed fires exactly its rounds
       on the main thread; 20000 clamps to 10000; start_round never widens;
       expiry boundary 10-17 admits, 10-18 refuses with 0 events. E2 still
-      closed.
+      closed. FYI validate 58c033e30 (18:28 EDT): argument refusals on the
+      coverage FFI (exhaustive+random mix; start_round at/past EOF) are a
+      distinct verdict/err_code invalid_argument, decided after auth and
+      before mutation, no counters/events — accepted as-is; not a gate
+      change. validate now pins sigil 12baa15.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
