@@ -276,6 +276,16 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
   admission) so a plan admitted just before the boundary cannot become
   unbounded post-expiry work; the cap is app policy, recorded in the
   entrypoint matrix.
+- A per-plan cap is NOT a lifetime work quota (ruled 2026-09-21). A caller
+  may make any number of separately admitted calls; each admission
+  re-checks the clock against the known expiry, and expiry stops new
+  units. The violation is hidden splitting INSIDE one admission — a call
+  that internally chains plans beyond what it captured is an unbounded
+  plan regardless of any cap. Test trust changes which pubkeys a build
+  embeds, never whether admission runs. Witness: a multi-call sweep
+  across an injected boundary — pre-boundary calls complete, the first
+  at/after-boundary call is refused with no work, none admitted later,
+  total work = sum of pre-boundary plans.
 - Before admitting EACH subsequent unit the gate consults its cached
   decision; that cache is refreshed by a full re-evaluation at least every
   60 seconds or every 1000 units, whichever comes first, AND — the binding
