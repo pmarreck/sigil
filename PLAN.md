@@ -338,7 +338,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       shifts never widens; event callback post-run, offsets only); the
       CLI --test-coverage now uses the new export; section 12 nomination
       of the export mailed WITHOUT per-target hashes — requested before
-      relay.
+      relay. Hashes received (rev-pinned build; default + test-trust store
+      paths) and RELAYED to redteam 16:33 EDT with probes: admission
+      before open, no events on refusal, start_round never widens the
+      plan, section 11 sweep witness. Pins mecha_policy 1603f7a, sigil
+      10713f1.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
