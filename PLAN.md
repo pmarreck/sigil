@@ -351,9 +351,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
       ever written) and a ceremony preflight check.
-- [ ] HOUSEKEEPING RULE (validate, 18:27 EDT): batch sigil/mecha_policy
-      bookkeeping commits; push only right after validate's nomination
-      mails — each push cancels their 45-min gate chain.
+- [x] HOUSEKEEPING RULE, revised 2026-09-21 17:33 EDT: validate's freshness
+      gate sees LOCAL heads on this machine, so a held commit blocks them
+      exactly like a pushed one (they asked me to push c2d630e). New rule:
+      bookkeeping commits go straight to origin, kept infrequent; no
+      holding. (Superseded the 09-19 batch-behind-nominations rule.)
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
