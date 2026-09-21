@@ -354,7 +354,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       include the range delta in the next provenance-complete nomination;
       recheck start_round at EOF/UINT64_MAX, last-byte clamp, rounds past
       EOF, mixed modes, unlicensed bad-argument precedence (auth first);
-      13adfe3f4 evidence historical. Nomination requested from validate.
+      13adfe3f4 evidence historical. NOMINATED 18:31 EDT: validate
+      58c033e30 with rev-pinned hashes (default + test-trust), pins
+      mecha_policy 1603f7a / sigil 12baa15; RELAYED to redteam with the
+      recheck list; owner's own precedence test not yet committed (next
+      pin) — reviewer's precedence probe is the load-bearing check.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
