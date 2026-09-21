@@ -325,6 +325,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       envelope bytes, so a later-day resend would re-mint with a new
       purchase_date — idempotency violation. Closes with Phase D durable
       ledger (waits on Peter's D1-vs-Durable-Object decision).
+- [x] Coverage-cap ruling (2026-09-21 14:00 EDT): per-plan cap is NOT a
+      lifetime quota; hidden in-admission splitting is the violation; test
+      trust never bypasses admission. Contract section 11 clarified.
+      validate 79587d132 (ordinary pin) satisfied it: exhaustive mode as
+      explicit ranges under the cap with honest range reporting, scratch
+      sweeps retired as individually admitted calls, FFI witness of a
+      three-range sweep across the injected boundary. NEW protected export
+      validate_test_coverage_map — inventory row + next-nomination coverage
+      requested. — 15:17 EDT
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
