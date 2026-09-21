@@ -350,7 +350,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       coverage FFI (exhaustive+random mix; start_round at/past EOF) are a
       distinct verdict/err_code invalid_argument, decided after auth and
       before mutation, no counters/events — accepted as-is; not a gate
-      change. validate now pins sigil 12baa15.
+      change. validate now pins sigil 12baa15. Einstein (18:28 EDT):
+      include the range delta in the next provenance-complete nomination;
+      recheck start_round at EOF/UINT64_MAX, last-byte clamp, rounds past
+      EOF, mixed modes, unlicensed bad-argument precedence (auth first);
+      13adfe3f4 evidence historical. Nomination requested from validate.
 - [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
       `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
