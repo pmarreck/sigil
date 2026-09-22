@@ -373,6 +373,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       exactly like a pushed one (they asked me to push c2d630e). New rule:
       bookkeeping commits go straight to origin, kept infrequent; no
       holding. (Superseded the 09-19 batch-behind-nominations rule.)
+      Peter approved 2026-09-21 20:12 EDT (via Einstein) a NARROW
+      exception for validate's freshness gate: sigil root PLAN.md-ONLY
+      committed diffs may be advisory when the actual Zig package content
+      is verified identical; exact pins/provenance remain; contract/spec,
+      tests, code, build metadata or unknown paths do NOT qualify; no
+      blanket docs/hash-only waiver; no VALIDATE_ALLOW_STALE. Not in
+      effect until validate lands it with classifier/regression tests —
+      until then, and for docs/ (contract) changes always, each push still
+      re-pins them, so keep contract edits batched with substantive work.
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
