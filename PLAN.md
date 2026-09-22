@@ -382,6 +382,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       effect until validate lands it with classifier/regression tests —
       until then, and for docs/ (contract) changes always, each push still
       re-pins them, so keep contract edits batched with substantive work.
+      IMPLEMENTED at validate 71a229207 (22:04 EDT) — focused suite passes
+      incl. real Zig hashing — but ACCEPTANCE PENDING: Einstein reproduced
+      LuaJIT io.popen():close() returning true despite child exit 7, so a
+      hash-producing FAILED probe could qualify as "equivalent"; regression
+      + reliable exit-status handling requested. Exception not in effect.
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)
 
