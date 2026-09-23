@@ -22,6 +22,14 @@
      "policy_evals": [
        {"stored_sequence": 12, "now": "2026-09-02T00:00:00-04:00", "updater_version": 1, "expect": "reject_updater_too_old", "why": "minimum_updater_version 99 > 1; stored sequence must not advance"}
      ]},
+    {"file": "manifest_windows_installed.sigil", "payload": "manifest_windows_installed.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 13, "now": "2026-09-06T00:00:00-04:00", "updater_version": 1, "expect": "accept", "why": "windows target: full.sha256 (4444...) is the DOWNLOAD package digest; full.installed_sha256 (5555...) is the INSTALLED payload digest; the delta declares target_representation installed, so a reconstructed EXE must equal 5555..., never 4444..."}
+     ]},
+    {"file": "manifest_windows_missing_installed.sigil", "payload": "manifest_windows_missing_installed.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 14, "now": "2026-09-07T00:00:00-04:00", "updater_version": 1, "expect": "reject_missing_installed_sha256", "why": "an installed-representation delta with no full.installed_sha256 cannot be verified in its declared representation; refuse the delta (full artifact remains usable); stored sequence must not advance on the delta path"}
+     ]},
     {"file": "manifest_tampered_payload.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
     {"file": "manifest_tampered_sig.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
     {"file": "manifest_wrong_key.sigil", "sigil_verify": "not_authentic", "policy_evals": [], "why": "signed by the demo (license-shaped) key: purpose separation fails at SIGNATURE"}

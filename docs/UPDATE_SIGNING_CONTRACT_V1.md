@@ -76,9 +76,14 @@ or customer mail.
    re-signs anything to make a check pass. A reconstructed delta target is
    verified against the manifest's FULL `sha256` — the signed manifest,
    not the patch, is the authority on what got installed.
-4. Freshness: `now > expires_at` is a STALE manifest: never install,
-   never replace the last accepted manifest, never advance the stored
-   sequence. (`manifest_valid.json` itself is stale by wall clock,
+4. Freshness: `now > expires_at` is a STALE manifest: never ADMIT it —
+   never install from it, never replace the last accepted manifest,
+   never advance the stored sequence. Freshness governs admission of a
+   manifest only: a durably staged install transaction already admitted
+   finishes or rolls back on its own terms (health confirmation,
+   rollback) independent of later manifest expiry; already_accepted is
+   distinct from installed-health recovery (validate_gui, 2026-09-23;
+   resolves contract question 2). (`manifest_valid.json` itself is stale by wall clock,
    which is why updaters inject `now`.)
 5. `minimum_updater_version` greater than the running updater refuses
    without advancing stored state (the app needs a full update first).
@@ -91,8 +96,10 @@ or customer mail.
   already accepted (idempotent); equal sequence + different digest =
   EQUIVOCATION, refuse with a security-class warning and keep the last
   accepted manifest; higher = evaluate sections 2/4. Malformed stored
-  state (not 64 lowercase hex, sequence 0) is treated as absent and
-  reported, never as authorization.
+  state (not 64 lowercase hex, sequence 0) FAILS CLOSED (corrected
+  2026-09-23 per validate_gui's MalformedAcceptedState): refuse all
+  updates and surface a repair path; treating it as absent would discard
+  anti-rollback protection.
 - Immutable publication: `manifests/<channel>/SEQUENCE.sigil` is never
   rewritten; the channel pointer is not trust (a stale pointer means "no
   update", never "downgrade"). A channel switch is an explicit user
@@ -103,8 +110,15 @@ or customer mail.
 ## 4. Contract — deltas
 
 A delta is trusted only through the signed sequence manifest that lists
-it (source_sha256, format, sha256, bytes) and, always, through the
-reconstructed target matching the manifest's full sha256. Consequence:
+it (source_sha256, target_representation, format, sha256, bytes) and,
+always, through the reconstructed target matching the manifest digest
+for its DECLARED representation (`full.installed_sha256` for installed,
+`full.sha256` for package — section 2.3). Vectors: `manifest_windows_
+installed` (different package and installed digests) and `manifest_
+windows_missing_installed` (installed delta without an installed digest
+-> reject the delta, full artifact stays usable). macOS deltas remain
+DISABLED until the supported bundle profile and metadata qualification
+are complete (validate_gui). Consequence:
 a regenerated patch whose bytes differ is NOT covered by any existing
 manifest and must not be served under the old descriptor. Two
 compliant shapes, OPEN for Peter: (a) precompute deltas at cut time
@@ -183,10 +197,17 @@ target).
   manifest.json` as the acceptance spec.
 - entropy_shield: everything above from scratch, sharing the same
   contract and vectors; nothing exists yet.
-- Release tooling: the `./release` command set described in the runbook
-  (measure, manifest from uploaded objects, sign through sigil, upload
-  immutable sequence manifest, promote pointer last, receipt) — existing
-  implementation status to be confirmed by validate_gui.
+- Release tooling (validate_gui, 2026-09-23): the runbook's `./release`
+  command set does NOT exist. Reusable: build_id, build_all (five-target
+  artifacts, shared ID, pushed-source gate, hash provenance),
+  notarize_macos, the old MEGA publish script; the pure signed
+  verifier/selector gui/src/update_manifest.rs with gui/testdata/update
+  vectors (accepts only format zstd-patch-v1 today; signed vectors
+  precede parser changes). Unimplemented: HTTP discovery, staging,
+  replacement helpers, recovery, production update-key selection.
+  Commerce owns the new shared publisher. Format token: difz file
+  patches are ZDIF v3 (magic ZDIF + byte 3); proposed exact token
+  difz-zdif-v3 pending difz-owner confirmation; fixtures use it now.
 - sigil: vectors shipped with this contract; a `mecha-delta/v1`
   descriptor vector set only if Peter picks shape (b).
 - Peter: delta shape (a)/(b); update-key ceremony (separate from
@@ -195,8 +216,8 @@ target).
 ## 7. Contract questions
 
 1. Delta regeneration shape (a) vs (b) (section 4).
-2. Is `expires_at` a hard refusal for INSTALL only, or also for
-   "already installed" health confirmation? (Proposed: install only.)
+2. RESOLVED: `expires_at` governs admission only; staged transactions
+   and health recovery are independent of later expiry.
 3. Channel switching semantics for a client moving beta -> stable:
    confirm "explicit user action, new channel's own stored pair".
 4. RotShield: same manifest schema and channel names, or a separate

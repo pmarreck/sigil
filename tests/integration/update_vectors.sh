@@ -92,7 +92,7 @@ expect 1 yes "the update manifest offered to the license key also fails at SIGNA
 # (sequence / digest / minimum_updater_version), never a signature failure,
 # and manifest.json carries the expected decisions. Payload round-trips are
 # compared via files (trailing bytes are part of what was signed).
-for n in manifest_rollback manifest_equivocation manifest_updater_too_old; do
+for n in manifest_rollback manifest_equivocation manifest_updater_too_old manifest_windows_installed manifest_windows_missing_installed; do
 	got_ar="$(mktemp "${TMPDIR:-/tmp}/sigil-uv-ar-XXXXXX")"
 	"$SIGIL" verify "$UV/$n.sigil" --pubkey "$UPDATE_PUB" > "$got_ar" 2>/dev/null
 	rc=$?
