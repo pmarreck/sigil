@@ -27,6 +27,15 @@ hash, injected clock, 11 tests in `checks.x86_64-linux.test`); the
 committed issued fixtures were independently hash-matched by the reviewer
 at bb134a0 (six envelopes, byte-identical to sigil's). Not a gate
 candidate; no findings against the issuer beyond its differential.
+Reviewer source review of 8ef3a56 (2026-09-23, C-class, no binary,
+findings/candidate-commerce-8ef3a56.md): fixtures 6/6 hash-match; lock
+pins match; C1 routes are only /health, /pubkeys, POST /paddle/webhook
+with issuance only from transaction.completed; C2 signature before
+admission; C4 attachment-only delivery; C5 beta EXISTING keeps prior
+grant; C6 resend delivers the stored envelope; C7 dry-run before
+execute; C8 adjustments recorded, no issuance. C3 INDEPENDENTLY confirms
+the live-paid blocker: a later-day paid re-process would mint a new
+purchase_date (Phase D).
 
 Not independently rerun on any pin: malformed pack trailer, truncated
 index (owner tests exist; reviewer coverage gap, not a defect).
