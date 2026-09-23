@@ -34,6 +34,11 @@ Current sigil APIs suffice as-is.
       which empirically answers "do current APIs suffice". — 2026-08-27 12:00 EDT
 ### LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)
 
+Canonical release-gates record (closed evidence vs open items vs
+revalidation): `docs/RELEASE_GATES.md` (created 2026-09-23 at Peter's
+request; red-team results are pin- and platform-specific and never
+transfer).
+
 Sigil coordinates the shared contract for validate, validate_gui,
 entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 "Current directive" section (Obsidian vault). Negotiating text:
