@@ -72,6 +72,11 @@ index (owner tests exist; reviewer coverage gap, not a defect).
 
 ## C. Revalidation required before ANY release clearance
 
+Update/self-update signing domain: see `docs/UPDATE_SIGNING_CONTRACT_V1.md`
+(manifest verification, anti-rollback, delta trust, rotation); acceptance
+vectors in `examples/update_vectors/manifest.json`. Both apps' updaters
+must pass those vectors before any release-channel claim.
+
 Per candidate (every new pin, every app): rev-pinned per-target hashes;
 E2 consumer over the raw C ABI (production empty store → auth_missing,
 zero bytes, zero callbacks; test-trust paid → real work; hand-placed

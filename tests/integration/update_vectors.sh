@@ -87,6 +87,34 @@ expect 1 yes "a genuine LICENSE offered as update metadata fails at SIGNATURE (p
 expect 1 yes "the update manifest offered to the license key also fails at SIGNATURE" \
 	"$UV/manifest_valid.sigil" "$REPO_ROOT/examples/demo/demo.key.pub"
 
+# Anti-rollback vectors (contract docs/UPDATE_SIGNING_CONTRACT_V1.md): each is
+# AUTHENTIC under the update key — their refusal is the updater's policy
+# (sequence / digest / minimum_updater_version), never a signature failure,
+# and manifest.json carries the expected decisions. Payload round-trips are
+# compared via files (trailing bytes are part of what was signed).
+for n in manifest_rollback manifest_equivocation manifest_updater_too_old; do
+	got_ar="$(mktemp "${TMPDIR:-/tmp}/sigil-uv-ar-XXXXXX")"
+	"$SIGIL" verify "$UV/$n.sigil" --pubkey "$UPDATE_PUB" > "$got_ar" 2>/dev/null
+	rc=$?
+	if [[ $rc -eq 0 ]] && cmp -s "$got_ar" "$UV/$n.json"; then
+		pass "$n is AUTHENTIC under the update key and yields its exact payload"
+	else
+		fail "$n is AUTHENTIC under the update key and yields its exact payload" "rc=$rc"
+	fi
+	rm -f "$got_ar"
+done
+expect 1 yes "manifest_rollback offered to the license key fails at SIGNATURE" \
+	"$UV/manifest_rollback.sigil" "$REPO_ROOT/examples/demo/demo.key.pub"
+
+# Manifest consistency, both directions.
+for ref in $(grep -o '"manifest_[a-z_]*\.sigil"' "$UV/manifest.json" | tr -d '"' | sort -u); do
+	if [[ -f "$UV/$ref" ]]; then pass "manifest.json references existing $ref"; else fail "manifest.json references existing $ref"; fi
+done
+for f in "$UV"/manifest_*.sigil; do
+	b="$(basename "$f")"
+	if grep -q "\"$b\"" "$UV/manifest.json"; then pass "$b is listed in manifest.json"; else fail "$b is listed in manifest.json"; fi
+done
+
 # Vacuity guards: every tampered fixture must actually differ from the valid
 # one, or the rejections above prove nothing.
 for t in manifest_tampered_payload manifest_tampered_sig manifest_wrong_key; do

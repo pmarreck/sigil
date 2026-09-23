@@ -1,0 +1,29 @@
+{
+  "schema": "mecha-update-vectors/1",
+  "contract": "docs/UPDATE_SIGNING_CONTRACT_V1.md",
+  "note": "sigil_verify expectations are asserted by tests/integration/update_vectors.sh today. policy_evals are the specification every updater's manifest-acceptance logic is TDD'd against: inputs are (stored_sequence, stored_payload_sha256, now, updater_version); the anti-rollback rule compares the incoming (sequence, exact verified payload sha256) against the stored pair. All three new envelopes are AUTHENTIC under update_test.key.pub; their refusal is policy, never a signature failure.",
+  "trust_role": {"update-test": {"pubkey": "update_test.key.pub", "authorizes": ["mecha-update/v1 manifests, product mecha-validate, channel founding-beta"]}},
+  "vectors": [
+    {"file": "manifest_valid.sigil", "payload": "manifest_valid.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 11, "now": "2026-08-28T00:00:00-04:00", "updater_version": 1, "expect": "accept", "why": "higher sequence, fresh, updater new enough"},
+       {"stored_sequence": 12, "stored_payload_is": "manifest_valid.json", "now": "2026-08-28T00:00:00-04:00", "updater_version": 1, "expect": "already_accepted", "why": "equal sequence + equal payload digest is idempotent"},
+       {"stored_sequence": 11, "now": "2026-09-04T00:00:00-04:00", "updater_version": 1, "expect": "reject_stale", "why": "expires_at 2026-09-03 has passed; a stale manifest never installs and never replaces the last accepted one"}
+     ]},
+    {"file": "manifest_rollback.sigil", "payload": "manifest_rollback.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 12, "now": "2026-08-21T00:00:00-04:00", "updater_version": 1, "expect": "reject_rollback", "why": "authentic, but sequence 11 < stored 12"}
+     ]},
+    {"file": "manifest_equivocation.sigil", "payload": "manifest_equivocation.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 12, "stored_payload_is": "manifest_valid.json", "now": "2026-08-28T00:00:00-04:00", "updater_version": 1, "expect": "reject_equivocation", "why": "authentic, equal sequence 12, DIFFERENT payload digest: security-class warning; keep the last accepted manifest"}
+     ]},
+    {"file": "manifest_updater_too_old.sigil", "payload": "manifest_updater_too_old.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 12, "now": "2026-09-02T00:00:00-04:00", "updater_version": 1, "expect": "reject_updater_too_old", "why": "minimum_updater_version 99 > 1; stored sequence must not advance"}
+     ]},
+    {"file": "manifest_tampered_payload.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
+    {"file": "manifest_tampered_sig.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
+    {"file": "manifest_wrong_key.sigil", "sigil_verify": "not_authentic", "policy_evals": [], "why": "signed by the demo (license-shaped) key: purpose separation fails at SIGNATURE"}
+  ]
+}
