@@ -61,7 +61,19 @@ or customer mail.
    refers to on platforms where package and installed bytes differ
    (Windows). `deltas[].format` is an opaque token matched exactly;
    the launch token is difz's stable format name (to be frozen by
-   validate_gui/difz; fixtures updated then). A reconstructed delta target is
+   validate_gui/difz; fixtures updated then).
+   TARGET REPRESENTATION IS EXPLICIT (ruled 2026-09-23 with
+   EXECUTION_CONTEXT_TRUST.md): every delta declares
+   `target_representation: "package" | "installed"`; applying a delta to
+   an INSTALLED payload (a Windows EXE in place, a macOS bundle) yields
+   bytes that must equal `full.installed_sha256`, while a delta over
+   ARCHIVE bytes yields the package and must equal `full.sha256`. The
+   updater verifies the reconstructed bytes against the digest of THAT
+   representation before any extraction or installation, and never
+   compares installed bytes to a package digest or vice versa. A
+   reconstructed target may legitimately contain an already-applied
+   native signature (Developer ID / Authenticode); the client never
+   re-signs anything to make a check pass. A reconstructed delta target is
    verified against the manifest's FULL `sha256` — the signed manifest,
    not the patch, is the authority on what got installed.
 4. Freshness: `now > expires_at` is a STALE manifest: never install,
@@ -115,6 +127,32 @@ upgrade cannot silently defeat the cache; inequality is a counted miss,
 never a retry loop. (b) stays OPEN for Peter if misses become
 measurable. difz's internal BLAKE3 source/target binding remains an
 independent second check inside the patch.
+
+## 4a. Native platform trust is a separate gate (folded from
+EXECUTION_CONTEXT_TRUST.md, 2026-09-23)
+
+Sigil's Ed25519 manifest signature answers "did Mecha publish exactly
+these bytes"; it never substitutes for the platform's own signature,
+execution policy, or installation-context checks, which are separate
+gates: (i) native signature — Developer ID / Authenticode verified with
+the EXPECTED PUBLISHER, on the exact shipped file, after the fused
+executable and every helper/backend were packaged (verify AFTER native
+signing; hash the distributed artifact after sign/notarize/staple, never
+a pre-signing build); (ii) execution policy — Gatekeeper/notarization,
+SmartScreen/SAC/Defender (Windows SAC currently requires RSA native
+signatures; Sigil is not that), Linux policy; (iii) installation context
+— Apple requires NEW-FILE replacement, never in-place overwrite (kernel
+signature caching), for helpers and libraries too; a defined supported
+Mecha BUNDLE PROFILE with unsupported metadata states rejected rather
+than a "preserve every xattr/ACL" claim (Sparkle does not preserve
+arbitrary xattrs/ACLs); Nix/package-managed installs delegate to the
+package manager. Native tools (`codesign`, `spctl`, `xcrun stapler
+validate`, `WinVerifyTrust`) and clean-machine customer-path launch
+tests (quarantined online download AND stapled offline launch, VM reset
+between cases) are independent acceptance oracles that no Sigil vector
+replaces. Crash rollback must never become an arbitrary signed-old-
+version downgrade route (anti-rollback still applies to the rollback
+target).
 
 ## 5. Contract — rotation and compromise (update keys)
 

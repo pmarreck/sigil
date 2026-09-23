@@ -76,6 +76,15 @@ Update/self-update signing domain: see `docs/UPDATE_SIGNING_CONTRACT_V1.md`
 (manifest verification, anti-rollback, delta trust, rotation); acceptance
 vectors in `examples/update_vectors/manifest.json`. Both apps' updaters
 must pass those vectors before any release-channel claim.
+Native platform trust gates (EXECUTION_CONTEXT_TRUST.md, folded 09-23):
+verify the exact shipped fused executable and every helper AFTER native
+signing with expected publisher; macOS new-file replacement + supported
+bundle profile + stapled offline and quarantined online launch tests on
+a reset VM; Windows Authenticode + expected publisher, SmartScreen/SAC/
+Defender outcomes recorded separately for browser vs updater delivery;
+delta targets verified in the declared representation (package vs
+installed) before extraction; no client re-signing; crash rollback
+subject to anti-rollback.
 
 Per candidate (every new pin, every app): rev-pinned per-target hashes;
 E2 consumer over the raw C ABI (production empty store → auth_missing,
