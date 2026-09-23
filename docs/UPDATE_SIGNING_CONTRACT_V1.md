@@ -54,28 +54,32 @@ or customer mail.
    refuse.
 3. `sha256` is the sole authority for every artifact and delta; `url`
    is a hint (content-addressed paths are a convention, not trust);
-   `bytes` is checked before hashing. `full.sha256` is the DOWNLOAD
-   package identity; the optional `full.installed_sha256` (ruled
-   2026-09-23, additive in v1 since nothing has shipped) is the
-   INSTALLED payload identity, which is what `deltas[].source_sha256`
-   refers to on platforms where package and installed bytes differ
-   (Windows). `deltas[].format` is an opaque token matched exactly;
-   the launch token is difz's stable format name (to be frozen by
-   validate_gui/difz; fixtures updated then).
-   TARGET REPRESENTATION IS EXPLICIT (ruled 2026-09-23 with
-   EXECUTION_CONTEXT_TRUST.md): every delta declares
-   `target_representation: "package" | "installed"`; applying a delta to
-   an INSTALLED payload (a Windows EXE in place, a macOS bundle) yields
-   bytes that must equal `full.installed_sha256`, while a delta over
-   ARCHIVE bytes yields the package and must equal `full.sha256`. The
-   updater verifies the reconstructed bytes against the digest of THAT
-   representation before any extraction or installation, and never
-   compares installed bytes to a package digest or vice versa. A
-   reconstructed target may legitimately contain an already-applied
-   native signature (Developer ID / Authenticode); the client never
-   re-signs anything to make a check pass. A reconstructed delta target is
-   verified against the manifest's FULL `sha256` — the signed manifest,
-   not the patch, is the authority on what got installed.
+   `bytes` is checked before hashing.
+   REPRESENTATIONS (ruled 2026-09-23, refined after Einstein's source
+   check of 2afa2eb): `full.sha256` is the DOWNLOAD PACKAGE identity;
+   the optional `full.installed_sha256` (additive in v1, nothing shipped)
+   is the INSTALLED PAYLOAD identity. Every delta declares
+   `target_representation: "package" | "installed"`, and that value
+   applies to BOTH ends of the delta (same-representation deltas only):
+   a "package" delta has `source_sha256` = the package digest of the
+   currently installed release and reconstructs bytes that must equal
+   the new `full.sha256`; an "installed" delta has `source_sha256` =
+   the installed-payload digest of the currently installed release and
+   reconstructs bytes that must equal the new `full.installed_sha256`.
+   Cross-representation deltas do not exist. The updater verifies the
+   reconstructed bytes against the digest of the DECLARED representation
+   before any extraction or installation, never compares installed bytes
+   to a package digest or vice versa, and reconstructs into a NEW staged
+   file — the live installed executable is input only and is never
+   mutated in place. A reconstructed target may legitimately contain its
+   already-applied native signature; the client never re-signs. macOS:
+   a directory has no ordinary file SHA-256, so DIRECTORY targets are
+   UNSUPPORTED in v1 — macOS uses the canonical (post-stapling) archive
+   as its "package" representation until a canonical tree-hash schema is
+   qualified, and macOS deltas stay disabled meanwhile. `deltas[].format`
+   is an opaque token matched exactly (fixtures use difz-zdif-v3 pending
+   difz-owner confirmation). The signed manifest, not the patch, is the
+   authority on what got installed.
 4. Freshness: `now > expires_at` is a STALE manifest: never ADMIT it —
    never install from it, never replace the last accepted manifest,
    never advance the stored sequence. Freshness governs admission of a

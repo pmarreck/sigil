@@ -30,6 +30,10 @@
      "policy_evals": [
        {"stored_sequence": 14, "now": "2026-09-07T00:00:00-04:00", "updater_version": 1, "expect": "reject_missing_installed_sha256", "why": "an installed-representation delta with no full.installed_sha256 cannot be verified in its declared representation; refuse the delta (full artifact remains usable); stored sequence must not advance on the delta path"}
      ]},
+    {"file": "manifest_windows_package.sigil", "payload": "manifest_windows_package.json", "sigil_verify": "verified",
+     "policy_evals": [
+       {"stored_sequence": 15, "now": "2026-09-08T00:00:00-04:00", "updater_version": 1, "expect": "accept", "why": "PACKAGE-representation delta on a target whose package (aaaa...) and installed (bbbb...) digests differ: source_sha256 4444... is the PACKAGE digest of the previously installed release (sequence 14), and the reconstructed bytes must equal full.sha256 aaaa..., never installed bbbb...; same-representation on both ends"}
+     ]},
     {"file": "manifest_tampered_payload.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
     {"file": "manifest_tampered_sig.sigil", "sigil_verify": "not_authentic", "policy_evals": []},
     {"file": "manifest_wrong_key.sigil", "sigil_verify": "not_authentic", "policy_evals": [], "why": "signed by the demo (license-shaped) key: purpose separation fails at SIGNATURE"}
