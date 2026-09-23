@@ -54,7 +54,14 @@ or customer mail.
    refuse.
 3. `sha256` is the sole authority for every artifact and delta; `url`
    is a hint (content-addressed paths are a convention, not trust);
-   `bytes` is checked before hashing. A reconstructed delta target is
+   `bytes` is checked before hashing. `full.sha256` is the DOWNLOAD
+   package identity; the optional `full.installed_sha256` (ruled
+   2026-09-23, additive in v1 since nothing has shipped) is the
+   INSTALLED payload identity, which is what `deltas[].source_sha256`
+   refers to on platforms where package and installed bytes differ
+   (Windows). `deltas[].format` is an opaque token matched exactly;
+   the launch token is difz's stable format name (to be frozen by
+   validate_gui/difz; fixtures updated then). A reconstructed delta target is
    verified against the manifest's FULL `sha256` — the signed manifest,
    not the patch, is the authority on what got installed.
 4. Freshness: `now > expires_at` is a STALE manifest: never install,
@@ -98,8 +105,16 @@ patch_sha256, bytes, format) signed by a DELTA role key that may be hot
 reconstructed target against the sequence manifest's full sha256, so a
 forged descriptor can at worst cause a failed reconstruction and a
 fallback to the full artifact. The patch worker never holds any key;
-descriptor signing is a separate step. Recommendation: (a) for launch,
-(b) only if delta cache misses become measurable.
+descriptor signing is a separate step. RULED 2026-09-23 (lead; Peter may
+override): (a) for v1 — a regenerated patch is served only if its bytes
+hash-equal an already-signed descriptor, else the full artifact; deltas
+are a pure cache with no new key and no new client trust. Conditions:
+regeneration uses the exact difz binary and parameters of cut time
+(publisher pins the difz artifact hash beside the descriptor) so a difz
+upgrade cannot silently defeat the cache; inequality is a counted miss,
+never a retry loop. (b) stays OPEN for Peter if misses become
+measurable. difz's internal BLAKE3 source/target binding remains an
+independent second check inside the patch.
 
 ## 5. Contract — rotation and compromise (update keys)
 
