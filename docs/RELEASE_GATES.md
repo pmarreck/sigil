@@ -89,3 +89,8 @@ GUI repins and re-nominates.
 
 Commerce linkage: the E2E suite must pin the latest ACCEPTED candidate
 and assert its external hash; issued fixtures must hash-match sigil's.
+Status 2026-09-23: mecha-commerce 8ef3a56 pins validate 58c033e30
+test-trust (bin d5257b77... asserted by external SHA-256), sigil 12baa15,
+mecha_policy 1603f7a; issued fixtures unchanged and still hash-match
+(drift test). Protocol: on each accepted nomination the lead mails
+commerce the pin + test-trust bin hash; the move is one reviewed commit.
