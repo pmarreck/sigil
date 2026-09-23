@@ -103,3 +103,8 @@ test-trust (bin d5257b77... asserted by external SHA-256), sigil 12baa15,
 mecha_policy 1603f7a; issued fixtures unchanged and still hash-match
 (drift test). Protocol: on each accepted nomination the lead mails
 commerce the pin + test-trust bin hash; the move is one reviewed commit.
+Evidence: Mechatron Prime PASS mecha-commerce@97e91e1 at
+2026-09-23T14:24:09Z (packages.x86_64-linux.default +
+checks.x86_64-linux.test; 8ef3a56 superseded in queue by 97e91e1 = same
+code and flake.lock plus PLAN text); the E2E suite ran inside that check
+against validate 58c033e30 test-trust with the external-hash assertion.
