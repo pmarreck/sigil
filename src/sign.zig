@@ -199,6 +199,10 @@ pub const KeyfileError = error{
     AuthenticationFailed,
     /// KDF parameters outside what argon2 will accept.
     BadKdfParams,
+    /// Asked to open a hot bundle, but the file is not one (typically a
+    /// keyfile). Refused before any decryption: `ROLE.key` alone can never be
+    /// opened into a seed.
+    NotAHotBundle,
 };
 
 const KeyfileWire = struct {
@@ -212,12 +216,15 @@ const KeyfileWire = struct {
     ciphertext: []const u8,
 };
 
-/// Encrypt `seed` under `passphrase`. `salt` and `nonce` are parameters rather
-/// than generated here so this function stays pure and every test is
-/// reproducible; the CLI supplies them from the OS CSPRNG.
-pub fn wrapKey(
+/// Encrypt `plaintext` under `passphrase` into the one-line JSON shape that
+/// keyfiles and hot bundles share, tagged with `version`. `salt` and `nonce`
+/// are parameters rather than generated here so this function stays pure and
+/// every test is reproducible; the FFI layer supplies them from the OS CSPRNG.
+fn sealBlob(
+    comptime version: []const u8,
+    comptime plaintext_len: usize,
     allocator: std.mem.Allocator,
-    seed: *const [seed_len]u8,
+    plaintext: *const [plaintext_len]u8,
     passphrase: []const u8,
     salt: *const [salt_len]u8,
     nonce: *const [nonce_len]u8,
@@ -227,14 +234,14 @@ pub fn wrapKey(
     defer std.crypto.secureZero(u8, &key);
     try deriveKey(allocator, &key, passphrase, salt, params);
 
-    var aad_buf: [aad_len]u8 = undefined;
-    const aad = buildAad(&aad_buf, params, salt);
+    var aad_buf: [aadLen(version)]u8 = undefined;
+    const aad = buildAad(version, &aad_buf, params, salt);
 
-    var blob: [seed_len + tag_len]u8 = undefined;
+    var blob: [plaintext_len + tag_len]u8 = undefined;
     XChaCha20Poly1305.encrypt(
-        blob[0..seed_len],
-        blob[seed_len..][0..tag_len],
-        seed,
+        blob[0..plaintext_len],
+        blob[plaintext_len..][0..tag_len],
+        plaintext,
         aad,
         nonce.*,
         key,
@@ -249,27 +256,43 @@ pub fn wrapKey(
 
     return std.fmt.allocPrint(
         allocator,
-        "{{\"sigil\":\"" ++ keyfile_version ++ "\",\"kdf\":\"" ++ kdf_name ++ "\"," ++
+        "{{\"sigil\":\"" ++ version ++ "\",\"kdf\":\"" ++ kdf_name ++ "\"," ++
             "\"t\":{d},\"m\":{d},\"p\":{d}," ++
             "\"salt\":\"{s}\",\"nonce\":\"{s}\",\"ciphertext\":\"{s}\"}}\n",
         .{ params.t, params.m, params.p, salt_enc, nonce_enc, blob_enc },
     );
 }
 
-/// Recover the seed from a keyfile. Returns `AuthenticationFailed` for both a
-/// wrong passphrase and a tampered file, because to an AEAD those are one event.
-fn unwrapKey(
+/// Encrypt `seed` under `passphrase` as a keyfile.
+pub fn wrapKey(
     allocator: std.mem.Allocator,
-    keyfile_json: []const u8,
+    seed: *const [seed_len]u8,
     passphrase: []const u8,
-) (KeyfileError || std.mem.Allocator.Error)![seed_len]u8 {
-    const parsed = try parseKeyfile(allocator, keyfile_json);
+    salt: *const [salt_len]u8,
+    nonce: *const [nonce_len]u8,
+    params: KdfParams,
+) (KeyfileError || SignError || std.mem.Allocator.Error || envelope.WriteError)![]u8 {
+    return sealBlob(keyfile_version, seed_len, allocator, seed, passphrase, salt, nonce, params);
+}
+
+/// Open any sealed sigil blob of the expected format. Returns
+/// `AuthenticationFailed` for both a wrong passphrase and a tampered file,
+/// because to an AEAD those are one event.
+fn openBlob(
+    comptime version: []const u8,
+    comptime plaintext_len: usize,
+    comptime wrong_format: KeyfileError,
+    allocator: std.mem.Allocator,
+    json: []const u8,
+    passphrase: []const u8,
+) (KeyfileError || std.mem.Allocator.Error)![plaintext_len]u8 {
+    const parsed = try parseSealed(allocator, json, version, wrong_format);
     defer parsed.deinit();
     const w = parsed.value;
 
     var salt: [salt_len]u8 = undefined;
     var nonce: [nonce_len]u8 = undefined;
-    var blob: [seed_len + tag_len]u8 = undefined;
+    var blob: [plaintext_len + tag_len]u8 = undefined;
     try decodeExact(allocator, w.salt, &salt);
     try decodeExact(allocator, w.nonce, &nonce);
     try decodeExact(allocator, w.ciphertext, &blob);
@@ -279,19 +302,28 @@ fn unwrapKey(
     defer std.crypto.secureZero(u8, &key);
     try deriveKey(allocator, &key, passphrase, &salt, params);
 
-    var aad_buf: [aad_len]u8 = undefined;
-    const aad = buildAad(&aad_buf, params, &salt);
+    var aad_buf: [aadLen(version)]u8 = undefined;
+    const aad = buildAad(version, &aad_buf, params, &salt);
 
-    var seed: [seed_len]u8 = undefined;
+    var plaintext: [plaintext_len]u8 = undefined;
     XChaCha20Poly1305.decrypt(
-        &seed,
-        blob[0..seed_len],
-        blob[seed_len..][0..tag_len].*,
+        &plaintext,
+        blob[0..plaintext_len],
+        blob[plaintext_len..][0..tag_len].*,
         aad,
         nonce,
         key,
     ) catch return KeyfileError.AuthenticationFailed;
-    return seed;
+    return plaintext;
+}
+
+/// Recover the seed from a keyfile.
+fn unwrapKey(
+    allocator: std.mem.Allocator,
+    keyfile_json: []const u8,
+    passphrase: []const u8,
+) (KeyfileError || std.mem.Allocator.Error)![seed_len]u8 {
+    return openBlob(keyfile_version, seed_len, KeyfileError.UnsupportedKeyfileVersion, allocator, keyfile_json, passphrase);
 }
 
 /// Derive the public key from a keyfile — by decrypting it, which is why the
@@ -315,11 +347,75 @@ pub fn keyfilePublicKey(
     return kp.public_key;
 }
 
-fn parseKeyfile(
+// ── Hot bundle: sealed PKCS#8 for restore-to-online ─────────────────────────
+//
+// Custody contract v1.2 section 2, approved by Peter 2026-09-28. A second
+// artifact made at generation from the SAME seed under the SAME passphrase,
+// whose only purpose is to put the key back into the issuer Worker: opening it
+// yields the RFC 8410 PKCS#8 that WebCrypto imports. It is NOT an export from a
+// keyfile. `ROLE.key` still cannot be opened into a seed by any function here:
+// the two formats carry different tags bound as associated data and
+// differently sized ciphertexts.
+
+pub const hot_bundle_version = "hot-bundle-v1";
+/// RFC 8410 PKCS#8 for Ed25519: PrivateKeyInfo { version 0, OID 1.3.101.112,
+/// OCTET STRING wrapping the 32-byte seed }. Every field is fixed, so the DER
+/// is this prefix followed by the seed.
+pub const pkcs8_prefix = "\x30\x2e\x02\x01\x00\x30\x05\x06\x03\x2b\x65\x70\x04\x22\x04\x20";
+pub const pkcs8_der_len = pkcs8_prefix.len + seed_len;
+
+/// Seal the seed's PKCS#8 form as a hot bundle. Same purity contract as
+/// `wrapKey`: salt and nonce are parameters.
+pub fn wrapHotBundle(
     allocator: std.mem.Allocator,
-    keyfile_json: []const u8,
+    seed: *const [seed_len]u8,
+    passphrase: []const u8,
+    salt: *const [salt_len]u8,
+    nonce: *const [nonce_len]u8,
+    params: KdfParams,
+) (KeyfileError || SignError || std.mem.Allocator.Error || envelope.WriteError)![]u8 {
+    var der: [pkcs8_der_len]u8 = undefined;
+    defer std.crypto.secureZero(u8, &der);
+    @memcpy(der[0..pkcs8_prefix.len], pkcs8_prefix);
+    @memcpy(der[pkcs8_prefix.len..], seed);
+    return sealBlob(hot_bundle_version, pkcs8_der_len, allocator, &der, passphrase, salt, nonce, params);
+}
+
+/// Open a hot bundle into its PKCS#8 DER. A keyfile handed here is refused as
+/// `NotAHotBundle` before any decryption is attempted.
+pub fn openHotBundle(
+    allocator: std.mem.Allocator,
+    bundle_json: []const u8,
+    passphrase: []const u8,
+) (KeyfileError || std.mem.Allocator.Error)![pkcs8_der_len]u8 {
+    return openBlob(hot_bundle_version, pkcs8_der_len, KeyfileError.NotAHotBundle, allocator, bundle_json, passphrase);
+}
+
+/// RFC 7468 PEM around the DER, the shape `wrangler secret put` and WebCrypto
+/// importers expect. 48 bytes of DER is one 64-character base64 line.
+pub fn pkcs8ToPem(
+    allocator: std.mem.Allocator,
+    der: *const [pkcs8_der_len]u8,
+) std.mem.Allocator.Error![]u8 {
+    const enc = std.base64.standard.Encoder;
+    var b64: [enc.calcSize(pkcs8_der_len)]u8 = undefined;
+    _ = enc.encode(&b64, der);
+    return std.mem.concat(allocator, u8, &.{
+        "-----BEGIN PRIVATE KEY-----\n", &b64, "\n-----END PRIVATE KEY-----\n",
+    });
+}
+
+/// Parse the shared one-line JSON shape and check its format tag. `wrong_format`
+/// is what a tag mismatch reports, so a keyfile handed to the hot-bundle opener
+/// says "not a hot bundle" and a bundle handed to the signer says
+/// "unsupported keyfile"; both refuse before any decryption.
+fn parseSealed(
+    allocator: std.mem.Allocator,
+    json: []const u8,
+    comptime version: []const u8,
+    comptime wrong_format: KeyfileError,
 ) (KeyfileError || std.mem.Allocator.Error)!std.json.Parsed(KeyfileWire) {
-    const parsed = std.json.parseFromSlice(KeyfileWire, allocator, keyfile_json, .{
+    const parsed = std.json.parseFromSlice(KeyfileWire, allocator, json, .{
         .ignore_unknown_fields = true,
         .duplicate_field_behavior = .@"error",
     }) catch |e| {
@@ -328,11 +424,8 @@ fn parseKeyfile(
     };
     errdefer parsed.deinit();
 
-    if (!std.mem.eql(u8, parsed.value.sigil, keyfile_version) or
-        !std.mem.eql(u8, parsed.value.kdf, kdf_name))
-    {
-        return KeyfileError.UnsupportedKeyfileVersion;
-    }
+    if (!std.mem.eql(u8, parsed.value.sigil, version)) return wrong_format;
+    if (!std.mem.eql(u8, parsed.value.kdf, kdf_name)) return KeyfileError.UnsupportedKeyfileVersion;
     return parsed;
 }
 
@@ -378,23 +471,28 @@ fn deriveKey(
     };
 }
 
-const aad_prefix = "sigil-" ++ keyfile_version;
-const aad_len = aad_prefix.len + 4 + 4 + 4 + salt_len;
+fn aadLen(comptime version: []const u8) usize {
+    return "sigil-".len + version.len + 4 + 4 + 4 + salt_len;
+}
 
 /// Everything outside the ciphertext that must not be alterable, laid out
 /// identically by the writer and the reader. Fixed-width fields, so no
-/// delimiter can be smuggled between them.
+/// delimiter can be smuggled between them. The format tag leads, so a keyfile
+/// relabelled as a hot bundle (or the reverse) fails authentication instead of
+/// being decrypted under the wrong expectations.
 /// The public key is deliberately absent. It is no longer a field, and it could
 /// not be bound here even if we wanted to: it is derived from the seed, which
 /// is only available AFTER the decryption this AAD authenticates.
 fn buildAad(
-    buf: *[aad_len]u8,
+    comptime version: []const u8,
+    buf: *[aadLen(version)]u8,
     params: KdfParams,
     salt: *const [salt_len]u8,
 ) []const u8 {
+    const prefix = "sigil-" ++ version;
     var w: usize = 0;
-    @memcpy(buf[w..][0..aad_prefix.len], aad_prefix);
-    w += aad_prefix.len;
+    @memcpy(buf[w..][0..prefix.len], prefix);
+    w += prefix.len;
     std.mem.writeInt(u32, buf[w..][0..4], params.t, .little);
     w += 4;
     std.mem.writeInt(u32, buf[w..][0..4], params.m, .little);
@@ -807,4 +905,121 @@ test "the shipped KDF defaults are the strong ones" {
     try testing.expectEqual(@as(u32, 3), default_kdf_params.t);
     try testing.expectEqual(@as(u32, 64 * 1024), default_kdf_params.m);
     try testing.expectEqual(@as(u24, 1), default_kdf_params.p);
+}
+
+// ── Hot bundle: the sealed restore-to-online artifact ───────────────────────
+//
+// Custody contract v1.2 section 2, approved by Peter 2026-09-28. Same seed,
+// same passphrase, its own salt and nonce, its own format tag bound as AAD.
+
+test "hot bundle: opening yields the RFC 8410 PKCS#8 of the same seed" {
+    const a = testing.allocator;
+    const bundle = try wrapHotBundle(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+
+    const der = try openHotBundle(a, bundle, "pass");
+    try testing.expectEqual(pkcs8_der_len, der.len);
+    try testing.expectEqualSlices(u8, pkcs8_prefix, der[0..pkcs8_prefix.len]);
+    try testing.expectEqualSlices(u8, &test_seed, der[pkcs8_prefix.len..]);
+}
+
+test "hot bundle: the opened PKCS#8 carries the keyfile's public key" {
+    // The custody contract's stated acceptance test: the public half of what
+    // the Worker restores equals the .pub the products embed. Both artifacts
+    // come from one seed at generation; this proves the bundle names that key.
+    const a = testing.allocator;
+    const keyfile = try wrapKey(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(keyfile);
+    const bundle = try wrapHotBundle(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+
+    const want = try keyfilePublicKey(a, keyfile, "pass");
+    const der = try openHotBundle(a, bundle, "pass");
+    var seed: [seed_len]u8 = der[pkcs8_prefix.len..][0..seed_len].*;
+    defer std.crypto.secureZero(u8, &seed);
+    const kp = try keyPairFromSeed(&seed);
+    try testing.expectEqualSlices(u8, &want, &kp.public_key);
+}
+
+test "hot bundle: a keyfile alone still cannot be opened into a seed" {
+    const a = testing.allocator;
+    const keyfile = try wrapKey(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(keyfile);
+    try testing.expectError(error.NotAHotBundle, openHotBundle(a, keyfile, "pass"));
+
+    // Relabelling the keyfile as a bundle does not help either: the format tag
+    // is bound as associated data and the ciphertext is the wrong shape.
+    const marker = "\"sigil\":\"" ++ keyfile_version ++ "\"";
+    const at = std.mem.indexOf(u8, keyfile, marker) orelse return error.TestUnexpectedResult;
+    const relabelled = try std.mem.concat(a, u8, &.{
+        keyfile[0..at], "\"sigil\":\"" ++ hot_bundle_version ++ "\"", keyfile[at + marker.len ..],
+    });
+    defer a.free(relabelled);
+    if (openHotBundle(a, relabelled, "pass")) |_| return error.TestUnexpectedResult else |_| {}
+}
+
+test "hot bundle: a bundle cannot be used as a signing keyfile" {
+    const a = testing.allocator;
+    const bundle = try wrapHotBundle(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+    try testing.expectError(error.UnsupportedKeyfileVersion, unwrapKey(a, bundle, "pass"));
+    try testing.expectError(error.UnsupportedKeyfileVersion, keyfilePublicKey(a, bundle, "pass"));
+}
+
+test "hot bundle: a wrong passphrase or any tampered field fails authentication" {
+    const a = testing.allocator;
+    const bundle = try wrapHotBundle(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+
+    try testing.expectError(error.AuthenticationFailed, openHotBundle(a, bundle, "wrong"));
+    try testing.expectError(error.AuthenticationFailed, openHotBundle(a, bundle, ""));
+
+    const tampers = [_]struct { find: []const u8, replace: []const u8 }{
+        .{ .find = "\"t\":1", .replace = "\"t\":9" },
+        .{ .find = "\"m\":64", .replace = "\"m\":72" },
+        .{ .find = "\"p\":1", .replace = "\"p\":2" },
+    };
+    for (tampers) |t| {
+        const at = std.mem.indexOf(u8, bundle, t.find) orelse return error.TestUnexpectedResult;
+        const bad = try std.mem.concat(a, u8, &.{ bundle[0..at], t.replace, bundle[at + t.find.len ..] });
+        defer a.free(bad);
+        try testing.expectError(error.AuthenticationFailed, openHotBundle(a, bad, "pass"));
+    }
+
+    // Control: the untouched bundle opens, so the refusals above are not
+    // "refuse everything".
+    const der = try openHotBundle(a, bundle, "pass");
+    try testing.expectEqualSlices(u8, &test_seed, der[pkcs8_prefix.len..]);
+}
+
+test "hot bundle: neither the seed nor the DER appears in the clear" {
+    const a = testing.allocator;
+    var varied: [seed_len]u8 = undefined;
+    for (&varied, 0..) |*b, i| b.* = @intCast(i +% 7);
+    const bundle = try wrapHotBundle(a, &varied, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+    try testing.expect(std.mem.indexOf(u8, bundle, &varied) == null);
+    try testing.expect(std.mem.indexOf(u8, bundle, pkcs8_prefix) == null);
+    try testing.expect(std.mem.indexOf(u8, bundle, "\"sigil\":\"" ++ hot_bundle_version ++ "\"") != null);
+}
+
+test "hot bundle: PEM rendering is RFC 7468 with one base64 line" {
+    const a = testing.allocator;
+    const bundle = try wrapHotBundle(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(bundle);
+    const der = try openHotBundle(a, bundle, "pass");
+
+    const pem = try pkcs8ToPem(a, &der);
+    defer a.free(pem);
+
+    const head = "-----BEGIN PRIVATE KEY-----\n";
+    const tail = "\n-----END PRIVATE KEY-----\n";
+    try testing.expect(std.mem.startsWith(u8, pem, head));
+    try testing.expect(std.mem.endsWith(u8, pem, tail));
+    const body = pem[head.len .. pem.len - tail.len];
+    try testing.expect(std.mem.indexOfScalar(u8, body, '\n') == null);
+
+    var decoded: [pkcs8_der_len]u8 = undefined;
+    try std.base64.standard.Decoder.decode(&decoded, body);
+    try testing.expectEqualSlices(u8, &der, &decoded);
 }

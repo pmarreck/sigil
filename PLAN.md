@@ -394,8 +394,20 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       EOF/UINT64_MAX starts refuse with no rounds key and zero callbacks;
       last-byte clamp = one event; 200 on 90 bytes = 90 events; mixed
       modes refuse with zero events. E2 re-run clean.
-- [ ] On Peter's yes: implement `sigil keygen --hot-bundle-out` +
-      `sigil hot-bundle open` (TDD: opened PKCS#8 public half == .pub;
+- [x] Custody DECIDED by Peter 2026-09-28 18:51 EDT: (a) per-product keys,
+      (b) hot bundle yes, (c) cold copies as QR-in-PDF (optionally
+      passphrase-protected), (d) update keys deferred, (e) confirmation key
+      own Worker, (f) SHARED issuer Worker. Custody doc v1.3 records it.
+      — 2026-09-28 19:10 EDT
+- [ ] Cold-copy QR/PDF export (Peter (c)): sealed keyfile + sealed hot bundle
+      as QR codes in one printable PDF, base64 text printed beneath for
+      manual re-entry; the sealed bytes are already passphrase-encrypted so
+      paper needs no second secret. Two designs pending Peter's pick: (1)
+      cleanroom QR encoder + minimal PDF writer in the Zig core (no deps;
+      zbarimg as the independent decode oracle); (2) a ceremony script over
+      `qrencode` from the devShell (fast; tool dep at ceremony time only).
+- [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
+      2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
       ever written) and a ceremony preflight check.
 - [x] HOUSEKEEPING RULE, revised 2026-09-21 17:33 EDT: validate's freshness

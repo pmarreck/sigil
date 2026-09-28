@@ -191,6 +191,111 @@ assert_status 0 "--force allows the overwrite" \
 assert_status 64 "keygen refuses an empty passphrase" \
 	"$SIGIL" keygen --out "$WORK/empty.key" --passphrase-file /dev/null
 
+# ── keygen --hot-bundle-out / hot-bundle open ───────────────────────────────
+#
+# Custody contract v1.2 section 2 (Peter, 2026-09-28): the sealed hot bundle
+# is a generation-time recovery artifact whose only consumer is a pipe into
+# `wrangler secret put`. openssl is the independent oracle for the PKCS#8 it
+# opens into; a missing oracle FAILS rather than skips.
+
+HOT="$WORK/recovery.key"
+HOTPUB="$WORK/recovery.key.pub"
+BUNDLE="$WORK/recovery.hot.sealed"
+HOTPW_WRONG="$WORK/hotpw-wrong"
+printf 'not the passphrase' > "$HOTPW_WRONG"
+
+assert_status 0 "keygen --hot-bundle-out writes the keyfile and the bundle" \
+	"$SIGIL" keygen --out "$HOT" --hot-bundle-out "$BUNDLE" --passphrase-file "$PW"
+[[ -s "$BUNDLE" ]] && pass "the hot bundle is non-empty" || fail "the hot bundle is non-empty"
+[[ -s "$HOTPUB" ]] && pass "keygen still wrote the .pub beside the keyfile" || fail "keygen still wrote the .pub beside the keyfile"
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+if grep -q '"sigil":"hot-bundle-v1"' "$BUNDLE"; then pass "the hot bundle declares its own format"
+else fail "the hot bundle declares its own format" "$(head -c 120 "$BUNDLE")"; fi
+bundle_mode=$(stat -c '%a' "$BUNDLE" 2>/dev/null || stat -f '%Lp' "$BUNDLE" 2>/dev/null)
+if [[ "$bundle_mode" == "600" ]]; then pass "the hot bundle is created 0600"
+else fail "the hot bundle is created 0600" "got $bundle_mode"; fi
+assert_status 74 "keygen refuses to clobber an existing hot bundle" \
+	"$SIGIL" keygen --out "$WORK/recovery2.key" --hot-bundle-out "$BUNDLE" --passphrase-file "$PW"
+
+hot_pem=$("$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$PW" 2>/dev/null)
+hot_rc=$?
+if [[ $hot_rc -eq 0 ]]; then pass "hot-bundle open exits 0"
+else fail "hot-bundle open exits 0" "exit=$hot_rc"; fi
+pem_first=$(printf '%s\n' "$hot_pem" | sed -n 1p)
+pem_last=$(printf '%s\n' "$hot_pem" | sed -n '$p')
+pem_lines=$(printf '%s\n' "$hot_pem" | wc -l)
+if [[ "$pem_first" == "-----BEGIN PRIVATE KEY-----" && "$pem_last" == "-----END PRIVATE KEY-----" && "$pem_lines" -eq 3 ]]; then
+	pass "hot-bundle open prints a three-line RFC 7468 PEM"
+else
+	fail "hot-bundle open prints a three-line RFC 7468 PEM" "lines=$pem_lines first=$pem_first last=$pem_last"
+fi
+# Staged through files so every command's status is checked rather than masked
+# inside a pipeline (SC2312). The PEM lands in RAM-backed $WORK and is wiped
+# as soon as the oracle below has read it.
+printf '%s\n' "$hot_pem" > "$WORK/hot.pem"
+hot_der_ok=0
+if sed -n 2p "$WORK/hot.pem" > "$WORK/hot.b64" && base64 -d "$WORK/hot.b64" > "$WORK/hot.der" 2>/dev/null; then
+	hot_der_ok=1
+fi
+hot_der_len=$(wc -c < "$WORK/hot.der"); hot_der_len=${hot_der_len//[[:space:]]/}
+hot_prefix=$(od -An -tx1 -N16 "$WORK/hot.der"); hot_prefix=${hot_prefix//[[:space:]]/}
+if [[ $hot_der_ok -eq 1 && "$hot_der_len" == "48" && "$hot_prefix" == "302e020100300506032b657004220420" ]]; then
+	pass "the opened PEM is a well-formed Ed25519 PKCS#8 (RFC 8410)"
+else
+	fail "the opened PEM is a well-formed Ed25519 PKCS#8 (RFC 8410)" "len=$hot_der_len prefix=$hot_prefix"
+fi
+
+# The custody contract's acceptance test, judged by an oracle sigil did not
+# write: openssl derives the public key from the PEM; sigil reads the .pub it
+# wrote at generation. They must name the same key.
+if command -v openssl >/dev/null 2>&1; then
+	# An Ed25519 SubjectPublicKeyInfo is a fixed 12-byte prefix plus the key.
+	oracle_ok=0
+	if openssl pkey -in "$WORK/hot.pem" -pubout -outform DER > "$WORK/hot.pub.der" 2>/dev/null; then oracle_ok=1; fi
+	: > "$WORK/hot.pem"
+	oracle_pub=$(od -An -tx1 -j 12 "$WORK/hot.pub.der"); oracle_pub=${oracle_pub//[[:space:]]/}
+	sigil_pub=$("$SIGIL" pubkey --pubkey "$HOTPUB" --format hex 2>/dev/null)
+	if [[ $oracle_ok -eq 1 && ${#oracle_pub} -eq 64 && "$oracle_pub" == "$sigil_pub" ]]; then
+		pass "openssl agrees the bundle's public half is the .pub keygen wrote"
+	else
+		fail "openssl agrees the bundle's public half is the .pub keygen wrote" "openssl=$oracle_pub sigil=$sigil_pub"
+	fi
+else
+	fail "openssl agrees the bundle's public half is the .pub keygen wrote" "openssl not on PATH; the independent oracle is missing"
+fi
+
+# A keyfile is not a hot bundle: refused on its format, before any decryption.
+assert_status 65 "hot-bundle open refuses a keyfile" \
+	"$SIGIL" hot-bundle open "$HOT" --passphrase-file "$PW"
+assert_stderr_matches 'not a hot bundle' "hot-bundle open says why it refused the keyfile" \
+	"$SIGIL" hot-bundle open "$HOT" --passphrase-file "$PW"
+assert_stdout_empty "a refused keyfile yields no output at all" \
+	"$SIGIL" hot-bundle open "$HOT" --passphrase-file "$PW"
+assert_status 1 "hot-bundle open with the wrong passphrase is rejected" \
+	"$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$HOTPW_WRONG"
+assert_stdout_empty "a wrong passphrase yields no output at all" \
+	"$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$HOTPW_WRONG"
+
+# The plaintext goes to stdout and nowhere else: a file destination is a usage
+# error, so the one sanctioned use (a pipe) is also the only one expressible.
+assert_status 64 "hot-bundle open refuses to write anywhere but stdout" \
+	"$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$PW" --out "$WORK/leak.pem"
+if [[ ! -e "$WORK/leak.pem" ]]; then pass "no PEM file was created by the refused --out"
+else fail "no PEM file was created by the refused --out"; fi
+assert_status 0 "hot-bundle open accepts --out - as stdout" \
+	"$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$PW" --out -
+
+# And the reverse: a bundle is not a keyfile, so it cannot sign.
+assert_status 74 "sign refuses a hot bundle as its --key" \
+	"$SIGIL" sign "$PW" --key "$BUNDLE" --passphrase-file "$PW" --out -
+
+assert_status 0 "hot-bundle --help exits 0" "$SIGIL" hot-bundle --help
+assert_status 0 "hot-bundle open --help exits 0" "$SIGIL" hot-bundle open --help
+assert_stdout_matches 'hot-bundle open' "--help lists hot-bundle open" "$SIGIL" --help
+assert_status 64 "hot-bundle with no verb is a usage error" "$SIGIL" hot-bundle
+assert_status 64 "hot-bundle with an unknown verb is a usage error" "$SIGIL" hot-bundle close "$BUNDLE"
+assert_status 64 "hot-bundle open with no bundle path is a usage error" "$SIGIL" hot-bundle open --passphrase-file "$PW"
+
 # ── sign / verify round trip ────────────────────────────────────────────────
 
 DOC="$WORK/license.toml"

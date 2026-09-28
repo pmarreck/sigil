@@ -1,6 +1,6 @@
-# Key custody and issuer API — DRAFT v1.2 for negotiation
+# Key custody and issuer API — v1.3
 
-Status: PROPOSAL, revised 2026-09-19 after Einstein's reviews of v1 (five
+Status: DECIDED 2026-09-28 (Peter answered every section 8 item; his answers are recorded there and the OPEN markers below are resolved in place). Previously PROPOSAL, revised 2026-09-19 after Einstein's reviews of v1 (five
 corrections) and v1.1 (four more), all adopted below. The sealed hot
 bundle (section 2) and per-product issuer Workers (section 1) are NEW
 owner choices this draft introduces, not already-approved work; they are
@@ -39,10 +39,10 @@ ledger under successor keys plus a release that drops the old pubkeys
 (section 7); it is not prevented by secret separation. To shrink blast
 radius by Worker, the `confirmation` key lives in its OWN Worker (an
 attestation signer must not share a compromise domain with grant
-issuers); per-product issuer Workers are OPEN — cost is operational, not
-technical.
+issuers); per-product issuer Workers: DECIDED shared (Peter, 2026-09-28),
+since (a) already separates the keys.
 
-Per-product split (OPEN — recommend yes) and update keys excluded from
+Per-product split (DECIDED yes, Peter 2026-09-28) and update keys excluded from
 this ceremony (cold, attended, deferred until the release publisher
 exists) are unchanged from v1.
 
@@ -62,9 +62,14 @@ exists) are unchanged from v1.
   nothing else, for piping straight into `wrangler secret put`. This is
   a purpose-specific recovery artifact created at generation, NOT a
   generic export from keyfiles; `ROLE.key` still cannot be opened into a
-  seed by any command. (Correction 1; OPEN — needs Peter's approval
-  together with `keygen --hot-bundle-out`.)
-  Stored in two physically separate places (OPEN — Peter names them).
+  seed by any command. (Correction 1; APPROVED by Peter 2026-09-28 and implemented the same
+  day: `sigil keygen --hot-bundle-out` and `sigil hot-bundle open`, with
+  openssl as the independent oracle that the opened PKCS#8 names the .pub.)
+  Stored in two physically separate places. Peter (2026-09-28): render each
+  cold artifact as a QR code inside a PDF, optionally passphrase-protected
+  in the manner of encrypted Bitcoin paper keys, so it can be stored
+  anywhere including on paper; the places themselves are his and are not
+  recorded here. The QR/PDF tooling is OPEN in PLAN.md (two designs offered).
 - PUBLIC = `sigil pubkey` text per role in a public `KEY_REGISTRY.md`
   with each `.pub`'s SHA-256 and exactly which release trusts it.
 
@@ -195,15 +200,14 @@ Two different procedures (correction 3):
   unaffected by the compromise until they update. The registry records both procedures
   with dates and versions.
 
-## 8. What Peter decides (OPEN)
+## 8. What Peter decided (2026-09-28)
 
-(a) per-product license keys (recommend yes); (b) the paired `keygen
---hot-bundle-out` / `hot-bundle open` feature — a purpose-specific,
-sealed, generation-time recovery artifact rather than any export from
-keyfiles (recommend yes; implemented TDD with tests that the opened
-PKCS#8's public half equals the .pub and that `ROLE.key` alone still
-cannot be opened into a seed); (c) COLD locations; (d) update keys cold
-and attended, deferred (recommend yes); (e) the confirmation key separate
-AND in its own Worker (recommend yes; no new confirmation traffic is
-implied — cadence is the 2026-07-28 decision); (f) per-product issuer
-Workers (optional; cost is operational).
+(a) per-product license keys: YES. (b) the paired `keygen --hot-bundle-out`
+/ `hot-bundle open` feature: YES, implemented with tests that the opened
+PKCS#8's public half equals the .pub (openssl oracle) and that `ROLE.key`
+alone still cannot be opened into a seed. (c) COLD locations: each cold
+artifact rendered as a QR code in a PDF, optionally passphrase-protected,
+storable anywhere including paper; the physical places are Peter's own.
+(d) update keys cold, attended, deferred: YES. (e) confirmation key
+separate AND in its own Worker: YES. (f) per-product issuer Workers: NO,
+one shared issuer Worker.

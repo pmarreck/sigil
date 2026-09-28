@@ -177,7 +177,7 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -254,6 +254,8 @@
             # vanishes with its tool is indistinguishable from a clean repo.
             pkgs.shellcheck
             pkgs.clang-tools # clang-tidy: cert-err33-c
+            # Independent oracle for the hot-bundle PKCS#8 in tests/cli/test_cli.
+            pkgs.openssl
           ];
         };
       });

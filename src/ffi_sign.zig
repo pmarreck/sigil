@@ -37,6 +37,7 @@ pub const SIGIL_ERR_BAD_KDF_PARAMS: c_int = -23;
 pub const SIGIL_ERR_BAD_SEED: c_int = -24;
 pub const SIGIL_ERR_EMPTY_PASSPHRASE: c_int = -25;
 pub const SIGIL_ERR_NO_ENTROPY: c_int = -26;
+pub const SIGIL_ERR_NOT_HOT_BUNDLE: c_int = -27;
 
 /// Generate a fresh key and return the passphrase-encrypted keyfile text.
 ///
@@ -143,6 +144,97 @@ export fn sigil_keyfile_public_key(
     return SIGIL_OK;
 }
 
+/// Generate a fresh key and return BOTH custody artifacts from the one seed:
+/// the passphrase-encrypted keyfile and the sealed hot bundle (PKCS#8 for
+/// restore-to-online). Made together at generation because that is the only
+/// moment the seed exists in the clear; there is deliberately no later export
+/// path from a keyfile. Both buffers are sized before either is written, so a
+/// too-small buffer leaves nothing half-written.
+export fn sigil_keygen_with_recovery(
+    passphrase: ?[*]const u8,
+    passphrase_len: usize,
+    keyfile_out: ?[*]u8,
+    keyfile_cap: usize,
+    keyfile_len: ?*usize,
+    bundle_out: ?[*]u8,
+    bundle_cap: usize,
+    bundle_len: ?*usize,
+) c_int {
+    const pw = passphrase orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const kn = keyfile_len orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const bn = bundle_len orelse return SIGIL_ERR_NULL_ARGUMENT;
+    if (passphrase_len == 0) return SIGIL_ERR_EMPTY_PASSPHRASE;
+
+    var seed: [sign.seed_len]u8 = undefined;
+    defer std.crypto.secureZero(u8, &seed);
+    var salt: [sign.salt_len]u8 = undefined;
+    var nonce: [sign.nonce_len]u8 = undefined;
+    var bundle_salt: [sign.salt_len]u8 = undefined;
+    var bundle_nonce: [sign.nonce_len]u8 = undefined;
+
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+    io.randomSecure(&seed) catch return SIGIL_ERR_NO_ENTROPY;
+    io.randomSecure(&salt) catch return SIGIL_ERR_NO_ENTROPY;
+    io.randomSecure(&nonce) catch return SIGIL_ERR_NO_ENTROPY;
+    io.randomSecure(&bundle_salt) catch return SIGIL_ERR_NO_ENTROPY;
+    io.randomSecure(&bundle_nonce) catch return SIGIL_ERR_NO_ENTROPY;
+
+    const keyfile = sign.wrapKey(
+        alloc,
+        &seed,
+        pw[0..passphrase_len],
+        &salt,
+        &nonce,
+        sign.default_kdf_params,
+    ) catch |e| return errorToCode(e);
+    defer alloc.free(keyfile);
+    const bundle = sign.wrapHotBundle(
+        alloc,
+        &seed,
+        pw[0..passphrase_len],
+        &bundle_salt,
+        &bundle_nonce,
+        sign.default_kdf_params,
+    ) catch |e| return errorToCode(e);
+    defer alloc.free(bundle);
+
+    kn.* = keyfile.len;
+    bn.* = bundle.len;
+    if (keyfile.len > keyfile_cap or bundle.len > bundle_cap) return SIGIL_ERR_BUFFER_TOO_SMALL;
+    const rc = copyOut(keyfile, keyfile_out, keyfile_cap, kn);
+    if (rc != SIGIL_OK) return rc;
+    return copyOut(bundle, bundle_out, bundle_cap, bn);
+}
+
+/// Open a hot bundle and return its PKCS#8 as PEM text. This is the ONE place
+/// a private key crosses this boundary, by design (custody contract v1.2
+/// section 2, Peter 2026-09-28): its sole consumer is a pipe into
+/// `wrangler secret put`. A keyfile is refused with SIGIL_ERR_NOT_HOT_BUNDLE
+/// before any decryption; nothing is written on any failure.
+export fn sigil_hot_bundle_open(
+    bundle: ?[*]const u8,
+    bundle_len: usize,
+    passphrase: ?[*]const u8,
+    passphrase_len: usize,
+    out: ?[*]u8,
+    out_cap: usize,
+    out_len: ?*usize,
+) c_int {
+    const b = bundle orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const pw = passphrase orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const n = out_len orelse return SIGIL_ERR_NULL_ARGUMENT;
+
+    var der = sign.openHotBundle(alloc, b[0..bundle_len], pw[0..passphrase_len]) catch |e| return errorToCode(e);
+    defer std.crypto.secureZero(u8, &der);
+    const pem = sign.pkcs8ToPem(alloc, &der) catch |e| return errorToCode(e);
+    defer {
+        std.crypto.secureZero(u8, pem);
+        alloc.free(pem);
+    }
+    return copyOut(pem, out, out_cap, n);
+}
+
 /// Human-readable name for a code returned by this library. Never NULL.
 export fn sigil_sign_strerror(code: c_int) [*:0]const u8 {
     return switch (code) {
@@ -157,6 +249,7 @@ export fn sigil_sign_strerror(code: c_int) [*:0]const u8 {
         SIGIL_ERR_BAD_SEED => "keyfile does not contain a usable key",
         SIGIL_ERR_EMPTY_PASSPHRASE => "a passphrase is required",
         SIGIL_ERR_NO_ENTROPY => "could not read from the system entropy source",
+        SIGIL_ERR_NOT_HOT_BUNDLE => "not a hot bundle (a keyfile cannot be opened into a seed)",
         else => "unknown error",
     };
 }
@@ -177,6 +270,7 @@ fn errorToCode(e: anyerror) c_int {
         error.UnsupportedKeyfileVersion => SIGIL_ERR_UNSUPPORTED_KEYFILE,
         error.AuthenticationFailed => SIGIL_ERR_AUTH_FAILED,
         error.BadKdfParams => SIGIL_ERR_BAD_KDF_PARAMS,
+        error.NotAHotBundle => SIGIL_ERR_NOT_HOT_BUNDLE,
         error.BadSeed, error.BadSecretKey, error.ProviderFailure => SIGIL_ERR_BAD_SEED,
         else => SIGIL_ERR_MALFORMED_KEYFILE,
     };
@@ -290,7 +384,7 @@ test "FFI: every code has its own message" {
         SIGIL_ERR_MALFORMED_KEYFILE, SIGIL_ERR_UNSUPPORTED_KEYFILE,
         SIGIL_ERR_AUTH_FAILED,       SIGIL_ERR_BAD_KDF_PARAMS,
         SIGIL_ERR_BAD_SEED,          SIGIL_ERR_EMPTY_PASSPHRASE,
-        SIGIL_ERR_NO_ENTROPY,
+        SIGIL_ERR_NO_ENTROPY,        SIGIL_ERR_NOT_HOT_BUNDLE,
     };
     for (codes, 0..) |a_code, i| {
         const a_msg = std.mem.span(sigil_sign_strerror(a_code));
@@ -318,4 +412,92 @@ test "keygen draws fresh randomness every time" {
     try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&a_buf, a_len, "same".ptr, 4, &a_pk));
     try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&b_buf, b_len, "same".ptr, 4, &b_pk));
     try testing.expect(!std.mem.eql(u8, &a_pk, &b_pk));
+}
+
+test "FFI: keygen with recovery yields a bundle whose PKCS#8 names the keyfile's public key" {
+    var keyfile: [1024]u8 = undefined;
+    var keyfile_len: usize = 0;
+    var bundle: [1024]u8 = undefined;
+    var bundle_len: usize = 0;
+    try testing.expectEqual(SIGIL_OK, sigil_keygen_with_recovery(
+        "pw".ptr,
+        2,
+        &keyfile,
+        keyfile.len,
+        &keyfile_len,
+        &bundle,
+        bundle.len,
+        &bundle_len,
+    ));
+    try testing.expect(!std.mem.eql(u8, keyfile[0..keyfile_len], bundle[0..bundle_len]));
+
+    var pem: [512]u8 = undefined;
+    var pem_len: usize = 0;
+    try testing.expectEqual(SIGIL_OK, sigil_hot_bundle_open(&bundle, bundle_len, "pw".ptr, 2, &pem, pem.len, &pem_len));
+
+    // Independent path to the public key: decode the PEM with std's base64,
+    // take the RFC 8410 seed, derive with std's Ed25519. No sign.zig helper.
+    const head = "-----BEGIN PRIVATE KEY-----\n";
+    const tail = "\n-----END PRIVATE KEY-----\n";
+    const text = pem[0..pem_len];
+    try testing.expect(std.mem.startsWith(u8, text, head));
+    try testing.expect(std.mem.endsWith(u8, text, tail));
+    var der: [48]u8 = undefined;
+    try std.base64.standard.Decoder.decode(&der, text[head.len .. text.len - tail.len]);
+    const kp = try std.crypto.sign.Ed25519.KeyPair.generateDeterministic(der[16..48].*);
+
+    var pk: [32]u8 = undefined;
+    try testing.expectEqual(SIGIL_OK, sigil_keyfile_public_key(&keyfile, keyfile_len, "pw".ptr, 2, &pk));
+    try testing.expectEqualSlices(u8, &pk, &kp.public_key.toBytes());
+}
+
+test "FFI: a keyfile is not a hot bundle and opening it writes nothing" {
+    var keyfile: [1024]u8 = undefined;
+    var keyfile_len: usize = 0;
+    try testing.expectEqual(SIGIL_OK, sigil_keygen("pw".ptr, 2, &keyfile, keyfile.len, &keyfile_len));
+
+    var pem: [512]u8 = @splat(0xAA);
+    var pem_len: usize = 0;
+    try testing.expectEqual(
+        SIGIL_ERR_NOT_HOT_BUNDLE,
+        sigil_hot_bundle_open(&keyfile, keyfile_len, "pw".ptr, 2, &pem, pem.len, &pem_len),
+    );
+    try testing.expectEqual(@as(u8, 0xAA), pem[0]);
+}
+
+test "FFI: hot bundle open refuses the wrong passphrase, NULLs and a small buffer" {
+    var keyfile: [1024]u8 = undefined;
+    var keyfile_len: usize = 0;
+    var bundle: [1024]u8 = undefined;
+    var bundle_len: usize = 0;
+    try testing.expectEqual(SIGIL_OK, sigil_keygen_with_recovery(
+        "pw".ptr,
+        2,
+        &keyfile,
+        keyfile.len,
+        &keyfile_len,
+        &bundle,
+        bundle.len,
+        &bundle_len,
+    ));
+
+    var pem: [512]u8 = @splat(0xAA);
+    var pem_len: usize = 0;
+    try testing.expectEqual(
+        SIGIL_ERR_AUTH_FAILED,
+        sigil_hot_bundle_open(&bundle, bundle_len, "no".ptr, 2, &pem, pem.len, &pem_len),
+    );
+    try testing.expectEqual(@as(u8, 0xAA), pem[0]);
+
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_hot_bundle_open(null, 0, null, 0, null, 0, &pem_len));
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_keygen_with_recovery(null, 0, null, 0, null, null, 0, null));
+
+    var tiny: [4]u8 = @splat(0xAA);
+    var needed: usize = 0;
+    try testing.expectEqual(
+        SIGIL_ERR_BUFFER_TOO_SMALL,
+        sigil_hot_bundle_open(&bundle, bundle_len, "pw".ptr, 2, &tiny, tiny.len, &needed),
+    );
+    try testing.expect(needed > tiny.len);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xAA, 0xAA, 0xAA, 0xAA }, &tiny);
 }

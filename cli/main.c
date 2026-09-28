@@ -44,6 +44,7 @@
 #define EX_REJECTED  1   /* the answer is "no": bad signature, wrong passphrase */
 #define EX_USAGE     64
 #define EX_NOINPUT   66
+#define EX_DATAERR   65  /* the input is the wrong kind of thing (a keyfile, not a bundle) */
 #define EX_IOERR     74
 
 /* Internal sentinel, never a process exit code: the parser handled --help or
@@ -321,10 +322,12 @@ static int usage(FILE *out) {
 		"  sign <payload> --key <keyfile>      sign bytes into an envelope\n"
 		"  keygen --out <keyfile>              mint a new signing key\n"
 		"  pubkey --key <keyfile>              print the public key to embed\n"
+		"  hot-bundle open <bundle>            sealed PKCS#8 recovery bundle -> PEM on stdout\n"
 		"\n"
 		"Common options:\n"
 		"  -o, --out <path>       where to write; '-'/'@stdout' for standard output\n"
 		"      --passphrase-file <path>   read the passphrase instead of prompting\n"
+		"      --hot-bundle-out <path>    keygen: also write the sealed recovery bundle\n"
 		"      --json             machine-readable result on stdout\n"
 		"  -q, --quiet            no status output; rely on the exit code\n"
 		"      --no-color         never emit ANSI color\n"
@@ -372,6 +375,7 @@ typedef struct {
 	const char *key;
 	const char *out;
 	const char *pubkey_out;
+	const char *hot_bundle_out;  /* keygen: also write the sealed recovery bundle */
 	const char *passphrase_file;
 	const char *format;
 	int json;
@@ -420,6 +424,7 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 			else if (!strcmp(a, "--key") || !strcmp(a, "-k")) { NEEDS_VALUE(a); o->key = argv[++i]; }
 			else if (!strcmp(a, "--out") || !strcmp(a, "-o")) { NEEDS_VALUE(a); o->out = argv[++i]; }
 			else if (!strcmp(a, "--pubkey-out"))     { NEEDS_VALUE(a); o->pubkey_out = argv[++i]; }
+			else if (!strcmp(a, "--hot-bundle-out")) { NEEDS_VALUE(a); o->hot_bundle_out = argv[++i]; }
 			else if (!strcmp(a, "--passphrase-file")){ NEEDS_VALUE(a); o->passphrase_file = argv[++i]; }
 			else if (!strcmp(a, "--format") || !strcmp(a, "-f")) { NEEDS_VALUE(a); o->format = argv[++i]; }
 			else if (!strcmp(a, "--json"))           { o->json = 1; }
@@ -598,8 +603,8 @@ static int cmd_keygen(int argc, char *argv[]) {
 		pub_path = pub_default;
 	}
 
-	char *pass = NULL, *confirm = NULL, *keyfile = NULL;
-	size_t pass_len = 0, confirm_len = 0;
+	char *pass = NULL, *confirm = NULL, *keyfile = NULL, *bundle = NULL;
+	size_t pass_len = 0, confirm_len = 0, bundle_len = 0;
 	int status = EX_IOERR;
 
 	rc = obtain_passphrase(o.passphrase_file, "Passphrase for the new key: ", &pass, &pass_len);
@@ -621,7 +626,17 @@ static int cmd_keygen(int argc, char *argv[]) {
 	if (!keyfile) { fputs("sigil: out of memory\n", stderr); status = EX_IOERR; goto done; }
 
 	size_t keyfile_len = 0;
-	int r = sigil_keygen(pass, pass_len, keyfile, 4096, &keyfile_len);
+	int r;
+	if (o.hot_bundle_out) {
+		/* Both custody artifacts from ONE seed, in one call: the seed never
+		 * crosses the FFI, and there is no later export path from a keyfile. */
+		bundle = malloc(4096);
+		if (!bundle) { fputs("sigil: out of memory\n", stderr); status = EX_IOERR; goto done; }
+		r = sigil_keygen_with_recovery(pass, pass_len, keyfile, 4096, &keyfile_len,
+		                               bundle, 4096, &bundle_len);
+	} else {
+		r = sigil_keygen(pass, pass_len, keyfile, 4096, &keyfile_len);
+	}
 	if (r != SIGIL_OK) {
 		fprintf(stderr, "sigil: cannot generate a key: %s\n", sigil_sign_strerror(r));
 		status = (r == SIGIL_ERR_EMPTY_PASSPHRASE) ? EX_USAGE : EX_IOERR;
@@ -631,6 +646,11 @@ static int cmd_keygen(int argc, char *argv[]) {
 	status = write_all(key_path, keyfile, keyfile_len,
 		WRITE_SECRET | (o.force ? 0 : WRITE_EXCLUSIVE));
 	if (status != EX_OK) goto done;
+	if (bundle) {
+		status = write_all(o.hot_bundle_out, bundle, bundle_len,
+			WRITE_SECRET | (o.force ? 0 : WRITE_EXCLUSIVE));
+		if (status != EX_OK) goto done;
+	}
 
 	unsigned char pk[64];
 	r = sigil_keyfile_public_key(keyfile, keyfile_len, pass, pass_len, pk);
@@ -656,6 +676,8 @@ static int cmd_keygen(int argc, char *argv[]) {
 
 	note("%s%s%s wrote %s (secret, encrypted) and %s (public)\n",
 		C_OK, mark_ok(), C_OFF, key_path, pub_path);
+	if (bundle) note("%s  and %s (sealed recovery bundle: open it only into `wrangler secret put`)%s\n",
+		C_DIM, o.hot_bundle_out, C_OFF);
 	note("%s  Back up both. Lose the keyfile or the passphrase and you cannot\n"
 	     "  sign again; every already-issued license keeps working.%s\n", C_DIM, C_OFF);
 	status = EX_OK;
@@ -663,7 +685,7 @@ static int cmd_keygen(int argc, char *argv[]) {
 done:
 	if (pass) { wipe(pass, pass_len); free(pass); }
 	if (confirm) { wipe(confirm, confirm_len); free(confirm); }
-	free(keyfile);
+	free(keyfile); free(bundle);
 	return status;
 }
 
@@ -750,6 +772,75 @@ static int cmd_pubkey(int argc, char *argv[]) {
 	return EX_USAGE;
 }
 
+/* ── hot-bundle ─────────────────────────────────────────────────────────── */
+
+/* `hot-bundle open <bundle>`: the sealed PKCS#8 recovery artifact, opened to
+ * STDOUT ONLY. The plaintext private key exists for the length of a pipe into
+ * `wrangler secret put` and never as a file: a file destination is a usage
+ * error, so the one sanctioned use is also the only one expressible. A keyfile
+ * handed here is refused on its format (exit 65) before any decryption. */
+static int cmd_hot_bundle(int argc, char *argv[]) {
+	if (argc < 3) { die_usage("hot-bundle needs a verb: open <bundle>", NULL); return EX_USAGE; }
+	char scratch[32];
+	const char *verb = normalize(argv[2], scratch, sizeof scratch);
+	if (!strcmp(verb, "-h") || !strcmp(verb, "--help") || !strcmp(verb, "-?")) { usage(stdout); return EX_OK; }
+	if (!strcmp(verb, "--about")) { about(); return EX_OK; }
+	if (strcmp(verb, "open") != 0) { die_usage("unknown hot-bundle verb (want: open)", argv[2]); return EX_USAGE; }
+
+	Opts o = {0};
+	int rc = parse_opts(argc, argv, 3, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
+	if (rc != EX_OK) return rc;
+
+	if (!o.positional) { die_usage("hot-bundle open needs a bundle path (use '-' for stdin)", NULL); return EX_USAGE; }
+	if (o.out && resolve_out(o.out) != stdout) {
+		die_usage("hot-bundle open writes the private key to stdout only; pipe it into "
+		          "`wrangler secret put` rather than a file", o.out);
+		return EX_USAGE;
+	}
+	if (is_stdin_path(o.positional) && o.passphrase_file && is_stdin_path(o.passphrase_file)) {
+		die_usage("bundle and passphrase cannot both come from stdin", NULL);
+		return EX_USAGE;
+	}
+
+	unsigned char *bundle = NULL;
+	char *pass = NULL, *pem = NULL;
+	size_t bundle_len = 0, pass_len = 0, pem_len = 0;
+	const size_t pem_cap = 1024;
+	int status = EX_IOERR;
+
+	rc = read_all(o.positional, &bundle, &bundle_len);
+	if (rc != EX_OK) { status = rc; goto done; }
+	rc = obtain_passphrase(o.passphrase_file, "Passphrase: ", &pass, &pass_len);
+	if (rc != EX_OK) { status = rc; goto done; }
+
+	pem = malloc(pem_cap);
+	if (!pem) { fputs("sigil: out of memory\n", stderr); goto done; }
+
+	int r = sigil_hot_bundle_open((const char *)bundle, bundle_len, pass, pass_len, pem, pem_cap, &pem_len);
+	if (r != SIGIL_OK) {
+		fprintf(stderr, "sigil: %s%s%s cannot open %s: %s\n", C_BAD, mark_bad(), C_OFF,
+			o.positional, sigil_sign_strerror(r));
+		if (r == SIGIL_ERR_AUTH_FAILED) status = EX_REJECTED;
+		else if (r == SIGIL_ERR_NOT_HOT_BUNDLE || r == SIGIL_ERR_MALFORMED_KEYFILE ||
+		         r == SIGIL_ERR_UNSUPPORTED_KEYFILE) status = EX_DATAERR;
+		else status = EX_IOERR;
+		goto done;
+	}
+
+	status = write_all("-", pem, pem_len, 0);
+	if (status != EX_OK) goto done;
+	note("%s%s%s opened %s: PKCS#8 PEM on stdout. Never write it to a file.\n",
+		C_OK, mark_ok(), C_OFF, o.positional);
+	status = EX_OK;
+
+done:
+	if (pass) { wipe(pass, pass_len); free(pass); }
+	if (pem) { wipe(pem, pem_cap); free(pem); }
+	free(bundle);
+	return status;
+}
+
 /* ── main ───────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
@@ -772,6 +863,7 @@ int main(int argc, char *argv[]) {
 	if (!strcmp(cmd, "sign"))   return cmd_sign(argc, argv);
 	if (!strcmp(cmd, "keygen")) return cmd_keygen(argc, argv);
 	if (!strcmp(cmd, "pubkey")) return cmd_pubkey(argc, argv);
+	if (!strcmp(cmd, "hot-bundle")) return cmd_hot_bundle(argc, argv);
 
 	fprintf(stderr, "sigil: unknown command: %s\n", argv[1]);
 	usage(stderr);

@@ -36,6 +36,7 @@ extern "C" {
 #define SIGIL_ERR_BAD_SEED            -24
 #define SIGIL_ERR_EMPTY_PASSPHRASE    -25
 #define SIGIL_ERR_NO_ENTROPY          -26
+#define SIGIL_ERR_NOT_HOT_BUNDLE      -27
 
 /* Generate a fresh key and write the passphrase-encrypted keyfile text into
  * `out`. The seed is drawn from the OS entropy source, used, and wiped; it is
@@ -75,6 +76,36 @@ int sigil_keyfile_public_key(const char *keyfile,
                              const char *passphrase,
                              size_t passphrase_len,
                              unsigned char *public_key_out);
+
+/* Generate a fresh key and write BOTH custody artifacts from the one seed:
+ * the passphrase-encrypted keyfile into `keyfile_out` and the sealed hot
+ * bundle (PKCS#8 for restore-to-online) into `bundle_out`. Made together at
+ * generation because that is the only moment the seed exists in the clear;
+ * there is no later export path from a keyfile. On SIGIL_ERR_BUFFER_TOO_SMALL
+ * both *_len report the required capacities and nothing is written. */
+int sigil_keygen_with_recovery(const char *passphrase,
+                               size_t passphrase_len,
+                               char *keyfile_out,
+                               size_t keyfile_cap,
+                               size_t *keyfile_len,
+                               char *bundle_out,
+                               size_t bundle_cap,
+                               size_t *bundle_len);
+
+/* Open a hot bundle and write its PKCS#8 as RFC 7468 PEM text into `out`.
+ *
+ * THIS IS THE ONE CALL THAT HANDS A PRIVATE KEY ACROSS THE BOUNDARY, by
+ * design (custody contract v1.2 section 2, Peter 2026-09-28). Its sole
+ * consumer is a pipe into `wrangler secret put`; never write the result to a
+ * file. A keyfile is refused with SIGIL_ERR_NOT_HOT_BUNDLE before any
+ * decryption, so `ROLE.key` alone still cannot be opened into a seed. */
+int sigil_hot_bundle_open(const char *bundle,
+                          size_t bundle_len,
+                          const char *passphrase,
+                          size_t passphrase_len,
+                          char *out,
+                          size_t out_cap,
+                          size_t *out_len);
 
 /* Human-readable name for a code returned by this library. Never NULL. */
 const char *sigil_sign_strerror(int code);
