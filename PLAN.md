@@ -231,6 +231,15 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       Lesson banked: my "PLAN.md n artifacts" report was an rg `-rn` flag
       misparse (-r n = replace-with-n) — retracted to them. — 2026-09-19 10:20 EDT
       — updated 2026-09-19 10:06 EDT
+- [x] RotShield readiness checkpoint ANSWERED (entropy_shield HEAD 8c82c25f,
+      no gate yet): pins sigil fa49dfb + mecha_policy 1603f7a (same as
+      validate's build.zig.zon), §9/§11/§12 checklist, their pre-admission
+      file enumeration named as the §11 gap, vector paths + wrong_product
+      as their positive control, no `trial` class exists, Peter-owned
+      decisions listed (trial terms, post-expiry recovery, update
+      namespace). Offered to bundle those into one mail to Peter; they asked me to
+      HOLD (they raise expiry/recovery + phases with Peter directly).
+      — 2026-09-28 15:12 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
       rollback + binding symmetry), C FFI + mecha-policy CLI (13 assertions),
