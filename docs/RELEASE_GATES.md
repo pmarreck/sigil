@@ -54,10 +54,12 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   (observable git execution, missing tool, honest depth); licensing
   adapters (import/status/About consuming the core decision); then first
   nomination with exact pin + GUI/backend evidence.
-- entropy_shield: RotShield gate + import/status per contract; entrypoint
-  matrix acceptance tests (Clear/strip rules, resource-fork conditional
-  paths, debug exports removed); first nomination. Trial terms remain
-  Peter's.
+- entropy_shield: RotShield gate + import/status per contract (rev 1.3:
+  Verify grant-free, Create/Update/Repair licensed); entrypoint matrix
+  acceptance tests (Clear/strip rules, resource-fork conditional paths,
+  debug exports removed, Verify positive with no grant and with an expired
+  grant, Verify-then-Repair refused at the Repair step); first nomination.
+  Trial terms remain Peter's.
 - mecha-commerce: Phase D durable ledger idempotency — BLOCKER for live
   PAID issuance (resend must return stored bytes; waits on Peter's
   D1-vs-Durable-Object decision); `roleFor(provider, product)` once

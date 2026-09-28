@@ -1,6 +1,6 @@
 # Mecha License Contract v1 — DRAFT for peer agreement
 
-Status: rev 1.2, 2026-09-19 (rev 1.1 rulings in section 9; rev 1.2 adds sections 11-12). Sigil is coordination lead per Peter's
+Status: rev 1.3, 2026-09-28 (rev 1.1 rulings in section 9; rev 1.2 adds sections 11-12; rev 1.3 adds section 13, Peter's RotShield operation-class ruling). Sigil is coordination lead per Peter's
 directive of 2026-09-17 12:27 EDT (canonical text: LICENSE_OPERATIONS.md,
 "Current directive" section, in Peter's Obsidian vault). Sections marked
 FROZEN are Peter-approved and not open to peer negotiation; PROPOSED needs
@@ -244,8 +244,8 @@ bytes. Evaluation, as requested, of the two mechanisms separately:
 - RotShield trial terms are UNDISCUSSED (Peter, via Einstein 2026-09-17)
   and are not derived from Validate's by assumption. RotShield-specific
   constraint already frozen: expiry never deletes parity or damages
-  originals; recovery of already-protected data after trial expiry needs
-  its own narrowly scoped policy decision.
+  originals. Recovery after expiry is RULED in section 13 (2026-09-28):
+  Verify is grant-free at all times; Repair requires a valid grant.
 
 ## 11. Admission vs already-admitted work (rev 1.2 clarification, 2026-09-19)
 
@@ -257,8 +257,9 @@ Clarifies, does not relax, the rev 1.1 checkpoint bound.
   mutable or open-ended job attached to a file. For validate batch work:
   one file. For coverage: one file WITH its round count fixed at
   admission; additional rounds or repeats beyond that plan are new units
-  needing admission. For RotShield: one transaction (create/verify/update/
-  repair of one registration's safe unit). For validate git work: one
+  needing admission. For RotShield: one transaction (create/update/repair of one
+  registration's safe unit; Verify is ungated per section 13 and is not an
+  admitted unit). For validate git work: one
   repository AS CAPTURED at admission — the refs resolved at the admission
   instant and the objects reachable from them, with the traversal bounded
   to that captured set; objects, refs or commits added after admission are
@@ -329,3 +330,43 @@ and wrong-key refusals on the same candidate. Test-trust positives are
 development evidence; production-artifact acceptance additionally needs a
 production-trust positive control, which depends on owner key provisioning
 and is never satisfied by giving the reviewer a key or a signing oracle.
+
+## 13. RotShield operation classes (rev 1.3, Peter ruling 2026-09-28)
+
+Peter, in the entropy_shield conversation on 2026-09-28, relayed verbatim
+by entropy_shield: "License for repair, no license for verify. That
+incentivizes the repurchase (in the event of a new major version) right
+away. In the event the project is sunsetted or otherwise no longer for
+sale, it will be open-sourced and license restrictions released." This
+supersedes his immediately prior answer that licensed both.
+
+- FROZEN, RotShield only: Verify is GRANT-FREE. It is real content
+  verification producing a real integrity verdict, not metadata-only
+  discovery, and it stays available with no grant, with an expired grant,
+  and for a major the grant does not cover. Create, Update and Repair
+  REQUIRE a valid grant (mecha_policy `authorized`) at admission.
+- Verify never chains. A Verify result may inform the user, never admit
+  work: any repair, re-protect, create or update reached from a Verify
+  flow (GUI confirmation callback, CLI convenience, backend adapter) is a
+  new unit admitted through the gate. Reads whose only product is a
+  verdict are Verify-class; reads that feed a write take the class of
+  that write. entropy_shield maps each entrypoint in its inventory.
+- Scope: the ruling was given about RotShield. Validate's gate is
+  UNCHANGED: verification is Validate's product and the 2026-09-17
+  directive licenses it in every build. Any extension to Validate needs
+  Peter's explicit word.
+- max_major stays as implemented: the version ceiling compares the
+  running app major to the grant's `max_major`; releasing a newer major
+  never revokes a grant for a major it already covers.
+- Sunset commitment: if RotShield is sunsetted or otherwise no longer for
+  sale it will be open-sourced and the license restrictions released. An
+  owner commitment recorded here, not a mechanism: no build carries an
+  automatic outage or sunset bypass, no source release or license choice
+  is scheduled, and the commitment authorizes no key ceremony.
+- Acceptance additions (RELEASE_GATES, entropy_shield row): Verify
+  positive with no grant AND with an expired grant on protected data;
+  Repair/Create/Update denial cases each paired with authorized work; a
+  Verify-then-Repair flow whose Repair step is refused with no grant while
+  the Verify verdict was still delivered.
+- mecha_policy: no change. Grant-free operations never call `decide`;
+  ABI 1 and both vector manifests stand.

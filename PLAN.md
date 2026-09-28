@@ -240,6 +240,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       namespace). Offered to bundle those into one mail to Peter; they asked me to
       HOLD (they raise expiry/recovery + phases with Peter directly).
       — 2026-09-28 15:12 EDT
+- [x] Contract rev 1.3 (§13): Peter ruling 2026-09-28 via entropy_shield:
+      RotShield Verify GRANT-FREE (real verdict, never chains into
+      repair/create/update without admission), Create/Update/Repair
+      licensed; Validate unchanged; max_major never revoked by a newer
+      major; sunset = open-source commitment, no bypass mechanism.
+      mecha_policy untouched. Gates row + acceptance additions recorded.
+      — 2026-09-28 15:20 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
       rollback + binding symmetry), C FFI + mecha-policy CLI (13 assertions),
