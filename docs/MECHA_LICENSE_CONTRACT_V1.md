@@ -370,3 +370,12 @@ supersedes his immediately prior answer that licensed both.
   the Verify verdict was still delivered.
 - mecha_policy: no change. Grant-free operations never call `decide`;
   ABI 1 and both vector manifests stand.
+- Recovery-store maintenance (lead ruling 2026-09-28 17:20 EDT, on
+  entropy_shield's question): automatic repair or regeneration of
+  RotShield's OWN store (index, metadata, structure) from parity records
+  it already holds is infrastructure maintenance, grant-free, same class
+  as Clear, and may run before a free Verify. Bounds: it reads no customer
+  content, recomputes no parity from customer files (that is Create/Update),
+  writes nothing to customer files (that is Repair), and emits no file
+  validity verdict. A store rebuild that needs customer bytes is a gated
+  unit of the class of the work it performs.

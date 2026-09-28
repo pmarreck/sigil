@@ -247,6 +247,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       major; sunset = open-source commitment, no bypass mechanism.
       mecha_policy untouched. Gates row + acceptance additions recorded.
       — 2026-09-28 15:20 EDT
+- [x] Lead ruling (§13 addendum): RotShield recovery-store self-repair/
+      regeneration from held parity records = grant-free maintenance, Clear
+      class, bounded (no customer reads, no parity recompute, no customer
+      writes, no verdict). entropy_shield authorized by Peter to integrate
+      ("Go for it all"); production trust still ceremony-blocked.
+      — 2026-09-28 17:25 EDT
 - [x] mecha_policy SHIPPED: ~/Code/mecha_policy, yolo 0991ed4, TDD red->green
       against the vector manifest (21 evals + 16-case malformed corpus +
       rollback + binding symmetry), C FFI + mecha-policy CLI (13 assertions),
