@@ -73,8 +73,12 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   debug exports removed, Verify positive with no grant and with an expired
   grant, Verify-then-Repair refused at the Repair step); first nomination.
   Trial terms remain Peter's.
-- mecha-commerce: Phase D durable ledger idempotency — BLOCKER for live
-  PAID issuance (resend must return stored bytes; waits on Peter's
+- mecha-commerce: Phase D idempotency CLOSED IN LOGIC at e16f5a5
+  (2026-09-28): the envelope is minted once under a put-if-absent
+  `recordOnce` ledger call before any delivery; retries reuse the recorded
+  bytes; a port without it fails closed; tested across a UTC day boundary
+  with a control. Per-product roles per custody v1.3 at 3c237a4. STILL
+  BLOCKING live PAID issuance: the durable ledger adapter (waits on Peter's
   D1-vs-Durable-Object decision); `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); move the E2E suite's validate pin to the latest

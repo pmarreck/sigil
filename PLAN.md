@@ -410,6 +410,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       pdfinfo/pdftotext (selectable base64 decodes to the artifact),
       pdftoppm+zbarimg (QR decodes to the artifact); Peter's visual check
       pending. — 2026-09-28 23:05 EDT
+- [x] Commerce: paid-resend idempotency closed in logic (e16f5a5, recordOnce
+      put-if-absent; retries reuse day-one bytes) and per-product roles
+      (3c237a4) landed; live paid issuance still gated on Peter's D1-vs-DO
+      durable adapter + ceremony. Recorded in RELEASE_GATES. — 2026-09-28 23:30 EDT
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
