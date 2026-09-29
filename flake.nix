@@ -177,7 +177,7 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -260,6 +260,7 @@
             # poppler rasterizes and extracts text, zbar decodes the QR.
             pkgs.zbar
             pkgs.poppler-utils
+            pkgs.qpdf
           ];
         };
       });
