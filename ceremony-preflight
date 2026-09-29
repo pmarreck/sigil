@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Key-ceremony preflight (custody contract v1.3 section 3).
+#
+# Checks what is checkable on the ceremony host, prints the residual
+# assumptions it cannot check, and with --rehearse runs the WHOLE tooling
+# path on freshly generated TEST keys: keygen with hot bundle, restore
+# identity through openssl, sign/verify, paper cold copies read back through
+# poppler and zbar, and the negative controls. It proves the mechanism; it
+# proves nothing about any production key, and it never touches one.
+#
+# NOT `set -e`: every check is allowed to fail and be counted.
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SIGIL="$ROOT/zig-out/bin/sigil"
+WORK="${TMPDIR:-/tmp}/sigil-ceremony-preflight-$$"
+REHEARSE=0
+STRICT=0
+MEDIA=()
+PASS=0; WARN=0; FAIL=0
+
+usage() {
+	cat <<'USAGE'
+Usage: ceremony-preflight [--sigil PATH] [--work DIR] [--media DIR]... [--rehearse] [--strict]
+
+  --sigil PATH   the sigil binary to preflight (default: zig-out/bin/sigil)
+  --work DIR     scratch directory (default: under TMPDIR; RAM-backed here)
+  --media DIR    a cold-copy destination to check (repeat for the second one)
+  --rehearse     run the full tooling path on TEST keys only, then wipe them
+  --strict       treat host residual warnings (swap, core dumps, TMPDIR) as failures
+  -h, --help     this text
+
+Exit status is the number of failed checks. Never pass a passphrase on the
+command line; the ceremony prompts for it.
+USAGE
+}
+
+ok()   { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m    %s\n' "$1"; }
+warn() { if [[ $STRICT -eq 1 ]]; then FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m  %s\n' "$1"; else WARN=$((WARN + 1)); printf '  \033[33mWARN\033[0m  %s\n' "$1"; fi; [[ $# -gt 1 ]] && printf '        %s\n' "$2"; return 0; }
+bad()  { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m  %s\n' "$1"; [[ $# -gt 1 ]] && printf '        %s\n' "$2"; return 0; }
+info() { printf '  \033[2m--\033[0m    %s\n' "$1"; }
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--sigil) SIGIL="$2"; shift 2 ;;
+		--work) WORK="$2"; shift 2 ;;
+		--media) MEDIA+=("$2"); shift 2 ;;
+		--rehearse) REHEARSE=1; shift ;;
+		--strict) STRICT=1; shift ;;
+		--passphrase|--passphrase=*) echo "ceremony-preflight: never pass a passphrase on the command line; it lands in shell history and process listings. Refusing." >&2; exit 64 ;;
+		-h|--help) usage; exit 0 ;;
+		*) echo "ceremony-preflight: unknown option: $1" >&2; usage >&2; exit 64 ;;
+	esac
+done
+
+mkdir -p "$WORK" || { echo "ceremony-preflight: cannot create $WORK" >&2; exit 74; }
+chmod 700 "$WORK"
+
+echo "sigil key-ceremony preflight"
+echo ""
+echo "Tooling"
+if [[ -x "$SIGIL" ]]; then
+	about=$("$SIGIL" --about 2>/dev/null)
+	ok "sigil binary: $about"
+	sha=$(sha256sum "$SIGIL"); info "sigil sha256 ${sha%% *}"
+	if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		desc=$(git -C "$ROOT" describe --always --dirty 2>/dev/null); info "sigil source $desc"
+		[[ "$desc" == *-dirty ]] && warn "sigil source tree is dirty; ceremony tooling should come from a committed, CI-passing state"
+	fi
+else
+	bad "sigil binary not found at $SIGIL (run ./build)"
+fi
+for t in randompassdict openssl zbarimg pdftotext pdftoppm qpdf; do
+	if command -v "$t" >/dev/null 2>&1; then ok "$t on PATH"
+	elif [[ $REHEARSE -eq 1 ]]; then bad "$t on PATH (required: the rehearsal's independent oracle)"
+	else warn "$t not on PATH (needed at the ceremony: passphrases, identity check, paper verification)"; fi
+done
+if command -v wrangler >/dev/null 2>&1; then ok "wrangler on PATH"
+else warn "wrangler not on PATH (needed only for the Worker restore step, commerce's account)"; fi
+
+echo ""
+echo "Host (reductions, not guarantees; see custody contract section 3)"
+if command -v swapon >/dev/null 2>&1; then
+	swaps=$(swapon --show --noheadings 2>/dev/null)
+	if [[ -z "$swaps" ]]; then ok "no active swap (swapon --show is empty)"
+	else warn "swap is active; plaintext piped through the host may be paged out" "$swaps"; fi
+else
+	warn "swap state: cannot check (no swapon)"
+fi
+core=$(ulimit -c)
+if [[ "$core" == "0" ]]; then ok "core dumps disabled in this shell (ulimit -c 0)"
+else warn "core dump limit is '$core'; run 'ulimit -c 0' in the ceremony shell"; fi
+tmp_fs=$(findmnt -n -o FSTYPE -T "${TMPDIR:-/tmp}" 2>/dev/null)
+if [[ "$tmp_fs" == "tmpfs" ]]; then ok "TMPDIR (${TMPDIR:-/tmp}) is tmpfs (RAM)"
+else warn "TMPDIR (${TMPDIR:-/tmp}) is '${tmp_fs:-unknown}', not tmpfs; scratch would touch disk"; fi
+if ip -brief link > "$WORK/links.txt" 2>/dev/null; then :; fi
+up=$(awk '$2 == "UP" && $1 != "lo" { n++ } END { print n + 0 }' "$WORK/links.txt")
+info "network interfaces UP (excluding lo): ${up:-unknown}; the ceremony host should be offline except for the Worker step"
+if [[ ${#MEDIA[@]} -gt 0 ]]; then
+	devs=()
+	for m in "${MEDIA[@]}"; do
+		if [[ -d "$m" && -w "$m" ]]; then ok "cold-copy medium writable: $m"; devs+=("$(stat -c %d "$m")")
+		else bad "cold-copy medium missing or not writable: $m"; fi
+	done
+	if [[ ${#MEDIA[@]} -ge 2 && ${#devs[@]} -ge 2 && "${devs[0]}" == "${devs[1]}" ]]; then
+		bad "the two cold-copy media are on the same device; they must be physically separate"
+	elif [[ ${#MEDIA[@]} -ge 2 && ${#devs[@]} -ge 2 ]]; then ok "the two cold-copy media are on different devices"; fi
+else
+	info "no --media given; the ceremony needs two physically separate destinations"
+fi
+
+if [[ $REHEARSE -eq 1 ]]; then
+	echo ""
+	echo "Rehearsal (TEST keys only, generated now, wiped at the end)"
+	R="$WORK/rehearsal"; mkdir -p "$R"; chmod 700 "$R"
+	PWF="$R/passphrase"; printf 'rehearsal-not-for-production' > "$PWF"
+	KEY="$R/rehearsal.key"; PUB="$R/rehearsal.key.pub"; BUNDLE="$R/rehearsal.hot.sealed"
+	if "$SIGIL" keygen --out "$KEY" --hot-bundle-out "$BUNDLE" --passphrase-file "$PWF" >/dev/null 2>&1; then ok "keygen wrote the sealed keyfile, the sealed hot bundle and the .pub"
+	else bad "keygen failed"; fi
+
+	# Identity check (custody section 2 (ii)(a)), judged by openssl, not sigil.
+	if "$SIGIL" hot-bundle open "$BUNDLE" --passphrase-file "$PWF" > "$R/opened.pem" 2>/dev/null; then ok "hot-bundle open yields a PEM"
+	else bad "hot-bundle open failed"; fi
+	if openssl pkey -in "$R/opened.pem" -pubout -outform DER > "$R/opened.pub.der" 2>/dev/null; then :; fi
+	: > "$R/opened.pem"
+	oracle=$(od -An -tx1 -j 12 "$R/opened.pub.der" 2>/dev/null); oracle=${oracle//[[:space:]]/}
+	mine=$("$SIGIL" pubkey --pubkey "$PUB" --format hex 2>/dev/null)
+	if [[ ${#oracle} -eq 64 && "$oracle" == "$mine" ]]; then ok "openssl: the opened PKCS#8's public half equals the .pub (identity check)"
+	else bad "openssl identity check failed" "openssl=$oracle sigil=$mine"; fi
+	if "$SIGIL" hot-bundle open "$KEY" --passphrase-file "$PWF" >/dev/null 2>&1; then bad "negative control: a keyfile was opened as a hot bundle"
+	else ok "negative control: the keyfile alone cannot be opened into a seed"; fi
+
+	# Sign and verify.
+	printf '{"customer_email":"rehearsal@example.com","v":"1"}' > "$R/payload.json"
+	if "$SIGIL" sign "$R/payload.json" --key "$KEY" --passphrase-file "$PWF" --out "$R/payload.sigil" >/dev/null 2>&1 \
+		&& "$SIGIL" verify "$R/payload.sigil" --pubkey "$PUB" -q > "$R/payload.out" 2>/dev/null \
+		&& cmp -s "$R/payload.json" "$R/payload.out"; then ok "sign then verify under the .pub returns the exact payload"
+	else bad "sign/verify round trip failed"; fi
+
+	# Paper cold copies, read back through poppler and zbar.
+	if "$SIGIL" paper --key "$KEY" --hot-bundle "$BUNDLE" --pubkey "$PUB" --label "REHEARSAL (test key)" --date 2000-01-01 --out "$R/cold.pdf" >/dev/null 2>&1; then ok "paper rendered the cold copies"
+	else bad "paper failed"; fi
+	if qpdf --check "$R/cold.pdf" >/dev/null 2>&1; then ok "qpdf: the PDF is structurally sound"; else bad "qpdf --check failed"; fi
+	if pdftotext -layout "$R/cold.pdf" "$R/cold.txt" 2>/dev/null; then :; fi
+	awk 'BEGIN { RS="\f" } NR == 1 { print > "'"$R"'/p1.txt" } NR == 2 { print > "'"$R"'/p2.txt" }' "$R/cold.txt" 2>/dev/null
+	for pair in "p1:$KEY:keyfile" "p2:$BUNDLE:hot bundle"; do
+		p=${pair%%:*}; rest=${pair#*:}; want=${rest%%:*}; what=${rest#*:}
+		sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$R/$p.txt" > "$R/$p.trim" 2>/dev/null
+		if grep -E '^[A-Za-z0-9+/=]{4,64}$' "$R/$p.trim" > "$R/$p.b64" 2>/dev/null; then :; fi
+		if base64 -d "$R/$p.b64" > "$R/$p.bin" 2>/dev/null && cmp -s "$R/$p.bin" "$want"; then ok "pdftotext: the $what page's base64 text decodes to the artifact"
+		else bad "pdftotext: the $what page's base64 text does not decode to the artifact"; fi
+	done
+	if pdftoppm -r 150 -png "$R/cold.pdf" "$R/page" 2>/dev/null; then :; fi
+	for pair in "page-1.png:$KEY:keyfile" "page-2.png:$BUNDLE:hot bundle"; do
+		png=${pair%%:*}; rest=${pair#*:}; want=${rest%%:*}; what=${rest#*:}
+		if zbarimg --raw -q -Sbinary "$R/$png" > "$R/$png.b64" 2>/dev/null && base64 -d "$R/$png.b64" > "$R/$png.bin" 2>/dev/null && cmp -s "$R/$png.bin" "$want"; then ok "zbar: the $what page's QR decodes to the artifact"
+		else bad "zbar: the $what page's QR does not decode to the artifact"; fi
+	done
+
+	# Wipe the rehearsal material (test-only, generated seconds ago).
+	rm -rf "$R"
+	if [[ -e "$R" ]]; then bad "rehearsal directory could not be removed"; else ok "rehearsal key material wiped ($R)"; fi
+fi
+
+echo ""
+echo "Residual assumptions this preflight cannot check (state them in the registry commit):"
+echo "  - full-disk encryption on the ceremony host, and whether any swap is encrypted"
+echo "  - wrangler, the Node runtime, the kernel and any logging layer never persist the piped PKCS#8"
+echo "  - the host is offline except for the Worker restore step, and the shell is fresh"
+echo "  - the two cold-copy media are stored in physically separate places afterwards"
+echo ""
+if [[ $REHEARSE -eq 1 && $FAIL -eq 0 ]]; then
+	echo "REHEARSAL PASSED: test-only keys, every oracle agreed, nothing left behind."
+	echo "This proves the mechanism. It proves nothing about any production key."
+fi
+echo "$PASS ok, $WARN warnings, $FAIL failed"
+exit "$FAIL"

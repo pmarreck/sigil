@@ -2,10 +2,13 @@
 ver=1.2
 annotate=[
 	build = nix build wrapper -> zig-out/bin. --debug/--test switch optimize mode.
+	ceremony-preflight = Key-ceremony preflight: host checks, residual assumptions, --rehearse runs the whole tooling path on TEST keys through openssl/poppler/zbar oracles
 	cli/main.c = The CLI, in C on purpose: C cannot @import the Zig core, so bypassing the FFI is inexpressible rather than merely discouraged.
 	docs/CUSTODY_AND_ISSUER_API_V1.md = DRAFT key custody (hot Worker secret + cold sigil keyfile from one seed), ceremony script, issuer/confirmation API bounds, rotation; OPEN items for Peter
 	docs/DESIGN.md = Envelope format, prior art, and the recorded revocation + key-custody decisions.
+	docs/KEY_CEREMONY_V1.md = Ceremony runbook: shortest path to the Oct 15 beta, Peter's exact actions, restore assurance, production positive control, expiry dry-run, milestones
 	docs/KEY_PROVIDERS.md = Provider boundary, encrypted-keyfile adapter, honest unavailable states, and deferred owner/hardware gates
+	docs/KEY_REGISTRY.md = Public key registry: production roles (pending ceremony) and test roles with .pub hashes
 	docs/LICENSING_PRIOR_ART.md = Survey of license-enforcement prior art (serials, signed files, activation, dongles, receipts, DRM) and the Mecha decisions it informs
 	docs/MECHA_LICENSE_CONTRACT_V1.md = DRAFT shared licensing contract sigil leads for validate/validate_gui/entropy_shield/mecha-commerce: frozen payload+expiry rules, proposed policy module, trust roles, acceptance vectors, redteam boundaries
 	docs/RELEASE_GATES.md = Canonical licensing release gates: pin-specific closed evidence (Linux x86_64 only), owner-assigned open items, and the per-candidate/per-platform revalidation every release must re-earn

@@ -21,6 +21,8 @@ originally hashed artifact and cannot clear a fresh build; commerce E10 keeps
 its independent exact-byte SHA-256 block. Validate owns reproducing the
 difference and fixing it with a deterministic control; a NEW nomination must
 pass repeated independent builds before any fresh artifact is accepted.
+(Resolved 2026-09-29: validate 569808119 met this and was accepted; see the
+row below and the validate entry in section B.)
 
 | Candidate (validate/yolo) | Result | Reviewer record |
 |---|---|---|
@@ -46,7 +48,8 @@ admission; C4 attachment-only delivery; C5 beta EXISTING keeps prior
 grant; C6 resend delivers the stored envelope; C7 dry-run before
 execute; C8 adjustments recorded, no issuance. C3 INDEPENDENTLY confirms
 the live-paid blocker: a later-day paid re-process would mint a new
-purchase_date (Phase D).
+purchase_date (Phase D). (Superseded 2026-09-28: closed in logic at
+e16f5a5; the durable ledger adapter still gates live paid issuance.)
 
 Malformed pack trailer and truncated pack index: EXECUTED by the reviewer on
 569808119 test-trust b6e1db79 (2026-09-29 05:25Z; licensed, git on PATH,
@@ -85,8 +88,9 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   --strict, precedence test), no admission code changed; the rest is
   validator behaviour. Relayed to the red team with the acceptance target
   set; ACCEPTED by the red team 2026-09-29 05:23Z (row above); pin + hash
-  relayed to commerce (E11d) and validate_gui (repin target). 58c033e30 remains the last accepted
-  candidate, its evidence bound to the d5257b77 artifact only.
+  relayed to commerce (E11d) and validate_gui (repin target). 58c033e30 WAS
+  the last accepted candidate until this acceptance; its evidence stays
+  bound to the d5257b77 artifact only (historical).
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
   freshness exception (71a229207) can be accepted; keep every new export
@@ -113,8 +117,8 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   BLOCKING live PAID issuance: the durable ledger adapter (waits on Peter's
   D1-vs-Durable-Object decision); `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
-  unknown = fail-open); move the E2E suite's validate pin to the latest
-  accepted candidate (58c033e30) with the external-hash assertion.
+  unknown = fail-open); E2E pin moved to the accepted candidate 569808119
+  at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).
 - sigil: `keygen --hot-bundle-out` + `hot-bundle open` SHIPPED 380cd22 and
   `sigil paper` cold copies SHIPPED aae83d4 (2026-09-28; Peter's visual
   approval of the render pending); ceremony preflight script still to
@@ -182,4 +186,5 @@ Evidence: Mechatron Prime PASS mecha-commerce@97e91e1 at
 2026-09-23T14:24:09Z (packages.x86_64-linux.default +
 checks.x86_64-linux.test; 8ef3a56 superseded in queue by 97e91e1 = same
 code and flake.lock plus PLAN text); the E2E suite ran inside that check
-against validate 58c033e30 test-trust with the external-hash assertion.
+against validate 58c033e30 test-trust with the external-hash assertion
+(historical; the current pin is 569808119 at ded9398, above).

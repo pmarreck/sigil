@@ -58,7 +58,9 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/tests/test_no_signing_symbols" \
 		"$REPO_ROOT/tests/test_harness_guards" \
 		"$REPO_ROOT/tests/test_lint" \
-		"$REPO_ROOT/tests/cli/test_cli"
+		"$REPO_ROOT/tests/cli/test_cli" \
+		"$REPO_ROOT/tests/integration/ceremony_preflight.sh" \
+		"$REPO_ROOT/ceremony-preflight"
 	do
 		[[ -f "$candidate" ]] && shell_scripts+=("$candidate")
 	done

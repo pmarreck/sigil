@@ -426,6 +426,17 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Commerce E11d ded9398 re-pins E10 to validate 569808119 test-trust;
       Mechatron PASS 05:28:09Z verified by sigil; recorded in RELEASE_GATES.
       — 2026-09-29 01:32 EDT
+- [x] Ceremony preflight SHIPPED: `./ceremony-preflight` (host checks,
+      residuals, `--rehearse` on TEST keys with openssl/poppler/zbar oracles,
+      wipes itself; refuses a command-line passphrase) + integration test;
+      docs/KEY_CEREMONY_V1.md runbook (Oct 15 shortest path, Peter's exact
+      actions, production positive control, executed expiry dry-run,
+      milestones); docs/KEY_REGISTRY.md template. — 2026-09-29 20:30 EDT
+- [ ] Oct 2: preflight green on the ceremony host with Peter; ceremony
+      scheduled (Peter's action; sigil verifies outputs afterwards).
+- [ ] After the ceremony: verify registry row + identity-check outputs;
+      relay the production `.pub` to validate and commerce; then the
+      production-trust positive control per KEY_CEREMONY_V1 section 4.
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
