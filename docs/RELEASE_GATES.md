@@ -12,6 +12,16 @@ trust. Section A is history; section C is what any release must re-earn.
 
 ## A. Closed — historical, Linux x86_64 only, exact artifacts
 
+Rebuild-identity ruling (Einstein, 2026-09-28 22:40 EDT): commerce found that
+`nix build --rebuild` of the exact validate 58c033e30 test-trust derivation
+yields different bytes (9925c623...) from the reviewer-nominated executable
+(d5257b77...). A derivation hash plus a commit is provenance, not artifact
+identity. The 58c033e30 byte-identity evidence therefore applies ONLY to the
+originally hashed artifact and cannot clear a fresh build; commerce E10 keeps
+its independent exact-byte SHA-256 block. Validate owns reproducing the
+difference and fixing it with a deterministic control; a NEW nomination must
+pass repeated independent builds before any fresh artifact is accepted.
+
 | Candidate (validate/yolo) | Result | Reviewer record |
 |---|---|---|
 | 006fb6b2b | First gated candidate. E2 = EXECUTED CRIT: `validate()` C export performed unlicensed work (production archive, empty HOME). CLI slice clean. Preserved. | candidate-006fb6b2b-linux-x86_64.md |
@@ -42,6 +52,9 @@ index (owner tests exist; reviewer coverage gap, not a defect).
 
 ## B. Genuinely open — owner-assigned
 
+- validate: reproduce the 58c033e30 test-trust rebuild difference
+  (d5257b77... nominated vs 9925c623... rebuilt) and land a deterministic
+  build control; re-nominate with repeated independent builds.
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
   freshness exception (71a229207) can be accepted; keep every new export

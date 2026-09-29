@@ -402,10 +402,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [ ] Cold-copy QR/PDF export (Peter (c)): sealed keyfile + sealed hot bundle
       as QR codes in one printable PDF, base64 text printed beneath for
       manual re-entry; the sealed bytes are already passphrase-encrypted so
-      paper needs no second secret. Two designs pending Peter's pick: (1)
-      cleanroom QR encoder + minimal PDF writer in the Zig core (no deps;
-      zbarimg as the independent decode oracle); (2) a ceremony script over
-      `qrencode` from the devShell (fast; tool dep at ceremony time only).
+      paper needs no second secret. Peter picked (2026-09-28 22:32 EDT) the
+      cleanroom Zig QR encoder + minimal PDF writer, zbarimg/poppler as
+      independent oracles AND his own eyes on the render; base64 must be
+      real selectable text; page carries identifying text. IN PROGRESS.
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file

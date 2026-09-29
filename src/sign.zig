@@ -907,6 +907,10 @@ test "the shipped KDF defaults are the strong ones" {
     try testing.expectEqual(@as(u24, 1), default_kdf_params.p);
 }
 
+test {
+    _ = @import("qr.zig");
+}
+
 // ── Hot bundle: the sealed restore-to-online artifact ───────────────────────
 //
 // Custody contract v1.2 section 2, approved by Peter 2026-09-28. Same seed,

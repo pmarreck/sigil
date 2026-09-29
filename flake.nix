@@ -177,7 +177,7 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -256,6 +256,10 @@
             pkgs.clang-tools # clang-tidy: cert-err33-c
             # Independent oracle for the hot-bundle PKCS#8 in tests/cli/test_cli.
             pkgs.openssl
+            # Independent oracles for the paper (QR-in-PDF) cold copies:
+            # poppler rasterizes and extracts text, zbar decodes the QR.
+            pkgs.zbar
+            pkgs.poppler-utils
           ];
         };
       });
