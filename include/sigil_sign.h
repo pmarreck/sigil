@@ -37,6 +37,7 @@ extern "C" {
 #define SIGIL_ERR_EMPTY_PASSPHRASE    -25
 #define SIGIL_ERR_NO_ENTROPY          -26
 #define SIGIL_ERR_NOT_HOT_BUNDLE      -27
+#define SIGIL_ERR_TOO_LARGE_FOR_QR    -28
 
 /* Generate a fresh key and write the passphrase-encrypted keyfile text into
  * `out`. The seed is drawn from the OS entropy source, used, and wiped; it is
@@ -106,6 +107,29 @@ int sigil_hot_bundle_open(const char *bundle,
                           char *out,
                           size_t out_cap,
                           size_t *out_len);
+
+/* Printable cold copies (custody contract v1.3 (c)): one page per artifact,
+ * each a QR code plus the same base64 as selectable text plus identifying
+ * text. Sealed bytes only; nothing here decrypts. `date` is the caller's
+ * YYYY-MM-DD so the output is reproducible. `pubkey` is 32 bytes or NULL.
+ * On SIGIL_ERR_BUFFER_TOO_SMALL, *out_len is the capacity required. */
+#define SIGIL_PAPER_KEYFILE    0
+#define SIGIL_PAPER_HOT_BUNDLE 1
+typedef struct {
+	int kind;
+	const char *label;
+	const char *filename;
+	const unsigned char *bytes;
+	size_t bytes_len;
+	const unsigned char *pubkey;
+} sigil_paper_artifact;
+
+int sigil_paper_render(const sigil_paper_artifact *artifacts,
+                       size_t count,
+                       const char *date,
+                       char *out,
+                       size_t out_cap,
+                       size_t *out_len);
 
 /* Human-readable name for a code returned by this library. Never NULL. */
 const char *sigil_sign_strerror(int code);

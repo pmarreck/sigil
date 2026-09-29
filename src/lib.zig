@@ -17,6 +17,9 @@
 //! interpret bytes you have not authenticated.
 
 const core = @import("verify.zig");
+
+/// The library version, printed by the CLI and on paper cold copies.
+pub const version = core.version;
 const envelope = @import("envelope.zig");
 const transcript_mod = @import("transcript.zig");
 

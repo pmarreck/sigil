@@ -17,6 +17,8 @@
 
 const std = @import("std");
 const sign = @import("sign.zig");
+const paper = @import("paper.zig");
+const core = @import("verify.zig");
 const builtin = @import("builtin");
 
 /// See the note in ffi.zig: `testing.allocator` fails on a leak, `c_allocator`
@@ -38,6 +40,21 @@ pub const SIGIL_ERR_BAD_SEED: c_int = -24;
 pub const SIGIL_ERR_EMPTY_PASSPHRASE: c_int = -25;
 pub const SIGIL_ERR_NO_ENTROPY: c_int = -26;
 pub const SIGIL_ERR_NOT_HOT_BUNDLE: c_int = -27;
+pub const SIGIL_ERR_TOO_LARGE_FOR_QR: c_int = -28;
+
+pub const SIGIL_PAPER_KEYFILE: c_int = 0;
+pub const SIGIL_PAPER_HOT_BUNDLE: c_int = 1;
+
+/// One artifact to put on a page. Mirrors `sigil_paper_artifact` in the header.
+pub const SigilPaperArtifact = extern struct {
+    kind: c_int,
+    label: ?[*:0]const u8,
+    filename: ?[*:0]const u8,
+    bytes: ?[*]const u8,
+    bytes_len: usize,
+    /// 32 bytes, or NULL when unknown.
+    pubkey: ?[*]const u8,
+};
 
 /// Generate a fresh key and return the passphrase-encrypted keyfile text.
 ///
@@ -235,6 +252,42 @@ export fn sigil_hot_bundle_open(
     return copyOut(pem, out, out_cap, n);
 }
 
+/// Render printable cold copies (custody contract v1.3 (c)): one page per
+/// artifact, each a QR code plus the same base64 as selectable text plus the
+/// identifying text. Sealed bytes only; nothing here decrypts anything.
+/// `date` is the caller's YYYY-MM-DD, so the output is reproducible.
+export fn sigil_paper_render(
+    artifacts: ?[*]const SigilPaperArtifact,
+    count: usize,
+    date: ?[*:0]const u8,
+    out: ?[*]u8,
+    out_cap: usize,
+    out_len: ?*usize,
+) c_int {
+    const arts = artifacts orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const d = date orelse return SIGIL_ERR_NULL_ARGUMENT;
+    const n = out_len orelse return SIGIL_ERR_NULL_ARGUMENT;
+    if (count == 0) return SIGIL_ERR_NULL_ARGUMENT;
+
+    const list = alloc.alloc(paper.Artifact, count) catch return SIGIL_ERR_OUT_OF_MEMORY;
+    defer alloc.free(list);
+    for (arts[0..count], 0..) |a, i| {
+        const label = a.label orelse return SIGIL_ERR_NULL_ARGUMENT;
+        const filename = a.filename orelse return SIGIL_ERR_NULL_ARGUMENT;
+        const bytes = a.bytes orelse return SIGIL_ERR_NULL_ARGUMENT;
+        list[i] = .{
+            .kind = if (a.kind == SIGIL_PAPER_HOT_BUNDLE) .hot_bundle else .keyfile,
+            .label = std.mem.span(label),
+            .filename = std.mem.span(filename),
+            .bytes = bytes[0..a.bytes_len],
+            .pubkey = if (a.pubkey) |pk| pk[0..32].* else null,
+        };
+    }
+    const pdf = paper.render(alloc, list, .{ .date = std.mem.span(d), .sigil_version = core.version }) catch |e| return errorToCode(e);
+    defer alloc.free(pdf);
+    return copyOut(pdf, out, out_cap, n);
+}
+
 /// Human-readable name for a code returned by this library. Never NULL.
 export fn sigil_sign_strerror(code: c_int) [*:0]const u8 {
     return switch (code) {
@@ -250,6 +303,7 @@ export fn sigil_sign_strerror(code: c_int) [*:0]const u8 {
         SIGIL_ERR_EMPTY_PASSPHRASE => "a passphrase is required",
         SIGIL_ERR_NO_ENTROPY => "could not read from the system entropy source",
         SIGIL_ERR_NOT_HOT_BUNDLE => "not a hot bundle (a keyfile cannot be opened into a seed)",
+        SIGIL_ERR_TOO_LARGE_FOR_QR => "artifact is too large for a single QR code",
         else => "unknown error",
     };
 }
@@ -271,6 +325,7 @@ fn errorToCode(e: anyerror) c_int {
         error.AuthenticationFailed => SIGIL_ERR_AUTH_FAILED,
         error.BadKdfParams => SIGIL_ERR_BAD_KDF_PARAMS,
         error.NotAHotBundle => SIGIL_ERR_NOT_HOT_BUNDLE,
+        error.DataTooLong => SIGIL_ERR_TOO_LARGE_FOR_QR,
         error.BadSeed, error.BadSecretKey, error.ProviderFailure => SIGIL_ERR_BAD_SEED,
         else => SIGIL_ERR_MALFORMED_KEYFILE,
     };
@@ -385,6 +440,7 @@ test "FFI: every code has its own message" {
         SIGIL_ERR_AUTH_FAILED,       SIGIL_ERR_BAD_KDF_PARAMS,
         SIGIL_ERR_BAD_SEED,          SIGIL_ERR_EMPTY_PASSPHRASE,
         SIGIL_ERR_NO_ENTROPY,        SIGIL_ERR_NOT_HOT_BUNDLE,
+        SIGIL_ERR_TOO_LARGE_FOR_QR,
     };
     for (codes, 0..) |a_code, i| {
         const a_msg = std.mem.span(sigil_sign_strerror(a_code));
@@ -500,4 +556,42 @@ test "FFI: hot bundle open refuses the wrong passphrase, NULLs and a small buffe
     );
     try testing.expect(needed > tiny.len);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xAA, 0xAA, 0xAA, 0xAA }, &tiny);
+}
+
+test "FFI: paper renders a PDF for a keyfile artifact" {
+    const bytes = "{\"sigil\":\"secret-key-v1\"}\n";
+    const pk = [_]u8{0x42} ** 32;
+    const arts = [_]SigilPaperArtifact{.{
+        .kind = SIGIL_PAPER_KEYFILE,
+        .label = "Mecha Validate beta-license (TEST)",
+        .filename = "validate_beta.key",
+        .bytes = bytes.ptr,
+        .bytes_len = bytes.len,
+        .pubkey = &pk,
+    }};
+    var out: [262144]u8 = undefined;
+    var out_len: usize = 0;
+    try testing.expectEqual(SIGIL_OK, sigil_paper_render(&arts, arts.len, "2026-09-28", &out, out.len, &out_len));
+    try testing.expect(std.mem.startsWith(u8, out[0..out_len], "%PDF-1.4"));
+    try testing.expect(std.mem.indexOf(u8, out[0..out_len], "validate_beta.key") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0..out_len], "sigil 0.1.0") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0..out_len], "42" ** 32) != null);
+}
+
+test "FFI: paper refuses NULLs, an empty set and a small buffer without writing" {
+    var out_len: usize = 0;
+    var tiny: [4]u8 = @splat(0xAA);
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_paper_render(null, 1, "2026-09-28", &tiny, tiny.len, &out_len));
+    const bytes = "x";
+    const arts = [_]SigilPaperArtifact{.{ .kind = SIGIL_PAPER_HOT_BUNDLE, .label = "l", .filename = "f", .bytes = bytes.ptr, .bytes_len = 1, .pubkey = null }};
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_paper_render(&arts, 0, "2026-09-28", &tiny, tiny.len, &out_len));
+    try testing.expectEqual(SIGIL_ERR_NULL_ARGUMENT, sigil_paper_render(&arts, 1, null, &tiny, tiny.len, &out_len));
+    try testing.expectEqual(SIGIL_ERR_BUFFER_TOO_SMALL, sigil_paper_render(&arts, 1, "2026-09-28", &tiny, tiny.len, &out_len));
+    try testing.expect(out_len > tiny.len);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xAA, 0xAA, 0xAA, 0xAA }, &tiny);
+    // Too much for any QR code is its own answer, not a malformed keyfile.
+    const huge = "y" ** 3000;
+    const big = [_]SigilPaperArtifact{.{ .kind = SIGIL_PAPER_KEYFILE, .label = "l", .filename = "f", .bytes = huge.ptr, .bytes_len = huge.len, .pubkey = null }};
+    var out: [262144]u8 = undefined;
+    try testing.expectEqual(SIGIL_ERR_TOO_LARGE_FOR_QR, sigil_paper_render(&big, 1, "2026-09-28", &out, out.len, &out_len));
 }

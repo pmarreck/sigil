@@ -107,7 +107,7 @@ fi
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
 if [[ -f "$SCRIPT_DIR/tests/cli/test_cli" ]]; then
-	run_suite "CLI Surface" "bash '$SCRIPT_DIR/tests/cli/test_cli'"
+	run_suite "CLI Surface" "$NIXDEV bash '$SCRIPT_DIR/tests/cli/test_cli'"
 fi
 
 # Integration tests — add as they're written.

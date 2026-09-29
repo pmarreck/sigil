@@ -134,7 +134,7 @@ export fn sigil_public_key_from_text(
 }
 
 export fn sigil_version() [*:0]const u8 {
-    return "0.1.0";
+    return sigil.version;
 }
 
 export fn sigil_signature_len() usize {
@@ -315,11 +315,11 @@ test "FFI: a bad envelope yields a specific code, and every code has a message" 
     // Every code this API can return must have its own message; a caller that
     // prints sigil_strerror() should never show the same text for two causes.
     const codes = [_]c_int{
-        SIGIL_OK,                        SIGIL_ERR_BAD_SIGNATURE,
-        SIGIL_ERR_BAD_PUBLIC_KEY,        SIGIL_ERR_NULL_ARGUMENT,
-        SIGIL_ERR_MALFORMED_JSON,        SIGIL_ERR_MISSING_FIELD,
-        SIGIL_ERR_UNSUPPORTED_SIGTYPE,   SIGIL_ERR_MALFORMED_ENCODING,
-        SIGIL_ERR_BAD_SIGNATURE_LENGTH,  SIGIL_ERR_BUFFER_TOO_SMALL,
+        SIGIL_OK,                       SIGIL_ERR_BAD_SIGNATURE,
+        SIGIL_ERR_BAD_PUBLIC_KEY,       SIGIL_ERR_NULL_ARGUMENT,
+        SIGIL_ERR_MALFORMED_JSON,       SIGIL_ERR_MISSING_FIELD,
+        SIGIL_ERR_UNSUPPORTED_SIGTYPE,  SIGIL_ERR_MALFORMED_ENCODING,
+        SIGIL_ERR_BAD_SIGNATURE_LENGTH, SIGIL_ERR_BUFFER_TOO_SMALL,
         SIGIL_ERR_OUT_OF_MEMORY,
     };
     for (codes, 0..) |a_code, i| {

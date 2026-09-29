@@ -399,13 +399,17 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       passphrase-protected), (d) update keys deferred, (e) confirmation key
       own Worker, (f) SHARED issuer Worker. Custody doc v1.3 records it.
       — 2026-09-28 19:10 EDT
-- [ ] Cold-copy QR/PDF export (Peter (c)): sealed keyfile + sealed hot bundle
+- [x] Cold-copy QR/PDF export (Peter (c)): sealed keyfile + sealed hot bundle
       as QR codes in one printable PDF, base64 text printed beneath for
       manual re-entry; the sealed bytes are already passphrase-encrypted so
       paper needs no second secret. Peter picked (2026-09-28 22:32 EDT) the
       cleanroom Zig QR encoder + minimal PDF writer, zbarimg/poppler as
       independent oracles AND his own eyes on the render; base64 must be
-      real selectable text; page carries identifying text. IN PROGRESS.
+      real selectable text; page carries identifying text. SHIPPED as
+      `sigil paper` (src/qr.zig, src/pdf.zig, src/paper.zig): oracles qpdf,
+      pdfinfo/pdftotext (selectable base64 decodes to the artifact),
+      pdftoppm+zbarimg (QR decodes to the artifact); Peter's visual check
+      pending. — 2026-09-28 23:05 EDT
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file

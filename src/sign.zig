@@ -909,6 +909,8 @@ test "the shipped KDF defaults are the strong ones" {
 
 test {
     _ = @import("qr.zig");
+    _ = @import("pdf.zig");
+    _ = @import("paper.zig");
 }
 
 // ── Hot bundle: the sealed restore-to-online artifact ───────────────────────

@@ -53,6 +53,8 @@ it drops into a JSON string with no escaping. (That property is swept over all
 $ sigil keygen --out mecha.key          # writes mecha.key (encrypted) + mecha.key.pub
 $ sigil keygen --out mecha.key --hot-bundle-out mecha.hot.sealed   # + sealed PKCS#8 recovery bundle
 $ sigil hot-bundle open mecha.hot.sealed | wrangler secret put SIGNING_KEY   # restore-to-online; stdout only, never a file
+$ sigil paper --key mecha.key --hot-bundle mecha.hot.sealed --pubkey mecha.key.pub \
+      --label "Mecha Validate paid-license" --out mecha-cold-copy.pdf   # printable QR + base64 cold copies
 $ sigil sign license.toml --key mecha.key --out license.sigil
 $ sigil verify license.sigil --pubkey mecha.key.pub
 customer_email = "peter@example.com"

@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <time.h>
 
 #if defined(_WIN32)
 #include <io.h>
@@ -323,11 +324,14 @@ static int usage(FILE *out) {
 		"  keygen --out <keyfile>              mint a new signing key\n"
 		"  pubkey --key <keyfile>              print the public key to embed\n"
 		"  hot-bundle open <bundle>            sealed PKCS#8 recovery bundle -> PEM on stdout\n"
+		"  paper --key <keyfile> [--hot-bundle <bundle>] [--pubkey <path>]\n"
+		"        --label <text> --out <pdf>    printable QR cold copies, one page each\n"
 		"\n"
 		"Common options:\n"
 		"  -o, --out <path>       where to write; '-'/'@stdout' for standard output\n"
 		"      --passphrase-file <path>   read the passphrase instead of prompting\n"
 		"      --hot-bundle-out <path>    keygen: also write the sealed recovery bundle\n"
+		"      --date <YYYY-MM-DD>        paper: the date printed on the page (default today)\n"
 		"      --json             machine-readable result on stdout\n"
 		"  -q, --quiet            no status output; rely on the exit code\n"
 		"      --no-color         never emit ANSI color\n"
@@ -376,6 +380,9 @@ typedef struct {
 	const char *out;
 	const char *pubkey_out;
 	const char *hot_bundle_out;  /* keygen: also write the sealed recovery bundle */
+	const char *hot_bundle;      /* paper: the sealed bundle to print */
+	const char *label;           /* paper: identifying text */
+	const char *date;            /* paper: YYYY-MM-DD, else today */
 	const char *passphrase_file;
 	const char *format;
 	int json;
@@ -425,6 +432,9 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 			else if (!strcmp(a, "--out") || !strcmp(a, "-o")) { NEEDS_VALUE(a); o->out = argv[++i]; }
 			else if (!strcmp(a, "--pubkey-out"))     { NEEDS_VALUE(a); o->pubkey_out = argv[++i]; }
 			else if (!strcmp(a, "--hot-bundle-out")) { NEEDS_VALUE(a); o->hot_bundle_out = argv[++i]; }
+			else if (!strcmp(a, "--hot-bundle"))     { NEEDS_VALUE(a); o->hot_bundle = argv[++i]; }
+			else if (!strcmp(a, "--label"))          { NEEDS_VALUE(a); o->label = argv[++i]; }
+			else if (!strcmp(a, "--date"))           { NEEDS_VALUE(a); o->date = argv[++i]; }
 			else if (!strcmp(a, "--passphrase-file")){ NEEDS_VALUE(a); o->passphrase_file = argv[++i]; }
 			else if (!strcmp(a, "--format") || !strcmp(a, "-f")) { NEEDS_VALUE(a); o->format = argv[++i]; }
 			else if (!strcmp(a, "--json"))           { o->json = 1; }
@@ -841,6 +851,130 @@ done:
 	return status;
 }
 
+/* ── paper ──────────────────────────────────────────────────────────────── */
+
+static const char *basename_of(const char *p) {
+	const char *s = strrchr(p, '/');
+#if defined(_WIN32)
+	const char *b = strrchr(p, '\\');
+	if (b && (!s || b > s)) s = b;
+#endif
+	return s ? s + 1 : p;
+}
+
+static int is_iso_date(const char *d) {
+	if (strlen(d) != 10 || d[4] != '-' || d[7] != '-') return 0;
+	for (int i = 0; i < 10; i++) {
+		if (i == 4 || i == 7) continue;
+		if (d[i] < '0' || d[i] > '9') return 0;
+	}
+	return 1;
+}
+
+/* `paper`: printable cold copies of sealed artifacts (custody contract v1.3
+ * (c)). Reads sealed bytes only; no passphrase, nothing decrypted. The date
+ * is the one clock read in this file, and --date overrides it so the output
+ * is reproducible. */
+static int cmd_paper(int argc, char *argv[]) {
+	Opts o = {0};
+	int rc = parse_opts(argc, argv, 2, &o);
+	if (rc == EX_HELP_REQUESTED) return EX_OK;
+	if (rc != EX_OK) return rc;
+
+	if (!o.key && !o.hot_bundle) { die_usage("paper needs --key <keyfile> and/or --hot-bundle <bundle>", NULL); return EX_USAGE; }
+	if (!o.label) { die_usage("paper needs --label <text> saying what the key is for", NULL); return EX_USAGE; }
+	if (!o.out)   { die_usage("paper needs --out <pdf> ('-' for stdout)", NULL); return EX_USAGE; }
+	if (o.date && !is_iso_date(o.date)) { die_usage("--date must be YYYY-MM-DD", o.date); return EX_USAGE; }
+
+	char today[11];
+	const char *date = o.date;
+	if (!date) {
+		time_t now = time(NULL);
+		struct tm *lt = localtime(&now);
+		if (!lt || strftime(today, sizeof today, "%Y-%m-%d", lt) != 10) {
+			fputs("sigil: cannot read today's date; pass --date\n", stderr);
+			return EX_IOERR;
+		}
+		date = today;
+	}
+
+	unsigned char *key = NULL, *bundle = NULL, *pubtext = NULL;
+	size_t key_len = 0, bundle_len = 0, pubtext_len = 0;
+	unsigned char pk[64];
+	int have_pk = 0;
+	char *pdf = NULL;
+	int status = EX_IOERR;
+
+	if (o.key) {
+		rc = read_all(o.key, &key, &key_len);
+		if (rc != EX_OK) { status = rc; goto done; }
+	}
+	if (o.hot_bundle) {
+		rc = read_all(o.hot_bundle, &bundle, &bundle_len);
+		if (rc != EX_OK) { status = rc; goto done; }
+	}
+	if (o.pubkey) {
+		rc = read_all(o.pubkey, &pubtext, &pubtext_len);
+		if (rc != EX_OK) { status = rc; goto done; }
+		int r = sigil_public_key_from_text((const char *)pubtext, pubtext_len, pk);
+		if (r != SIGIL_OK) {
+			fprintf(stderr, "sigil: %s is not a public key: %s\n", o.pubkey, sigil_strerror(r));
+			status = EX_USAGE;
+			goto done;
+		}
+		have_pk = 1;
+	}
+
+	sigil_paper_artifact arts[2];
+	size_t n = 0;
+	if (key) {
+		arts[n].kind = SIGIL_PAPER_KEYFILE;
+		arts[n].label = o.label;
+		arts[n].filename = basename_of(o.key);
+		arts[n].bytes = key;
+		arts[n].bytes_len = key_len;
+		arts[n].pubkey = have_pk ? pk : NULL;
+		n++;
+	}
+	if (bundle) {
+		arts[n].kind = SIGIL_PAPER_HOT_BUNDLE;
+		arts[n].label = o.label;
+		arts[n].filename = basename_of(o.hot_bundle);
+		arts[n].bytes = bundle;
+		arts[n].bytes_len = bundle_len;
+		arts[n].pubkey = have_pk ? pk : NULL;
+		n++;
+	}
+
+	size_t cap = 256u * 1024u, pdf_len = 0;
+	pdf = malloc(cap);
+	if (!pdf) { fputs("sigil: out of memory\n", stderr); goto done; }
+	int r = sigil_paper_render(arts, n, date, pdf, cap, &pdf_len);
+	if (r == SIGIL_ERR_BUFFER_TOO_SMALL) {
+		char *bigger = realloc(pdf, pdf_len);
+		if (!bigger) { fputs("sigil: out of memory\n", stderr); goto done; }
+		pdf = bigger;
+		cap = pdf_len;
+		r = sigil_paper_render(arts, n, date, pdf, cap, &pdf_len);
+	}
+	if (r != SIGIL_OK) {
+		fprintf(stderr, "sigil: %s%s%s cannot render the page: %s\n", C_BAD, mark_bad(), C_OFF,
+			sigil_sign_strerror(r));
+		status = (r == SIGIL_ERR_TOO_LARGE_FOR_QR) ? EX_DATAERR : EX_IOERR;
+		goto done;
+	}
+
+	status = write_all(o.out, pdf, pdf_len, o.force ? 0 : WRITE_EXCLUSIVE);
+	if (status != EX_OK) goto done;
+	note("%s%s%s wrote %s: %zu page%s (%zu bytes). Print it, check the QR scans, store it.\n",
+		C_OK, mark_ok(), C_OFF, o.out, n, n == 1 ? "" : "s", pdf_len);
+	status = EX_OK;
+
+done:
+	free(key); free(bundle); free(pubtext); free(pdf);
+	return status;
+}
+
 /* ── main ───────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
@@ -864,6 +998,7 @@ int main(int argc, char *argv[]) {
 	if (!strcmp(cmd, "keygen")) return cmd_keygen(argc, argv);
 	if (!strcmp(cmd, "pubkey")) return cmd_pubkey(argc, argv);
 	if (!strcmp(cmd, "hot-bundle")) return cmd_hot_bundle(argc, argv);
+	if (!strcmp(cmd, "paper")) return cmd_paper(argc, argv);
 
 	fprintf(stderr, "sigil: unknown command: %s\n", argv[1]);
 	usage(stderr);

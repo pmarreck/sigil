@@ -17,6 +17,8 @@ const Ed25519 = std.crypto.sign.Ed25519;
 const Edwards25519 = std.crypto.ecc.Edwards25519;
 const transcript = @import("transcript.zig");
 
+pub const version = "0.1.0";
+
 pub const public_key_len = Ed25519.PublicKey.encoded_length;
 pub const signature_len = Ed25519.Signature.encoded_length;
 
