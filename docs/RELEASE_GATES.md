@@ -52,9 +52,20 @@ index (owner tests exist; reviewer coverage gap, not a defect).
 
 ## B. Genuinely open — owner-assigned
 
-- validate: reproduce the 58c033e30 test-trust rebuild difference
-  (d5257b77... nominated vs 9925c623... rebuilt) and land a deterministic
-  build control; re-nominate with repeated independent builds.
+- validate: REPRODUCIBILITY FIXED at 569808119 (reported 2026-09-29 01:06
+  EDT): cause was Zig 0.16 cache-directory names (order-dependent) reaching
+  RUNPATH/.debug_line and archive member names; installPhase now re-adds
+  archive members under basenames; the Nix build fails if a `_zcu.o`
+  member keeps a `.zig-cache` path or bin/validate embeds `zig-cache/o/`.
+  Test-trust bin/validate sha256 b6e1db792c6452a997353b3c6315fe63dee4f78e
+  b69110bdd3c172145d98c6fb, narHash sha256-PQ+pXThIuLEa2lqyMCq/YUGyZKC7l+8q
+  X/wq2fmUZAQ=; three bit-identical builds by validate (evidence under
+  /mnt/devcache/tmp-validate-chain/repro/evidence-569808119/). Sigil runs
+  its own independent rebuild (result recorded below when done). NOT YET A
+  CANDIDATE: validate must nominate per section 12 (four unrelated
+  behaviour changes landed since 58c033e30), the red team revalidates per
+  section C, then commerce re-pins. 58c033e30 remains the last accepted
+  candidate, its evidence bound to the d5257b77 artifact only.
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
   freshness exception (71a229207) can be accepted; keep every new export

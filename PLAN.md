@@ -414,6 +414,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       put-if-absent; retries reuse day-one bytes) and per-product roles
       (3c237a4) landed; live paid issuance still gated on Peter's D1-vs-DO
       durable adapter + ceremony. Recorded in RELEASE_GATES. — 2026-09-28 23:30 EDT
+- [ ] Independent rebuild of validate 569808119 test-trust: compare
+      bin/validate sha256 to b6e1db79...c6fb across a fresh build and a
+      --rebuild; record in RELEASE_GATES (started 2026-09-29 01:10 EDT,
+      background, log in scratchpad).
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
