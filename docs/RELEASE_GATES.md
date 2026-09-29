@@ -68,9 +68,17 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   Caveat: every agent runs on the one Thelio host, so "independent" here
   means separate sandboxed rebuilds by separate agents, not a second
   machine; the first fetch on each was a store hit on validate's own
-  output. NOT YET A CANDIDATE: validate must nominate per section 12 (four unrelated
-  behaviour changes landed since 58c033e30), the red team revalidates per
-  section C, then commerce re-pins. 58c033e30 remains the last accepted
+  output. NOMINATED by validate under section 12 (mail 2026-09-29 05:19Z):
+  x86_64-linux; production `default` bin bae78058...ec75 (no license keys
+  embedded, refuses every protected operation) and test-trust bin
+  b6e1db79...c6fb (embeds test_beta/test_paid .pub, file sha256
+  5683efb3...f8b2 / 8125b9b1...8b98, unchanged since 58c033e30); each built
+  once and rebuilt twice bit-identically. Section C scope per the owner: 93
+  commits since 58c033e30; license_gate.zig and fixtures unchanged; 6
+  commits in ffi/c_api.zig + cli/main.c (depth levels, --test-coverage,
+  --strict, precedence test), no admission code changed; the rest is
+  validator behaviour. Relayed to the red team with the acceptance target
+  set; commerce re-pins only after acceptance. REVIEW PENDING. 58c033e30 remains the last accepted
   candidate, its evidence bound to the d5257b77 artifact only.
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
