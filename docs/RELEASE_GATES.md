@@ -83,11 +83,14 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); move the E2E suite's validate pin to the latest
   accepted candidate (58c033e30) with the external-hash assertion.
-- sigil: `keygen --hot-bundle-out` + `hot-bundle open` and the ceremony
-  preflight (on Peter's yes to custody (b)); vector regeneration only on
-  a coordinated schema bump.
-- Peter: custody decisions (a)–(f); key ceremony; D1-vs-Durable-Object;
-  real-send authorization; mecha_policy Mechatron webhook.
+- sigil: `keygen --hot-bundle-out` + `hot-bundle open` SHIPPED 380cd22 and
+  `sigil paper` cold copies SHIPPED aae83d4 (2026-09-28; Peter's visual
+  approval of the render pending); ceremony preflight script still to
+  write; vector regeneration only on a coordinated schema bump.
+- Peter: custody DECIDED 2026-09-28 (all six); still his: key ceremony;
+  D1-vs-Durable-Object; real-send authorization; mecha_policy Mechatron
+  webhook; update-contract questions (delta shape, channel switch,
+  RotShield namespace).
 
 ## C. Revalidation required before ANY release clearance
 
