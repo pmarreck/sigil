@@ -48,8 +48,13 @@ execute; C8 adjustments recorded, no issuance. C3 INDEPENDENTLY confirms
 the live-paid blocker: a later-day paid re-process would mint a new
 purchase_date (Phase D).
 
-Not independently rerun on any pin: malformed pack trailer, truncated
-index (owner tests exist; reviewer coverage gap, not a defect).
+Malformed pack trailer and truncated pack index: EXECUTED by the reviewer on
+569808119 test-trust b6e1db79 (2026-09-29 05:25Z; licensed, git on PATH,
+one-commit scratch repo after `git repack -a -d`). Baseline valid=true at
+full depth with connectivity reached; last pack byte flipped -> rc=1,
+valid=false, "Corrupt objects detected", depth structural; .idx truncated
+to 20 bytes -> same. Both refuse a full-depth pass. No reviewer gap remains
+on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
 
 ## B. Genuinely open — owner-assigned
 
@@ -86,9 +91,9 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   pin); land popen exit-status handling + regression so the PLAN-only
   freshness exception (71a229207) can be accepted; keep every new export
   in `docs/LICENSE_ENTRYPOINTS.md` before nomination.
-- mecha_license_redteam: rerun malformed pack-trailer / truncated-index
-  probes on the latest accepted candidate; nothing else outstanding on
-  Linux x86_64.
+- mecha_license_redteam: nothing outstanding on Linux x86_64 (pack-trailer
+  and truncated-index probes executed on 569808119, 2026-09-29); other
+  OS/arch cells unexecuted for every candidate.
 - validate_gui: repin to a post-fix validate (currently 639aaaad1, which
   predates the spawn fix); real-backend generated-repository tests
   (observable git execution, missing tool, honest depth); licensing
