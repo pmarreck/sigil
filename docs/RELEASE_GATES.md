@@ -166,8 +166,15 @@ GUI repins and re-nominates.
 
 Commerce linkage: the E2E suite must pin the latest ACCEPTED candidate
 and assert its external hash; issued fixtures must hash-match sigil's.
-Status 2026-09-23: mecha-commerce 8ef3a56 pins validate 58c033e30
-test-trust (bin d5257b77... asserted by external SHA-256), sigil 12baa15,
+Status 2026-09-29: mecha-commerce ded939845ce65eaff9c5d89da859c967d91167b7
+(E11d) pins validate 569808119 test-trust (bin b6e1db79...c6fb asserted by
+external exact-byte SHA-256, still blocking), sigil and mecha_policy
+unchanged; only the validate flake input moved (narHash
+sha256-ESz7LghtdUNRrfHvoq/fF2+YcXC6Ajq06iyNljGr6G8=); commit body cites
+the out path, narHash, lib hash and all three rebuild results. Mechatron
+PASS mecha-commerce@ded9398, finished 2026-09-29T05:28:09Z, verified by
+sigil via mechatron-ci log; 14 suites incl. the E10 identity guard.
+Previous: 8ef3a56 pinned 58c033e30 (d5257b77), sigil 12baa15,
 mecha_policy 1603f7a; issued fixtures unchanged and still hash-match
 (drift test). Protocol: on each accepted nomination the lead mails
 commerce the pin + test-trust bin hash; the move is one reviewed commit.

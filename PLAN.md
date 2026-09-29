@@ -423,8 +423,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       standard as 58c033e30 (pack-trailer/truncated-index probes remain the
       reviewer's open gap). RELEASE_GATES section A row added; pin + hash
       mailed to commerce (E11d) and validate_gui. — 2026-09-29 01:30 EDT
-- [ ] On commerce's E11d commit: confirm Mechatron PASS and record it in
-      RELEASE_GATES commerce linkage.
+- [x] Commerce E11d ded9398 re-pins E10 to validate 569808119 test-trust;
+      Mechatron PASS 05:28:09Z verified by sigil; recorded in RELEASE_GATES.
+      — 2026-09-29 01:32 EDT
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file
