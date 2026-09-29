@@ -419,9 +419,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       commerce's two rebuilds agree; shared-host caveat recorded in
       RELEASE_GATES. Next: validate nominates per §12, red team accepts,
       sigil relays the pin, commerce moves it. — 2026-09-29 01:22 EDT
-- [ ] validate 569808119 nomination RELAYED to the red team (2026-09-29
-      01:30 EDT); on acceptance: mail commerce the pin + test-trust hash,
-      update RELEASE_GATES section A, notify validate_gui to repin.
+- [x] validate 569808119 ACCEPTED by the red team (05:23Z) on the same
+      standard as 58c033e30 (pack-trailer/truncated-index probes remain the
+      reviewer's open gap). RELEASE_GATES section A row added; pin + hash
+      mailed to commerce (E11d) and validate_gui. — 2026-09-29 01:30 EDT
+- [ ] On commerce's E11d commit: confirm Mechatron PASS and record it in
+      RELEASE_GATES commerce linkage.
 - [x] `sigil keygen --hot-bundle-out` + `sigil hot-bundle open` SHIPPED
       2026-09-28 19:10 EDT (TDD: opened PKCS#8 public half == .pub;
       ROLE.key alone still cannot be opened into a seed; no plaintext file

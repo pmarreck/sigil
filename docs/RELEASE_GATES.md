@@ -30,6 +30,7 @@ pass repeated independent builds before any fresh artifact is accepted.
 | 357301648 | Git section 11 CLOSED: fsck executes with captured heads only; reviewer's shim committed mid-unit and the running unit judged only its capture; late-only missing-tree probe passed. Residual non-repo verdict fixed in ordinary pin 87be07bd5. | candidate-357301648-linux-x86_64.md |
 | 13adfe3f4 | New export `validate_test_coverage_map` GATED over the C ABI; cap and start_round behavior verified. | candidate-13adfe3f4-linux-x86_64.md |
 | 58c033e30 | Range contract + PRECEDENCE CLOSED (unlicensed bad args → auth_missing, never invalid_argument); E2 re-run clean. Pins mecha_policy 1603f7a, sigil 12baa15. **Latest accepted candidate.** | candidate-58c033e30-linux-x86_64.md |
+| 569808119 | ACCEPTED 2026-09-29 (01:23 EDT): first REPRODUCIBLE candidate (owner built once + rebuilt twice; sigil and commerce sandboxed rebuilds agree; build-time control against .zig-cache leakage). Reviewer: independent sha256 of all four store files MATCH; licensing diff since 58c033e30 EMPTY (gate, fixtures, no new exports); byte-scan production bae78058 ABSENT all four test/demo pubkeys, test-trust b6e1db79 PRESENT beta+paid only; E2, precedence, last-byte clamp, start=EOF, mixed modes, expiry 10-17/10-18 all re-run and hold. Reviewer did not run a third nix build. Supersedes 58c033e30 as the accepted candidate; the test-trust bin b6e1db792c6452a997353b3c6315fe63dee4f78eb69110bdd3c172145d98c6fb is the pin commerce and validate_gui move to. | candidate-569808119-linux-x86_64.md |
 
 Commerce (issuer side): bb134a0 / b902c46 — producer-reported E2E
 integration against validate 0a89aaa1b test-trust (external artifact
@@ -39,7 +40,7 @@ at bb134a0 (six envelopes, byte-identical to sigil's). Not a gate
 candidate; no findings against the issuer beyond its differential.
 Reviewer source review of 8ef3a56 (2026-09-23, C-class, no binary,
 findings/candidate-commerce-8ef3a56.md): fixtures 6/6 hash-match; lock
-pins match; C1 routes are only /health, /pubkeys, POST /paddle/webhook
+pins match (status 2026-09-29: accepted candidate is now validate 569808119; commerce E11d re-pin pending); C1 routes are only /health, /pubkeys, POST /paddle/webhook
 with issuance only from transaction.completed; C2 signature before
 admission; C4 attachment-only delivery; C5 beta EXISTING keeps prior
 grant; C6 resend delivers the stored envelope; C7 dry-run before
@@ -78,7 +79,8 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   commits in ffi/c_api.zig + cli/main.c (depth levels, --test-coverage,
   --strict, precedence test), no admission code changed; the rest is
   validator behaviour. Relayed to the red team with the acceptance target
-  set; commerce re-pins only after acceptance. REVIEW PENDING. 58c033e30 remains the last accepted
+  set; ACCEPTED by the red team 2026-09-29 05:23Z (row above); pin + hash
+  relayed to commerce (E11d) and validate_gui (repin target). 58c033e30 remains the last accepted
   candidate, its evidence bound to the d5257b77 artifact only.
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
