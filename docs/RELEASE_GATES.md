@@ -60,9 +60,15 @@ index (owner tests exist; reviewer coverage gap, not a defect).
   Test-trust bin/validate sha256 b6e1db792c6452a997353b3c6315fe63dee4f78e
   b69110bdd3c172145d98c6fb, narHash sha256-PQ+pXThIuLEa2lqyMCq/YUGyZKC7l+8q
   X/wq2fmUZAQ=; three bit-identical builds by validate (evidence under
-  /mnt/devcache/tmp-validate-chain/repro/evidence-569808119/). Sigil runs
-  its own independent rebuild (result recorded below when done). NOT YET A
-  CANDIDATE: validate must nominate per section 12 (four unrelated
+  /mnt/devcache/tmp-validate-chain/repro/evidence-569808119/). Sandboxed
+  `--rebuild` checks: mecha-commerce twice (05:07-05:15Z, both exit 0, no
+  determinism warning; record in their docs/plan_context/phase_e11.md at
+  da57a46) and sigil once (01:07-01:19 EDT, exit 0, log clean), all
+  agreeing on bin b6e1db79...c6fb, lib 91263546...46d2 and the narHash.
+  Caveat: every agent runs on the one Thelio host, so "independent" here
+  means separate sandboxed rebuilds by separate agents, not a second
+  machine; the first fetch on each was a store hit on validate's own
+  output. NOT YET A CANDIDATE: validate must nominate per section 12 (four unrelated
   behaviour changes landed since 58c033e30), the red team revalidates per
   section C, then commerce re-pins. 58c033e30 remains the last accepted
   candidate, its evidence bound to the d5257b77 artifact only.
