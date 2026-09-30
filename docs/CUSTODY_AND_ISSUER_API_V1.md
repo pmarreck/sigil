@@ -146,6 +146,17 @@ scope in the registry commit.
   never the envelope, email or name.
 - Rate-limited per entitlement and caller; no bulk path except the
   audited beta command.
+- Ruling (lead, 2026-09-29 20:10 EDT, on commerce's question): section 5
+  stands unamended for the beta command. A route that signs
+  operator-supplied FIELDS is a signing oracle behind auth (a compromised
+  operator host or credential could mint arbitrary grants within the role);
+  the beta command therefore writes entitlements into the durable Worker
+  ledger through an authenticated, audited admin path and mints ONLY via
+  `issueForEntitlement`. Consequence: durable Worker storage IS
+  beta-critical (one table). D1 vs Durable Object remains Peter's choice;
+  absent his answer by Oct 2 the default is D1, one table, put-if-absent
+  (`INSERT ... ON CONFLICT DO NOTHING`), which is also commerce's and
+  Einstein's recommendation. The in-memory ledger stays test-only.
 
 ## 6. Confirmation endpoint bounds (PROPOSED, scope per correction 5)
 

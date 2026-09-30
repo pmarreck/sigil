@@ -434,6 +434,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       milestones); docs/KEY_REGISTRY.md template. — 2026-09-29 20:30 EDT
 - [ ] Oct 2: preflight green on the ceremony host with Peter; ceremony
       scheduled (Peter's action; sigil verifies outputs afterwards).
+- [x] Custody §5 RULED (2026-09-29 20:10 EDT): no amendment; beta command
+      persists entitlements durably and mints via issueForEntitlement; durable
+      Worker storage is BETA-CRITICAL (corrects my earlier "paid only"); D1
+      one-table default if Peter has not chosen by Oct 2.
 - [ ] After the ceremony: verify registry row + identity-check outputs;
       relay the production `.pub` to validate and commerce; then the
       production-trust positive control per KEY_CEREMONY_V1 section 4.
