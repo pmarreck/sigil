@@ -98,8 +98,9 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
 - mecha_license_redteam: nothing outstanding on Linux x86_64 (pack-trailer
   and truncated-index probes executed on 569808119, 2026-09-29); other
   OS/arch cells unexecuted for every candidate.
-- validate_gui: repin to a post-fix validate (currently 639aaaad1, which
-  predates the spawn fix); real-backend generated-repository tests
+- validate_gui: repin to the accepted core 569808119 or a later accepted
+  one (corrected 2026-09-30: the pushed, CI-green GUI is b646df0 on core
+  b950319b; 639aaaad1 is only the unchanged Framework preview); real-backend generated-repository tests
   (observable git execution, missing tool, honest depth); licensing
   adapters (import/status/About consuming the core decision); then first
   nomination with exact pin + GUI/backend evidence.
