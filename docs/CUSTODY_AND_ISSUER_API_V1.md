@@ -157,6 +157,34 @@ scope in the registry commit.
   absent his answer by Oct 2 the default is D1, one table, put-if-absent
   (`INSERT ... ON CONFLICT DO NOTHING`), which is also commerce's and
   Einstein's recommendation. The in-memory ledger stays test-only.
+- Ruling (lead, 2026-09-29 20:25 EDT, on the audited beta command shape):
+  ACCEPTED as proposed with two changes. (1) `purchase_date` is NOT a
+  request field: the Worker's UTC date at mint is the purchase date, so
+  an operator cannot back- or forward-date an expiry; dry-run previews
+  may show any date locally. (2) The admin routes are class-bound to the
+  beta role for the product named; no operator credential can request the
+  paid class through them. Confirmed: entitlement id
+  `ent_beta_<product>_<canonical-email>` (one grant per product and
+  person, never extended), gap-free `beta_NNNN` refs from the ledger,
+  `putEntitlement` then `issueForEntitlement`, resend never mints,
+  responses carry no envelope, name or key material, per-route rate
+  limits, bounded bodies, 404 fail-closed when no operator credential is
+  configured, admin audit rows (operator id, route, product, cohort,
+  count, time) beside the mint audit.
+  Operator authentication: (a) bearer secret for the October 15 beta,
+  with bounds: `OPERATOR_TOKEN` (32 random bytes) held only in the
+  operator's environment on the attended host, never in a file in any
+  repo, constant-time compare, rotated after the beta cohort is sent.
+  Blast radius of a host compromise = beta invitations for one product,
+  one month, audited, revocable by retiring the beta key. (b) sigil-signed
+  operator requests are REQUIRED before any admin route can reach a paid
+  role (paid-era admin path): envelope over exact bytes of
+  `{"body_sha256":"<hex>","expires":"<UTC RFC 3339 seconds, at most 300 s ahead>","nonce":"<16 random bytes hex>","route":"<method path>","v":"1"}`
+  (keys in that order), verified in the Worker under an `OPERATOR_PUBKEY`
+  var by a sigil-conformant verifier (commerce's pending JS verifier),
+  nonce uniqueness enforced in the ledger, expired or replayed requests
+  refused before any ledger write. The operator keyfile is cold-copied
+  like every other role.
 
 ## 6. Confirmation endpoint bounds (PROPOSED, scope per correction 5)
 

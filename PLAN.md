@@ -438,6 +438,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       persists entitlements durably and mints via issueForEntitlement; durable
       Worker storage is BETA-CRITICAL (corrects my earlier "paid only"); D1
       one-table default if Peter has not chosen by Oct 2.
+- [x] Beta command shape + operator auth RULED (2026-09-29 20:25 EDT):
+      accepted; no purchase_date in requests; routes class-bound to beta;
+      bearer (a) for Oct 15 with bounds and post-cohort rotation; sigil-signed
+      operator requests (b) required before any paid-role admin route,
+      envelope shape fixed in custody §5.
 - [ ] After the ceremony: verify registry row + identity-check outputs;
       relay the production `.pub` to validate and commerce; then the
       production-trust positive control per KEY_CEREMONY_V1 section 4.
