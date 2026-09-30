@@ -185,6 +185,10 @@ scope in the registry commit.
   nonce uniqueness enforced in the ledger, expired or replayed requests
   refused before any ledger write. The operator keyfile is cold-copied
   like every other role.
+  Transport (commerce dbe1838, accepted 2026-09-30): the envelope text
+  travels in an `X-Sigil-Request` header, UTF-8 bytes base64url-encoded
+  without padding; the Worker decodes, refuses non-base64url, then
+  verifies. The signed bytes are unchanged by the transport.
 
 ## 6. Confirmation endpoint bounds (PROPOSED, scope per correction 5)
 
