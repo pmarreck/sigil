@@ -70,10 +70,12 @@ if [[ -x "$SIGIL" ]]; then
 else
 	bad "sigil binary not found at $SIGIL (run ./build)"
 fi
-for t in randompassdict openssl zbarimg pdftotext pdftoppm qpdf; do
+if command -v randompassdict >/dev/null 2>&1; then ok "randompassdict on PATH"
+else warn "randompassdict not on PATH (needed at the ceremony for the passphrases; not an oracle)"; fi
+for t in openssl zbarimg pdftotext pdftoppm qpdf; do
 	if command -v "$t" >/dev/null 2>&1; then ok "$t on PATH"
 	elif [[ $REHEARSE -eq 1 ]]; then bad "$t on PATH (required: the rehearsal's independent oracle)"
-	else warn "$t not on PATH (needed at the ceremony: passphrases, identity check, paper verification)"; fi
+	else warn "$t not on PATH (needed at the ceremony: identity check, paper verification)"; fi
 done
 if command -v wrangler >/dev/null 2>&1; then ok "wrangler on PATH"
 else warn "wrangler not on PATH (needed only for the Worker restore step, commerce's account)"; fi

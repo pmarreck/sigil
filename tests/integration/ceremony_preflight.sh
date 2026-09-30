@@ -19,20 +19,21 @@ echo "ceremony preflight tests — $PRE"
 if [[ ! -x "$PRE" ]]; then fail "ceremony-preflight exists and is executable"; echo "$PASS passed, $FAIL failed"; exit 1; fi
 pass "ceremony-preflight exists and is executable"
 
-"$PRE" --help > "$WORK/help.txt" 2>&1; rc=$?
+bash "$PRE" --help > "$WORK/help.txt" 2>&1; rc=$?
 [[ $rc -eq 0 ]] && pass "--help exits 0" || fail "--help exits 0" "rc=$rc"
 grep -q -- '--rehearse' "$WORK/help.txt" && pass "--help documents --rehearse" || fail "--help documents --rehearse"
 
 # Checks-only mode never fails on host residuals it cannot verify; it reports them.
-"$PRE" --sigil "$SIGIL" --work "$WORK/checks" > "$WORK/checks.txt" 2>&1; rc=$?
-grep -q -i 'residual' "$WORK/checks.txt" && pass "checks mode names the residual assumptions it cannot verify" || fail "checks mode names the residual assumptions it cannot verify"
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/checks" > "$WORK/checks.txt" 2>&1; rc=$?
+# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+grep -q -i 'residual' "$WORK/checks.txt" && pass "checks mode names the residual assumptions it cannot verify" || fail "checks mode names the residual assumptions it cannot verify" "rc=$rc; output: $(head -c 1500 "$WORK/checks.txt" | tr '\n' '|')"
 grep -q -i 'swap' "$WORK/checks.txt" && pass "checks mode reports swap state" || fail "checks mode reports swap state"
 grep -q -i 'core dump' "$WORK/checks.txt" && pass "checks mode reports the core-dump limit" || fail "checks mode reports the core-dump limit"
 grep -q -i 'tmpdir' "$WORK/checks.txt" && pass "checks mode reports TMPDIR's filesystem" || fail "checks mode reports TMPDIR's filesystem"
 grep -q 'sigil ' "$WORK/checks.txt" && pass "checks mode reports the sigil build it will use" || fail "checks mode reports the sigil build it will use"
 
 # Rehearsal: TEST keys only, oracles required, nothing left behind.
-"$PRE" --sigil "$SIGIL" --work "$WORK/reh" --rehearse > "$WORK/reh.txt" 2>&1; rc=$?
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh" --rehearse > "$WORK/reh.txt" 2>&1; rc=$?
 if [[ $rc -eq 0 ]]; then pass "rehearsal exits 0 with every oracle on PATH"
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 else fail "rehearsal exits 0 with every oracle on PATH" "rc=$rc; $(tail -5 "$WORK/reh.txt" | tr '\n' '|')"; fi
@@ -46,14 +47,16 @@ left=$(wc -l < "$WORK/left.txt"); left=${left//[[:space:]]/}
 
 # A missing oracle FAILS the rehearsal rather than skipping it.
 mkdir -p "$WORK/nopath"; printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nopath/zbarimg"; chmod +x "$WORK/nopath/zbarimg"
-PATH="$WORK/nopath:$PATH" "$PRE" --sigil "$SIGIL" --work "$WORK/reh2" --rehearse > "$WORK/reh2.txt" 2>&1; rc=$?
-[[ $rc -ne 0 ]] && pass "a broken zbar oracle fails the rehearsal" || fail "a broken zbar oracle fails the rehearsal"
+PATH="$WORK/nopath:$PATH" bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh2" --rehearse > "$WORK/reh2.txt" 2>&1; rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'FAIL.*zbar' "$WORK/reh2.txt"; then pass "a broken zbar oracle fails the rehearsal and names zbar"
+else fail "a broken zbar oracle fails the rehearsal and names zbar" "rc=$rc"; fi
 grep -q 'REHEARSAL PASSED' "$WORK/reh2.txt" && fail "a failed rehearsal never prints REHEARSAL PASSED" || pass "a failed rehearsal never prints REHEARSAL PASSED"
 
 # --strict promotes host residual warnings to failures only when they are real
 # failures; a passphrase on the command line is always refused.
-"$PRE" --sigil "$SIGIL" --work "$WORK/pw" --rehearse --passphrase secret > "$WORK/pw.txt" 2>&1; rc=$?
-[[ $rc -ne 0 ]] && pass "a passphrase on the command line is refused" || fail "a passphrase on the command line is refused"
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/pw" --rehearse --passphrase secret > "$WORK/pw.txt" 2>&1; rc=$?
+if [[ $rc -eq 64 ]] && grep -q 'Refusing' "$WORK/pw.txt"; then pass "a passphrase on the command line is refused with exit 64 and says so"
+else fail "a passphrase on the command line is refused with exit 64 and says so" "rc=$rc"; fi
 
 echo ""
 echo "$PASS passed, $FAIL failed"
