@@ -364,6 +364,12 @@ supersedes his immediately prior answer that licensed both.
   owner commitment recorded here, not a mechanism: no build carries an
   automatic outage or sunset bypass, no source release or license choice
   is scheduled, and the commitment authorizes no key ceremony.
+- No sunset mechanism (Peter, 2026-10-01 16:45 EDT): shipped apps carry no
+  sunset switch or unlock statement. If a product is sunsetted, the
+  license checks are removed from the code and the source is published.
+  Do not add an unlock path. Offline policy (same day): an expired grant
+  is restored by going online; the refusal screen must say so plainly;
+  RotShield Verify stays grant-free.
 - Acceptance additions (RELEASE_GATES, entropy_shield row): Verify
   positive with no grant AND with an expired grant on protected data;
   Repair/Create/Update denial cases each paired with authorized work; a
