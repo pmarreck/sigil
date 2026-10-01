@@ -471,6 +471,40 @@ Open questions for Peter (each changes the payload or the policy):
 - Beta: calendar-month expiry, no scanning cap. "Unlimited" refers to the
   scanning allowance, never to validity.
 
+
+### 14.2 Peter 2026-10-01 16:23 EDT (commerce session): migration, degraded mode, trial
+
+- Plastic (the 1-month purchase grant, class `paddle`): no reminders before
+  it expires; this supersedes the one-week warning from email 171. After
+  its `expiry`, an online app whose entitlement is still active (not
+  refunded, not revoked) migrates to concrete automatically through the
+  refresh operation. Offline after plastic expiry the app refuses protected
+  work and shows only that it must go online to migrate. This also answers
+  section 14 question 3: no overlap days; the refund window and plastic
+  validity end together, and migration happens after both.
+- Concrete (the versioned grant, payload v2): `expiry` = the MIGRATION
+  (mint) date + 1 calendar year, never purchase date + 1 month + 1 year.
+  This is what "mint date + 1 calendar year" above already states; it is
+  now the ruled wording. A minor-version refresh likewise anchors on its
+  own mint date.
+- Concrete expired and offline: Validate stops validating. RotShield keeps
+  verifying existing protected data and does not create, update or repair,
+  which section 13 already guarantees because Verify is grant-free.
+  Whether this degraded mode itself ends is open with Peter.
+- Trial: a cloud-issued signed grant, class `trial` (`payment_provider`
+  "trial"), mandatory `expiry` = issue date + 7 days, signed by its own
+  per-product role (`validate-trial-license`, `rotshield-trial-license`)
+  so a leaked trial key can mint only trials; plus an installation
+  certificate like every phase. A role-and-class addition to mecha_policy,
+  additive; built once trial issuance (who may obtain one, how often) is
+  settled.
+- Trial meter: the 250 GB counter lives in the app's settings, bound to the
+  machine hash and protected by a keyed MAC whose key is embedded and
+  obfuscated in the app. That key is NOT a sigil trust role: it is never in
+  the key registry, never accepted by any server, never authorizes anything
+  but the local meter, and must differ from every license and install-cert
+  key. Deterrence only; anyone who extracts it can reset the meter, as
+  section 10 already states for client-side metering.
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
