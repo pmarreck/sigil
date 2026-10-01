@@ -253,4 +253,8 @@ artifact rendered as a QR code in a PDF, optionally passphrase-protected,
 storable anywhere including paper; the physical places are Peter's own.
 (d) update keys cold, attended, deferred: YES. (e) confirmation key
 separate AND in its own Worker: YES. (f) per-product issuer Workers: NO,
-one shared issuer Worker.
+one shared issuer Worker; revisit when sales open (Peter, email
+2026-10-01). Reconfirmed by email 2026-10-01: (a) one license per product
+covers every OS, hence separate keys per product; (b), (d), (e) yes; (c)
+QR-in-PDF plus the key's text form, printable, also kept on an offline
+USB key.
