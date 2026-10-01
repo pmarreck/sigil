@@ -18,6 +18,7 @@ annotate=[
 	examples/install_cert_vectors = Installation-certificate test vectors (contract §15): test-install-cert key, signed certs, coreutils machine-hash KATs, expected-decision manifest
 	examples/license_vectors = License-class fixture matrix: test-beta/test-paid TEST-ONLY keypairs, 9 signed vectors (valid/expired/boundary/clamp/leap/wrong-product/wrong-class/malformed-expiry), manifest.json = mecha_policy TDD spec, regenerable via ./generate
 	examples/license_vectors/README.md = What each test-trust artifact is; PKCS#8 seeds exist for WebCrypto issuers, derived offline, no seed-export command in sigil
+	examples/renewal_vectors = Offline-renewal request and bundle vectors (contract §14.3), canonical jq -cS JSON embedding existing signed envelopes
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
@@ -37,6 +38,7 @@ annotate=[
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
 	tests/integration/install_cert_vectors.sh = Verifies install-cert vectors under their key only, license hashes against real envelopes, machine hashes via coreutils
 	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards
+	tests/integration/renewal_vectors.sh = Checks renewal vectors are canonical, carry exact keys, and embed exact verifiable envelopes
 	tests/integration/update_vectors.sh = CI-gated vector suite: purpose boundary (license↔update replay must fail at SIGNATURE), tamper/wrong-key cases, vacuity guards
 	tests/test_no_signing_symbols = MFIC control: nm asserts libsigil.a contains no signing code. Verified to fail when violated.
 ]

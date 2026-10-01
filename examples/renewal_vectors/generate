@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Offline-renewal file vectors (contract section 14.3). Built with jq -cS so
+# key order and escaping are canonical (RFC 8259 minimal escaping, UTF-8
+# raw). The embedded envelopes are the exact bytes of existing license and
+# install-cert vectors; nothing new is signed here.
+set -u
+D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; R="$(cd "$D/../.." && pwd)"
+LV="$R/examples/license_vectors"; IV="$R/examples/install_cert_vectors"
+MA=$(jq -r .machines.A "$IV/manifest.json")
+jq -cnS --rawfile lic "$LV/beta_valid.sigil" --arg m "$MA" \
+	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}' | tr -d '\n' > "$D/request_activate.json"
+jq -cnS --rawfile cert "$IV/cert_valid.sigil" '{install_cert:$cert,v:"1"}' | tr -d '\n' > "$D/bundle_cert_only.json"
+jq -cnS --rawfile lic "$LV/beta_valid.sigil" --rawfile cert "$IV/cert_valid.sigil" '{install_cert:$cert,license:$lic,v:"1"}' | tr -d '\n' > "$D/bundle_license_and_cert.json"
+echo generated

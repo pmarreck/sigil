@@ -537,6 +537,24 @@ carrying files. "Go online" then means "any machine, once".
 - Scope: activation, plastic-to-concrete migration, concrete renewal,
   minor-version refresh and rebind. Not on the October 15 critical path
   unless a beta tester is air-gapped; required before paid launch.
+- Formats (commerce's proposal, adopted 2026-10-01 with sigil vectors in
+  examples/renewal_vectors): both files are UTF-8 JSON objects in
+  canonical form (sorted keys, no whitespace, RFC 8259 minimal escaping,
+  non-ASCII raw: what `jq -cS` emits), every value a string, no other
+  keys, 64 KiB bound. Request:
+  `{"installed_major","installed_minor","license","machine","operation","v":"1"}`
+  with `license` the exact envelope text and `machine` 64 lowercase hex.
+  Bundle: `{"install_cert","license","v":"1"}`; `install_cert` always
+  present on success, `license` only when one was minted (migrate, renew,
+  minor refresh). A refusal returns no bundle, only the online verdict
+  code. Idempotency key: SHA-256 of the exact request bytes.
+- Rebind by file: the customer clicks the email one-time link first (a
+  pending rebind recorded server-side), then uploads; the upload stays one
+  stateless request.
+- Rebind quota: rebind by email link without the owner signing is Peter's
+  ruling (email 171); NO quota has been chosen (the two-per-year idea is
+  unapproved). Build without a cap; adding one later is a server-side
+  policy change, not a format change.
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
