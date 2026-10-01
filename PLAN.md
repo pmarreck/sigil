@@ -12,6 +12,13 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
+- [ ] Peter 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
+      entropy_shield (Mecha RotShield) must refuse to run without a properly
+      signed license (+ installation certificate). Directive sent with pins and
+      acceptance tests; sigil tracks nominations. Reading recorded: the app
+      opens only to import/status; never-licensed RotShield refuses all, an
+      expired one keeps Verify (§13).
+
 ### Self-update signing boundary (Einstein request, 2026-08-27 01:50)
 
 Position sent same night (reply in `~/Code/inbox/`): **key separation IS the
