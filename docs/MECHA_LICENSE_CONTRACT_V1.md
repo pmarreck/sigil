@@ -617,7 +617,11 @@ which machine may run it under that license. Execution needs both.
   `mecha_policy_install_decide` (3fb8cb8, additive to ABI 1) returns
   `install_cert_valid`, `_malformed`, `_wrong_product`, `_other_machine`,
   `_other_license`, `_expired`, `_clock_rollback`; the app adds
-  `install_cert_missing` when it holds no certificate. Spec and vectors:
+  `install_cert_missing` when it holds no certificate,
+  `install_cert_not_authentic` when the certificate fails signature
+  verification under the install-cert role, and
+  `install_cert_machine_unavailable` when the raw OS id cannot be read
+  (validate 23001eadd, adopted 2026-10-01). Spec and vectors:
   sigil examples/install_cert_vectors (mecha-install-cert-vectors/1, test
   role `test-install-cert`, passphrase public by design).
 - Audit (commerce 0df5327, accepted): the mint audit row stays four fields
