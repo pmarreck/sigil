@@ -180,6 +180,14 @@ sha256-ESz7LghtdUNRrfHvoq/fF2+YcXC6Ajq06iyNljGr6G8=); commit body cites
 the out path, narHash, lib hash and all three rebuild results. Mechatron
 PASS mecha-commerce@ded9398, finished 2026-09-29T05:28:09Z, verified by
 sigil via mechatron-ci log; 14 suites incl. the E10 identity guard.
+Installation certificates 2026-10-01: commerce da4084e pins sigil ef464a3 +
+mecha_policy 3fb8cb8; differential green (commerce issuer mints the
+cert_valid vector's fields for the beta_valid license; native sigil verify
+accepts it and refuses it under another key; mecha-policy install returns
+every manifest verdict); bite-checked. Mechatron PASS da4084e 19:55:16Z,
+verified by sigil. mecha_policy itself has no CI record: its Mechatron
+webhook still awaits Peter's one-line sudo provisioning, so its suite is
+evidenced only by local runs and by consumers' CI.
 Previous: 8ef3a56 pinned 58c033e30 (d5257b77), sigil 12baa15,
 mecha_policy 1603f7a; issued fixtures unchanged and still hash-match
 (drift test). Protocol: on each accepted nomination the lead mails
