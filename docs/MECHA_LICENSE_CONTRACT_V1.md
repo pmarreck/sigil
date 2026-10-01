@@ -1,6 +1,6 @@
 # Mecha License Contract v1 — DRAFT for peer agreement
 
-Status: rev 1.3, 2026-09-28 (rev 1.1 rulings in section 9; rev 1.2 adds sections 11-12; rev 1.3 adds section 13, Peter's RotShield operation-class ruling). Sigil is coordination lead per Peter's
+Status: rev 1.3, 2026-09-28 (rev 1.1 rulings in section 9; rev 1.2 adds sections 11-12; rev 1.3 adds section 13, Peter's RotShield operation-class ruling); section 14 is a rev 2.0 DRAFT for paid terms (2026-10-01), not yet in force. Sigil is coordination lead per Peter's
 directive of 2026-09-17 12:27 EDT (canonical text: LICENSE_OPERATIONS.md,
 "Current directive" section, in Peter's Obsidian vault). Sections marked
 FROZEN are Peter-approved and not open to peer negotiation; PROPOSED needs
@@ -379,3 +379,67 @@ supersedes his immediately prior answer that licensed both.
   writes nothing to customer files (that is Repair), and emits no file
   validity verdict. A store rebuild that needs customer bytes is a gated
   unit of the class of the work it performs.
+
+## 14. Paid terms and the versioned grant (rev 2.0 DRAFT, Peter decision 2026-10-01)
+
+Peter's decisions, relayed by mecha-commerce from his email of 2026-10-01
+10:54 EDT: a purchase issues a 1-month grant ("essentially a paid trial
+period"); after the month an online refresh issues a 1-year grant for that
+specific major.minor; point releases need no refresh; a minor release needs
+a refresh and restarts the year; a major release needs a new purchase; no
+refunds after 1 month; refund or chargeback within the month means no
+refresh (offline) or invalidation (online); a chargeback after the month
+revokes at the next online check; beta unchanged and has no 250 GB scanning
+limit; the ledger is a Durable Object with UUIDv7 ids.
+
+Scope: PAID only. Beta and alpha stay on payload v1, unchanged, for the
+October 15 beta. Nothing in this section ships until the peers agree and the
+open questions below are answered.
+
+- Purchase grant: payload v1 as frozen. `payment_provider` paddle,
+  `expiry` = `purchase_date` + 1 calendar month (end-of-month clamp, UTC,
+  day-inclusive, the beta rule), `max_major` the purchased major. Verified
+  2026-10-01 with `mecha-policy decide`: authorized on its expiry day,
+  `expired` the next day. No contract change.
+- Versioned grant: payload v2 (`"v":"2"`), every v1 field plus
+  `max_minor` (decimal string). Policy: authorized only when
+  (app_major, app_minor) <= (max_major, max_minor) lexicographically,
+  else `version_ceiling`; `expiry` = mint date + 1 calendar year (Feb 29
+  clamps to Feb 28), mandatory in v2. Signed by the paid-license role.
+  v1 grants keep evaluating exactly as today.
+- mecha_policy: the request gains `app_minor`; ABI version 2
+  (`mecha_policy_abi_version() == 2`), one decide entrypoint; consumers
+  assert 2 at startup. TDD against an extended vector manifest before any
+  consumer moves.
+- Refresh: a new issuer operation, `refreshEntitlement(entitlement_id,
+  installed_major, installed_minor)`, reached from the app's online check
+  carrying its current license. It mints through `issueForEntitlement` as a
+  superseding, audited entitlement linked to the original (section 5 of
+  the custody contract already allows that shape). Refused unless the
+  ledger shows the entitlement active (no refund, no chargeback, adjustment
+  states settled), the installed major equals the purchased major, and the
+  refund window has closed. Never extends a purchase grant; never mints a
+  higher major. The confirmation endpoint still never mints.
+- Revocation: refunds and chargebacks are ledger state; the confirmation
+  endpoint reports `revoked`; grace is Paddle's own adjustment lifecycle
+  (pending then approved, chargeback created then reversed), not a
+  separate 25-hour timer (commerce's recommendation; sigil agrees).
+- `offline_days` stays in both versions for the confirmation cadence; the
+  grant's `expiry` is what bounds use.
+
+Open questions for Peter (each changes the payload or the policy):
+1. Ceiling or exact: does a 1.3 grant also run 1.0-1.2? Recommended:
+   ceiling, matching `max_major`.
+2. Renewal: when a year ends with no new minor, does an online refresh
+   issue another year for the same major.minor, free, indefinitely within
+   the major? This reading makes a purchase effectively perpetual for its
+   major with a yearly check-in.
+3. Month-end offline gap: the year grant can only be minted after the
+   refund window closes, so a buyer who is offline at the end of the month
+   loses access until they reconnect. Recommended: purchase-grant expiry =
+   purchase + 1 month + 7 days, with refresh allowed only from the day after
+   the refund window. A refunded buyer offline would keep running for up to
+   7 extra days.
+4. The 250 GB scanning limit: which class carries it? Client-side byte
+   counting cannot be made authentic (section 10); it would be a signed
+   limit enforced on the honour system.
