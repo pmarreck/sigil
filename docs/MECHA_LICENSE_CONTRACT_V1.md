@@ -471,7 +471,7 @@ Open questions for Peter (each changes the payload or the policy):
 - Beta: calendar-month expiry, no scanning cap. "Unlimited" refers to the
   scanning allowance, never to validity.
 
-## 15. Installation certificates (rev 2.0 DRAFT, Peter decision 2026-10-01)
+## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
 which machine may run it under that license. Execution needs both.
@@ -547,13 +547,17 @@ plastic-to-concrete handoff and concrete expiry; section 14 is revised
 when they arrive.
 
 Open questions for Peter, in addition to section 14's four:
-5. Is the first month available WITHOUT a purchase (a free `trial` class),
+5. ANSWERED 2026-10-01 15:41 EDT: a free trial is a real phase (250 GB of
+   scanning, one week); details being relayed by commerce. Original:
+   is the first month available WITHOUT a purchase (a free `trial` class),
    or only after paying? Recommended: only after paying, the simplest form
    and the one commerce built toward.
    Note (commerce, 2026-10-01): a free trial anyone can obtain would also
    conflict with the 2026-09-15 no-registration evaluation decision.
-6. Must the October 15 beta already require installation certificates?
-   Recommended: no. The beta ships license-only, as built and tested, and
+6. ANSWERED 2026-10-01 15:41 EDT: yes, the beta requires installation
+   certificates (sigil had recommended no; superseded). Original question:
+   must the October 15 beta already require installation certificates?
+   Recommended at the time: no. The beta ships license-only, as built and tested, and
    certificates arrive with paid launch. Requiring them for the beta adds a
    new signing role, an online activation path and app-side fingerprinting
    on every platform inside two weeks.
