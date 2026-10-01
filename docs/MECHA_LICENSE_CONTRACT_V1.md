@@ -370,6 +370,7 @@ supersedes his immediately prior answer that licensed both.
   Do not add an unlock path. Offline policy (same day): an expired grant
   is restored by going online; the refusal screen must say so plainly;
   RotShield Verify stays grant-free.
+  Air-gapped machines renew by file (section 14.3).
 - Acceptance additions (RELEASE_GATES, entropy_shield row): Verify
   positive with no grant AND with an expired grant on protected data;
   Repair/Create/Update denial cases each paired with authorized work; a
@@ -511,6 +512,31 @@ Open questions for Peter (each changes the payload or the policy):
   but the local meter, and must differ from every license and install-cert
   key. Deterrence only; anyone who extracts it can reset the meter, as
   section 10 already states for client-side metering.
+
+### 14.3 Offline renewal by file (Peter, 2026-10-01 16:50 EDT)
+
+For air-gapped machines, every online license operation also works by
+carrying files. "Go online" then means "any machine, once".
+
+- Request: the app writes `renewal-request.json` containing the imported
+  license envelope (exact bytes), the machine hash, the installed
+  major.minor and the operation wanted (`activate`, `migrate`, `renew`,
+  `rebind`). Unsigned: the issuer verifies the embedded license itself,
+  so nothing in the request is trusted on its own say-so. It carries no raw
+  machine identifier.
+- Exchange: the customer uploads it on a web page from any online device;
+  `rebind` additionally requires the email one-time link, exactly as
+  online. The issuer applies the same refusals as the online path
+  (refunded, revoked, wrong major, refund window open) and is idempotent:
+  the same request returns the same stored bytes.
+- Response: a `renewal.sigil-bundle` holding the new license envelope
+  and/or installation certificate, each a normal sigil envelope. The app
+  imports it through the existing import path (64 KiB bound, grant
+  preserved on every refusal); nothing in the bundle is trusted until each
+  envelope verifies under its role key and passes mecha_policy.
+- Scope: activation, plastic-to-concrete migration, concrete renewal,
+  minor-version refresh and rebind. Not on the October 15 critical path
+  unless a beta tester is air-gapped; required before paid launch.
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
