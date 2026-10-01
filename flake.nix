@@ -11,12 +11,17 @@
       url = "github:mitchellh/zig-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The printable-binary CLI at the commit whose character map sigil's
+    # envelopes use (build.zig.zon pin). Test oracle only: decodes the
+    # renewal vectors' embedded envelopes (contract section 14.3).
+    printable-binary.url = "github:pmarreck/printable-binary/3f697d53f447144e9ba1b73c4217b382f32b4d62";
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, printable-binary }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        pbCli = printable-binary.packages.${system}.printableBinaryZig;
         pname = "sigil";
         version = "0.1.0";
         # Pinned to 0.16.0 ("Juicy Main", April 2026).
@@ -177,7 +182,7 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -261,6 +266,7 @@
             pkgs.zbar
             pkgs.poppler-utils
             pkgs.qpdf
+            pbCli
           ];
         };
       });

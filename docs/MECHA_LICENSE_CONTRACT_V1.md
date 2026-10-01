@@ -550,6 +550,16 @@ carrying files. "Go online" then means "any machine, once".
   present on success, `license` only when one was minted (migrate, renew,
   minor refresh). A refusal returns no bundle, only the online verdict
   code. Idempotency key: SHA-256 of the exact request bytes.
+- Embedded envelopes (Peter, 2026-10-01 17:20 EDT): `license` and
+  `install_cert` hold the printable-binary ENCODING of the exact envelope
+  bytes, so neither file contains any JSON escape and a reader may refuse
+  any backslash outright. Verification and `license_sha256` run on the
+  DECODED bytes. Normative mapping: printable-binary `character_map.txt`
+  SHA-256 47fc27044b11e3db9f915f6686d27bd42f3ed80d28fb06647b5736e840637094,
+  the table at printable-binary 3f697d5 (sigil's own envelope encoder pin)
+  and unchanged at its later commits. Checked 2026-10-01: no byte value
+  encodes to a quote, backslash, DEL or control character, and all 256
+  round-trip.
 - Rebind by file: the customer clicks the email one-time link first (a
   pending rebind recorded server-side), then uploads; the upload stays one
   stateless request.
