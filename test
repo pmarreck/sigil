@@ -113,7 +113,7 @@ fi
 # Integration tests — add as they're written.
 for t in "$SCRIPT_DIR"/tests/integration/*.sh; do
 	[[ -f "$t" ]] || continue
-	run_suite "Integration: $(basename "$t")" "bash '$t'"
+	run_suite "Integration: $(basename "$t")" "$NIXDEV bash '$t'"
 done
 
 echo ""
