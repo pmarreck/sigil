@@ -459,6 +459,10 @@ Open questions for Peter (each changes the payload or the policy):
   from one week before a 1-month grant's `expiry` and from one month before
   a 1-year grant's `expiry`, computed from the signed `expiry` on the same
   UTC day-inclusive rule.
+  The refresh endpoint reports no separate due date: the signed `expiry`
+  is the due date. A refresh attempted before the refund window closes is
+  refused with `not_yet` and `retry_from` (the UTC date the window closes,
+  `purchase_date` + 1 calendar month, plus one day).
 - Installations: one person's license covers every OS and any number of
   installations; the three-installation cap is withdrawn. Each installation
   runs under its own machine-bound installation certificate (section 15).
@@ -515,6 +519,8 @@ Open questions for Peter, in addition to section 14's four:
 5. Is the first month available WITHOUT a purchase (a free `trial` class),
    or only after paying? Recommended: only after paying, the simplest form
    and the one commerce built toward.
+   Note (commerce, 2026-10-01): a free trial anyone can obtain would also
+   conflict with the 2026-09-15 no-registration evaluation decision.
 6. Must the October 15 beta already require installation certificates?
    Recommended: no. The beta ships license-only, as built and tested, and
    certificates arrive with paid launch. Requiring them for the beta adds a
