@@ -100,7 +100,11 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   OS/arch cells unexecuted for every candidate.
 - validate_gui: repin to the accepted core 569808119 or a later accepted
   one (corrected 2026-09-30: the pushed, CI-green GUI is b646df0 on core
-  b950319b; 639aaaad1 is only the unchanged Framework preview); real-backend generated-repository tests
+  b950319b; 639aaaad1 is only the unchanged Framework preview);
+  status 2026-10-01: core pin a5fc090; GUI backend license import/status
+  now share the core-owned per-user store with the CLI (parity tests pass
+  locally); launch-time refusal/import/activation UI and certificate
+  entrypoint tests still open; no Oct 5/7 commitment yet; real-backend generated-repository tests
   (observable git execution, missing tool, honest depth); licensing
   adapters (import/status/About consuming the core decision); then first
   nomination with exact pin + GUI/backend evidence.
