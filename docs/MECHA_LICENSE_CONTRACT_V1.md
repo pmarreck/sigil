@@ -443,3 +443,80 @@ Open questions for Peter (each changes the payload or the policy):
 4. The 250 GB scanning limit: which class carries it? Client-side byte
    counting cannot be made authentic (section 10); it would be a signed
    limit enforced on the honour system.
+
+### 14.1 Reconciliation with Peter's email 171 (2026-10-01 10:59 EDT, via Einstein)
+
+- Class wording. Commerce's brief calls the first month an initial paid
+  license; Peter's email calls it a trial that everyone gets. Both readings
+  keep execution certificate-required; neither permits unsigned or perpetual
+  access. Contract wording until Peter says otherwise: the first month after
+  a PURCHASE is a paid grant (class `paddle`, 1-month `expiry`), described
+  to customers as a trial because it is refundable in full. If Peter means
+  that anyone may get a month WITHOUT paying, that is a separate signed
+  `trial` class (free, email-verified, 1-month `expiry`, role-bound like
+  beta, never refreshable into a paid grant) and needs his explicit word.
+- Refresh warnings (client behaviour, no payload change): the app warns
+  from one week before a 1-month grant's `expiry` and from one month before
+  a 1-year grant's `expiry`, computed from the signed `expiry` on the same
+  UTC day-inclusive rule.
+- Installations: one person's license covers every OS and any number of
+  installations; the three-installation cap is withdrawn. Each installation
+  runs under its own machine-bound installation certificate (section 15).
+  Peter chose a self-hosted service over Keygen.
+- Beta: calendar-month expiry, no scanning cap. "Unlimited" refers to the
+  scanning allowance, never to validity.
+
+## 15. Installation certificates (rev 2.0 DRAFT, Peter decision 2026-10-01)
+
+A license says who may use a product; an installation certificate says
+which machine may run it under that license. Execution needs both.
+
+- Envelope: a sigil envelope signed by a new online role,
+  `install-cert-<product>`, held in the issuer Worker beside the license
+  roles, separate key per product, never the license key. Payload
+  (`"v":"1"`, keys sorted as in every sigil payload): `cert_id` (UUIDv7),
+  `expiry` (never later than the license's own `expiry`; for an undated
+  license, 1 calendar year), `issued` (UTC date), `license_sha256` (hex
+  SHA-256 of the exact license envelope bytes it binds to), `machine`
+  (hex SHA-256 of the per-product fingerprint, below), `product`.
+- Fingerprint: computed by the app, never sent raw. Inputs per OS: Linux
+  `/etc/machine-id`; macOS `IOPlatformUUID`; Windows
+  `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`. `machine` =
+  SHA-256 of `"mecha-install-v1" || product || 0x00 || raw id`, so the same
+  machine yields unrelated values for different products and the server
+  never learns the raw identifier.
+- Issuance (online, at first launch after license import): the app sends
+  its license envelope and `machine`; the Worker verifies the license under
+  its own registry key, checks the entitlement is active in the ledger,
+  mints the certificate through the same audited path as licenses (audit:
+  cert_id, license entitlement, machine hash, time), and stores it. Same
+  license and same `machine` return the stored certificate; nothing new is
+  minted.
+- Admission (offline, every protected operation, beside the license
+  check): the certificate verifies under the install-cert role key;
+  `license_sha256` equals the hash of the imported license; `machine`
+  equals the locally computed value; today (UTC) is on or before both
+  expiries. Any mismatch refuses with a distinct reason
+  (`install_cert_missing`, `install_cert_other_machine`,
+  `install_cert_other_license`, `install_cert_expired`), never a file
+  verdict.
+- Self-service rebind: an email-authenticated customer (a one-time link to
+  the license's address) can bind the license to a new `machine`; the old
+  certificate is marked replaced in the ledger and reported `revoked` by the
+  confirmation endpoint. No replacement quota is approved. Without a quota,
+  binding deters casual sharing only: whoever controls the license's email
+  address can move it.
+- Refresh (section 14) re-issues the certificate for the new license on the
+  same `machine` in the same online call.
+- Not in force; does not affect the October 15 beta unless Peter says so
+  (open question below).
+
+Open questions for Peter, in addition to section 14's four:
+5. Is the first month available WITHOUT a purchase (a free `trial` class),
+   or only after paying? Recommended: only after paying, the simplest form
+   and the one commerce built toward.
+6. Must the October 15 beta already require installation certificates?
+   Recommended: no. The beta ships license-only, as built and tested, and
+   certificates arrive with paid launch. Requiring them for the beta adds a
+   new signing role, an online activation path and app-side fingerprinting
+   on every platform inside two weeks.

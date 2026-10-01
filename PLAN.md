@@ -447,7 +447,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       ids (overrides D1 default); paid terms (1-month purchase grant, 1-year
       major.minor grant via online refresh, refund/chargeback rules); beta
       unchanged, no 250 GB limit. Contract §14 rev 2.0 DRAFT written.
-- [ ] Peter: answer §14 open questions 1-4; then peers agree on §14.
+- [ ] Peter: answer §14/§15 open questions 1-6; then peers agree on §14-15.
+- [x] §14.1 + §15 DRAFT (2026-10-01 14:45 EDT): Peter email 171 reconciled
+      (trial vs paid wording, refresh warnings, unlimited installs);
+      installation certificates designed (install-cert role per product,
+      hashed per-product fingerprint, online issuance, offline admission,
+      email-authenticated rebind, no quota).
 - [ ] On agreement: mecha_policy ABI 2 (app_minor, payload v2, max_minor)
       TDD against an extended vector manifest; new v2 vectors in
       examples/license_vectors; notify validate/validate_gui/commerce.
