@@ -152,7 +152,8 @@ test grant on production → not_authentic); T1/T2/T3 expiry with an
 injected clock incl. the sweep witness; I3a/b/c import bounds with prior
 grant preserved; K-rows (missing key, wrong key, wrong class); git
 section 11 (captured plan, late-only corruption); coverage range and
-precedence; release byte-scan asserting the four test/demo pubkeys are
+precedence; release byte-scan asserting the test/demo pubkeys (five since 2026-10-01,
+including test-install-cert) are
 absent; an inventory row for every export.
 
 Per platform: the five advertised targets are macOS aarch64, Linux

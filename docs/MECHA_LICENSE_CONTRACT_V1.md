@@ -190,8 +190,9 @@ the GUI never links a second verifier):
   `-Dlicense-trust=production|test`); gate code identical; any test clock
   override compiles out under production trust; `license status` JSON
   reports `trust_domain`.
-- Release byte-scan asserts ALL FOUR test/demo pubkeys absent
-  (test-beta, test-paid, update-test, demo), plus the functional
+- Release byte-scan asserts ALL test/demo pubkeys absent (five since
+  2026-10-01: test-beta, test-paid, test-install-cert, update-test, demo),
+  plus the functional
   test-signed-license rejection at SIGNATURE.
 - License import bound: 64 KiB. (The runbook's "Sigil 4 KiB" reference is
   incorrect — sigil imposes no such bound; its CLI mercy cap is 16 MiB.
@@ -512,8 +513,38 @@ which machine may run it under that license. Execution needs both.
   address can move it.
 - Refresh (section 14) re-issues the certificate for the new license on the
   same `machine` in the same online call.
-- Not in force; does not affect the October 15 beta unless Peter says so
-  (open question below).
+- Normalization (fixed 2026-10-01): the raw id is trimmed of ASCII
+  whitespace and ASCII-lowercased before hashing; the single implementation
+  is mecha_policy `machineHash` (`mecha_policy_machine_hash`), so no app
+  hashes the identifier its own way.
+- Shared decision: mecha_policy `decideInstall` /
+  `mecha_policy_install_decide` (3fb8cb8, additive to ABI 1) returns
+  `install_cert_valid`, `_malformed`, `_wrong_product`, `_other_machine`,
+  `_other_license`, `_expired`, `_clock_rollback`; the app adds
+  `install_cert_missing` when it holds no certificate. Spec and vectors:
+  sigil examples/install_cert_vectors (mecha-install-cert-vectors/1, test
+  role `test-install-cert`, passphrase public by design).
+- Audit (commerce 0df5327, accepted): the mint audit row stays four fields
+  (entitlement id, envelope SHA-256, role, time); the certificate's
+  SHA-256 identifies it, and cert_id and machine live in the stored
+  certificate record.
+- IN FORCE FOR THE OCTOBER 15 BETA (Peter, 2026-10-01 15:41 EDT): every
+  phase, beta included, requires an installation certificate; no phase
+  runs without one. The beta needs one more online key,
+  `install-cert-validate`.
+
+Answered by Peter 2026-10-01 15:41 EDT (commerce session; canonical
+mecha-commerce TERMINOLOGY.md at 0daf7a8): question 5, a free TRIAL is a
+real phase (250 GB of scanning, one week); question 6, the beta needs
+installation certificates. His phase names: trial; plastic (first license on
+purchase, 1 month, refundable, refreshed online before the month ends);
+concrete (issued once the plastic sets, 12 more months, not refundable);
+beta. Concrete-licensed apps phone home monthly to check validity and new
+versions, never error when that fails, warn from one month before expiry
+when they have not been online, disclose this behaviour, and extend
+silently. Commerce is relaying his answers on trial issuance, the
+plastic-to-concrete handoff and concrete expiry; section 14 is revised
+when they arrive.
 
 Open questions for Peter, in addition to section 14's four:
 5. Is the first month available WITHOUT a purchase (a free `trial` class),

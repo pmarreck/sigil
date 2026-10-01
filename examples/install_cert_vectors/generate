@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Regenerates the installation-certificate vectors (contract section 15).
+# TEST-ONLY trust: passphrase public by design; release acceptance byte-scans
+# this key OUT of shipped binaries like every other test role.
+#
+# Machine hashes are computed HERE with coreutils sha256sum, never with the
+# code under test, so mecha_policy's machine_hash is judged by an oracle it
+# did not write. Ed25519 is deterministic: regeneration is byte-identical.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SIGIL="${SIGIL_BIN:-$REPO_ROOT/zig-out/bin/sigil}"
+cd "$SCRIPT_DIR" || exit 1
+
+PP="test-install-cert-not-for-production"
+ppf="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"
+trap 'rm -f "$ppf"' EXIT
+printf '%s' "$PP" > "$ppf"
+if [[ ! -f test_install_cert.key ]]; then
+	"$SIGIL" keygen --out test_install_cert.key --passphrase-file "$ppf" || exit 1
+fi
+
+# machine_hash <product> <normalized raw id>: SHA-256 over
+# "mecha-install-v1" || product || 0x00 || raw, lowercase hex.
+machine_hash() {
+	local h
+	h=$( { printf 'mecha-install-v1%s' "$1"; printf '\0'; printf '%s' "$2"; } | sha256sum)
+	printf '%s' "${h%% *}"
+}
+
+# The license each certificate binds to: the license vector's exact bytes.
+lic=$(sha256sum "$REPO_ROOT/examples/license_vectors/beta_valid.sigil"); LIC=${lic%% *}
+lic2=$(sha256sum "$REPO_ROOT/examples/license_vectors/wrong_product.sigil"); LIC_OTHER=${lic2%% *}
+
+RAW_A="0123456789abcdef0123456789abcdef"
+RAW_B="fedcba9876543210fedcba9876543210"
+M_A=$(machine_hash mecha-validate "$RAW_A")
+M_B=$(machine_hash mecha-validate "$RAW_B")
+M_A_ROT=$(machine_hash mecha-rotshield "$RAW_A")
+
+CID="0192f3a4-5b6c-7d8e-9f01-23456789abcd"
+cert() { printf '{"cert_id":"%s","expiry":"%s","issued":"%s","license_sha256":"%s","machine":"%s","product":"%s","v":"1"}' "$1" "$2" "$3" "$4" "$5" "$6"; }
+
+cert "$CID" 2026-10-17 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_valid.payload.json
+cert "$CID" 2026-10-17 2026-09-17 "$LIC" "$M_A_ROT" mecha-rotshield > cert_other_product.payload.json
+cert "0192f3a4-5b6c-4d8e-9f01-23456789abcd" 2026-10-17 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_bad_uuid_version.payload.json
+cert "$CID" 2026-09-16 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_expiry_before_issued.payload.json
+cert "$CID" 2026-10-17 2026-09-17 "${LIC^^}" "$M_A" mecha-validate > cert_uppercase_hex.payload.json
+
+for n in cert_valid cert_other_product cert_bad_uuid_version cert_expiry_before_issued cert_uppercase_hex; do
+	"$SIGIL" sign "$n.payload.json" --key test_install_cert.key --passphrase-file "$ppf" --out "$n.sigil" || exit 1
+done
+
+cat > manifest.json <<JSON
+{
+  "schema": "mecha-install-cert-vectors/1",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15",
+  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors.",
+  "trust_roles": {"test-install-cert": {"pubkey": "test_install_cert.key.pub"}},
+  "machine_hash_kats": [
+    {"product": "mecha-validate", "raw_id": "$RAW_A", "machine": "$M_A"},
+    {"product": "mecha-validate", "raw_id": "$RAW_B", "machine": "$M_B"},
+    {"product": "mecha-rotshield", "raw_id": "$RAW_A", "machine": "$M_A_ROT"},
+    {"product": "mecha-validate", "raw_id": "  0123456789ABCDEF0123456789ABCDEF\\n", "machine": "$M_A", "why": "normalization: trim whitespace, lowercase"}
+  ],
+  "licenses": {"beta_valid": "$LIC", "wrong_product": "$LIC_OTHER"},
+  "machines": {"A": "$M_A", "B": "$M_B"},
+  "vectors": [
+    {"file": "cert_valid.sigil", "payload": "cert_valid.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid"},
+      {"now": "2026-10-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid", "why": "expiry day inclusive"},
+      {"now": "2026-10-18", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_expired"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "B", "expect": "install_cert_other_machine"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "wrong_product", "machine": "A", "expect": "install_cert_other_license"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"},
+      {"now": "2026-09-17", "hwm": "2026-09-20", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_clock_rollback"}
+    ]},
+    {"file": "cert_other_product.sigil", "payload": "cert_other_product.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"}
+    ]},
+    {"file": "cert_bad_uuid_version.sigil", "payload": "cert_bad_uuid_version.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "cert_id must be a UUIDv7"}
+    ]},
+    {"file": "cert_expiry_before_issued.sigil", "payload": "cert_expiry_before_issued.payload.json", "evals": [
+      {"now": "2026-09-16", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed"}
+    ]},
+    {"file": "cert_uppercase_hex.sigil", "payload": "cert_uppercase_hex.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "hex fields are lowercase only"}
+    ]}
+  ]
+}
+JSON
+echo "generated"

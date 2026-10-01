@@ -7,14 +7,15 @@ the executable order of operations plus what remains his alone.
 
 ## 0. What the October 15 beta actually needs
 
-One production key: `validate-beta-license`. Beta and alpha grants are the
-`beta` class (`payment_provider:"beta"`, mandatory `expiry`), signed by that
-role. The paid key is not needed until sales open; the RotShield keys not
+TWO online production keys: `validate-beta-license` (signs beta and alpha
+grants, class `beta`, mandatory `expiry`) and `install-cert-validate`
+(signs installation certificates; required for every phase, the beta
+included, per Peter 2026-10-01 15:41 EDT). The paid key is not needed until sales open; the RotShield keys not
 until RotShield ships; the confirmation key not until the confirmation
 endpoint exists. Because a second ceremony costs a second isolated session,
-the recommendation is to generate `validate-beta-license` AND
-`validate-paid-license` in one sitting and provision ONLY the beta secret to
-the Worker now. Everything else stays cold.
+the recommendation is to generate `validate-beta-license`,
+`install-cert-validate` AND `validate-paid-license` in one sitting and
+provision ONLY the first two secrets to the Worker now. Everything else stays cold.
 
 ## 1. Preflight (Peter, ~5 minutes, any day before; repeat on the day)
 
@@ -30,10 +31,11 @@ controls) passed on throwaway TEST keys that were then wiped. It prints the
 residual assumptions it cannot check; those go into the registry commit as
 stated assumptions. Anything red stops the ceremony.
 
-## 2. The ceremony (Peter, ~10 minutes for two keys)
+## 2. The ceremony (Peter, ~15 minutes for three keys)
 
 On the prepared host, fresh shell, `ulimit -c 0`, offline except for step 5.
-For each ROLE in `validate-beta-license`, `validate-paid-license`:
+For each ROLE in `validate-beta-license`, `install-cert-validate`,
+`validate-paid-license`:
 
 1. `randompassdict 6`, written by hand into BOTH cold media (never typed on
    a command line; sigil prompts for it, twice).
@@ -48,10 +50,10 @@ For each ROLE in `validate-beta-license`, `validate-paid-license`:
    `sigil hot-bundle open ROLE.hot.sealed | openssl pkey -pubout -outform DER
    | tail -c 32 | od -An -tx1` must equal
    `sigil pubkey --pubkey ROLE.key.pub --format hex`. Record both.
-5. Beta role only, the single online step (commerce's account, production
-   environment, nothing else): `sigil hot-bundle open
-   validate-beta-license.hot.sealed | wrangler secret put
-   SIGNING_KEY_VALIDATE_BETA_LICENSE --env production`. Never to a file.
+5. Beta and install-cert roles only, the online step (commerce's account,
+   production environment, nothing else): `sigil hot-bundle open
+   ROLE.hot.sealed | wrangler secret put SIGNING_KEY_<ROLE> --env
+   production`. Never to a file. The paid key stays cold.
 6. Registry: add the row to `docs/KEY_REGISTRY.md` with fingerprint, `.pub`
    sha256 (`sha256sum ROLE.key.pub`), date, sigil commit, and paste the
    preflight's residual-assumption list into the commit message. Commit and
@@ -87,7 +89,7 @@ contract §12 with trust domain `production`.
 
 1. Choose and name the two cold media, and where they live afterwards.
 2. Run the preflight and the ceremony (sections 1 and 2): ~15 minutes.
-3. Provision the beta secret with `wrangler secret put` (step 2.5).
+3. Provision the two online secrets with `wrangler secret put` (step 2.5).
 4. Decide D1 vs Durable Object for commerce's durable ledger (gates live
    PAID issuance only; not needed for the beta).
 5. Approve the production-controlled isolated restore (section 3 (iii)).

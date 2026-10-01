@@ -14,6 +14,8 @@ any grant they signed is still valid.
 |---|---|---|---|---|---|---|
 | validate-beta-license | mecha-validate | — | — | not yet generated | — | pending ceremony |
 | validate-paid-license | mecha-validate | — | — | not yet generated | — | pending ceremony |
+| install-cert-validate | mecha-validate | — | — | not yet generated | — | pending ceremony (beta-critical) |
+| install-cert-rotshield | mecha-rotshield | — | — | not yet generated | — | pending (RotShield launch) |
 | rotshield-beta-license | mecha-rotshield | — | — | not yet generated | — | pending ceremony |
 | rotshield-paid-license | mecha-rotshield | — | — | not yet generated | — | pending ceremony |
 | confirmation | both | — | — | not yet generated | — | pending (endpoint not built) |
@@ -25,5 +27,6 @@ any grant they signed is still valid.
 |---|---|---|---|
 | test-beta | 5683efb3e745a406d8531c6aa4558b77c4a311bd1fcd099f973612ef4b45f8b2 | test-beta-not-for-production | examples/license_vectors/test_beta.key.pub |
 | test-paid | 8125b9b1726e6fe02d0523234f41a7dacf82ea9d6fbac99d03199583be459b98 | test-paid-not-for-production | examples/license_vectors/test_paid.key.pub |
+| test-install-cert | 00f5dc63fe1c3f8a47563ff0de0cbf605abef009f3a97243cc9c1eedc0f1f7be | test-install-cert-not-for-production | examples/install_cert_vectors/test_install_cert.key.pub |
 | update-test | see examples/update_vectors/update_test.key.pub | update-test-not-for-production | examples/update_vectors/ |
 | demo | see examples/demo/demo.key.pub | demo-not-for-production | examples/demo/ |

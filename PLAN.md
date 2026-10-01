@@ -453,6 +453,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       installation certificates designed (install-cert role per product,
       hashed per-product fingerprint, online issuance, offline admission,
       email-authenticated rebind, no quota).
+- [x] Installation certificates BETA-CRITICAL (Peter 2026-10-01 15:41 EDT):
+      mecha_policy 3fb8cb8 (decideInstall + machineHash, additive to ABI 1,
+      six mutants killed); sigil examples/install_cert_vectors + integration
+      test; contract §15 in force for the beta; runbook + registry carry
+      install-cert-validate; byte-scan now five test keys; commerce's hashed
+      entitlement id and certificate audit accepted. — 2026-10-01 16:20 EDT
 - [ ] On agreement: mecha_policy ABI 2 (app_minor, payload v2, max_minor)
       TDD against an extended vector manifest; new v2 vectors in
       examples/license_vectors; notify validate/validate_gui/commerce.

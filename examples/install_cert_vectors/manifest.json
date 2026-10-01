@@ -1,0 +1,37 @@
+{
+  "schema": "mecha-install-cert-vectors/1",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15",
+  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors.",
+  "trust_roles": {"test-install-cert": {"pubkey": "test_install_cert.key.pub"}},
+  "machine_hash_kats": [
+    {"product": "mecha-validate", "raw_id": "0123456789abcdef0123456789abcdef", "machine": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c"},
+    {"product": "mecha-validate", "raw_id": "fedcba9876543210fedcba9876543210", "machine": "f4ae35d9fbdfa65235e1b435cb6c50cb210a685fb4273c160f0ee69a49f8e7c9"},
+    {"product": "mecha-rotshield", "raw_id": "0123456789abcdef0123456789abcdef", "machine": "3a1a08d3faabe92840f8cb7715067db94e9ef8a24ce285b05be29b956e6f8666"},
+    {"product": "mecha-validate", "raw_id": "  0123456789ABCDEF0123456789ABCDEF\n", "machine": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c", "why": "normalization: trim whitespace, lowercase"}
+  ],
+  "licenses": {"beta_valid": "f8247856a3dc5e8ae25b40249e5e35917918074c0cb4ab04627c37cde404da01", "wrong_product": "ef021ae874ef456145cde15bdc7f970e3f785a47aa29366c83a067566f9a909d"},
+  "machines": {"A": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c", "B": "f4ae35d9fbdfa65235e1b435cb6c50cb210a685fb4273c160f0ee69a49f8e7c9"},
+  "vectors": [
+    {"file": "cert_valid.sigil", "payload": "cert_valid.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid"},
+      {"now": "2026-10-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid", "why": "expiry day inclusive"},
+      {"now": "2026-10-18", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_expired"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "B", "expect": "install_cert_other_machine"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "wrong_product", "machine": "A", "expect": "install_cert_other_license"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"},
+      {"now": "2026-09-17", "hwm": "2026-09-20", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_clock_rollback"}
+    ]},
+    {"file": "cert_other_product.sigil", "payload": "cert_other_product.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"}
+    ]},
+    {"file": "cert_bad_uuid_version.sigil", "payload": "cert_bad_uuid_version.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "cert_id must be a UUIDv7"}
+    ]},
+    {"file": "cert_expiry_before_issued.sigil", "payload": "cert_expiry_before_issued.payload.json", "evals": [
+      {"now": "2026-09-16", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed"}
+    ]},
+    {"file": "cert_uppercase_hex.sigil", "payload": "cert_uppercase_hex.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "hex fields are lowercase only"}
+    ]}
+  ]
+}

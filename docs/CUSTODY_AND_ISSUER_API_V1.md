@@ -164,8 +164,10 @@ scope in the registry commit.
   may show any date locally. (2) The admin routes are class-bound to the
   beta role for the product named; no operator credential can request the
   paid class through them. Confirmed: entitlement id
-  `ent_beta_<product>_<canonical-email>` (one grant per product and
-  person, never extended), gap-free `beta_NNNN` refs from the ledger,
+  `ent_beta_<product>_<first 32 hex of SHA-256("mecha-beta-entitlement-v1\n"
+  || canonical email)>` (one grant per product and person, never
+  extended; corrected by commerce 0df5327 because the email form put an
+  address into the mint audit), gap-free `beta_NNNN` refs from the ledger,
   `putEntitlement` then `issueForEntitlement`, resend never mints,
   responses carry no envelope, name or key material, per-route rate
   limits, bounded bodies, 404 fail-closed when no operator credential is
