@@ -115,6 +115,10 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   debug exports removed, Verify positive with no grant and with an expired
   grant, Verify-then-Repair refused at the Repair step); first nomination.
   Trial terms remain Peter's.
+  Status 2026-10-02 13:08 EDT: Peter's directive acknowledged; admission
+  (license AND installation certificate, §15) queued behind Peter's
+  settings-exclusions repair; pins sigil 121e42f, mecha_policy 3fb8cb8; no
+  date claimed. Activation will need mecha_policy 2f02a21 (hintHash, §15.1).
 - mecha-commerce: Phase D idempotency CLOSED IN LOGIC at e16f5a5
   (2026-09-28): the envelope is minted once under a put-if-absent
   `recordOnce` ledger call before any delivery; retries reuse the recorded
