@@ -455,6 +455,18 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       major.minor grant via online refresh, refund/chargeback rules); beta
       unchanged, no 250 GB limit. Contract §14 rev 2.0 DRAFT written.
 - [ ] Peter: answer §14/§15 open questions 1-6; then peers agree on §14-15.
+      Status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class only), 5
+      and 6 answered; 1 and 2 still open. Peter 22:15 (§14.2a): no remote
+      version block ever; trial keyed by (product, machine hash), no email.
+- [ ] Trial re-issue prevention when the raw machine id changes: open with
+      Peter (xattr marker vs server-signed meter checkpoints). If
+      checkpoints, the trial-meter key becomes a server role: revise §14.2
+      trial meter, add the role to KEY_REGISTRY, then build the trial class
+      and roles in mecha_policy.
+- [x] validate 23001eadd certificate admission pre-checked (rebuild matches
+      all four hashes, five-key scan, admission matrix); relayed to red team;
+      §15 adopts _not_authentic and _machine_unavailable; ./test integration
+      suites now run under the flake shell. — 2026-10-01 19:05 EDT
 - [x] §14.1 + §15 DRAFT (2026-10-01 14:45 EDT): Peter email 171 reconciled
       (trial vs paid wording, refresh warnings, unlimited installs);
       installation certificates designed (install-cert role per product,

@@ -448,9 +448,10 @@ Open questions for Peter (each changes the payload or the policy):
    purchase + 1 month + 7 days, with refresh allowed only from the day after
    the refund window. A refunded buyer offline would keep running for up to
    7 extra days.
-4. The 250 GB scanning limit: which class carries it? Client-side byte
+4. ANSWERED 2026-10-01 22:15 EDT (section 14.2a): the `trial` class only.
+   Original: the 250 GB scanning limit: which class carries it? Client-side byte
    counting cannot be made authentic (section 10); it would be a signed
-   limit enforced on the honour system.
+   limit enforced on the honor system.
 
 ### 14.1 Reconciliation with Peter's email 171 (2026-10-01 10:59 EDT, via Einstein)
 
@@ -463,7 +464,7 @@ Open questions for Peter (each changes the payload or the policy):
   that anyone may get a month WITHOUT paying, that is a separate signed
   `trial` class (free, email-verified, 1-month `expiry`, role-bound like
   beta, never refreshable into a paid grant) and needs his explicit word.
-- Refresh warnings (client behaviour, no payload change): the app warns
+- Refresh warnings (client behavior, no payload change): the app warns
   from one week before a 1-month grant's `expiry` and from one month before
   a 1-year grant's `expiry`, computed from the signed `expiry` on the same
   UTC day-inclusive rule.
@@ -512,6 +513,29 @@ Open questions for Peter (each changes the payload or the policy):
   but the local meter, and must differ from every license and install-cert
   key. Deterrence only; anyone who extracts it can reset the meter, as
   section 10 already states for client-side metering.
+
+
+### 14.2a Peter 2026-10-01 22:15 EDT (commerce session): no kill switch, email-free trial
+
+- No remote version block, ever. No server-driven "this version is
+  blocked" flag (such as BoltAI 2's `currentVersionBlocked`) goes in this
+  contract, the issuer API or any app. Monthly phone-home may report that
+  a new version exists; it never disables the running one. Only the
+  signed grant's own `expiry` and version ceiling limit what runs.
+- Trial issuance needs no email address. A trial is requested and keyed
+  by (product, machine hash) only, so issuing one stores no personal data.
+  This is consistent with the 2026-09-15 no-registration evaluation
+  decision that question 5 below noted.
+- The trial keeps the 250 GB scanning limit as a signed countdown (the
+  trial-meter bullet above). This answers section 14 question 4: the
+  limit belongs to the `trial` class only.
+- OPEN with Peter: preventing repeat trials when the raw machine id
+  changes (`/etc/machine-id` and Windows MachineGuid are user-editable).
+  Candidates sent by commerce include an xattr marker (Peter's suggestion)
+  and server-signed meter checkpoints. If checkpoints are chosen, the
+  trial-meter key stops being an app-embedded MAC key and becomes a
+  server signing role, which changes the trial-meter bullet and adds a
+  role to KEY_REGISTRY.
 
 ### 14.3 Offline renewal by file (Peter, 2026-10-01 16:50 EDT)
 
@@ -641,7 +665,7 @@ purchase, 1 month, refundable, refreshed online before the month ends);
 concrete (issued once the plastic sets, 12 more months, not refundable);
 beta. Concrete-licensed apps phone home monthly to check validity and new
 versions, never error when that fails, warn from one month before expiry
-when they have not been online, disclose this behaviour, and extend
+when they have not been online, disclose this behavior, and extend
 silently. Commerce is relaying his answers on trial issuance, the
 plastic-to-concrete handoff and concrete expiry; section 14 is revised
 when they arrive.
