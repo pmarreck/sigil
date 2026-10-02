@@ -461,9 +461,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Trial re-issue prevention: resolved by contract §15.1 (Peter
       2026-10-02 device cap 2 + $10 seats, server-side clustering of
       hashed hints; checkpoints not adopted). — 2026-10-02 12:05 EDT
-- [ ] mecha_policy `hintHash` (kinds disk, mac; additive to ABI 1) +
-      sigil examples hint KAT vectors, TDD, once commerce confirms the
-      §15.1 shape. Then the trial class and roles in mecha_policy.
+- [x] Device hints: contract §15.1 adds `tpm` (Peter, Windows TPM-first),
+      multicast MACs rejected, TPM match alone clusters; sigil
+      examples/hint_vectors (14 KATs, 12 rejects, coreutils oracle,
+      openssl spot-check) + integration test (mutation bites);
+      mecha_policy hintHash + length-delimited C export + hint-hash CLI,
+      12/12 mutants killed. — 2026-10-02 12:05 EDT
+- [ ] Then: the trial class and roles in mecha_policy. A Windows 11 TPM
+      run of PCP_EKPUB is still owed by an app team before tpm is relied on.
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Regenerates the device-hint vectors (contract section 15.1). The expected
+# normalized value of every case is written out BY HAND from the contract
+# text, and every hash is computed here with coreutils sha256sum, so
+# mecha_policy's hintHash is judged by answers it did not produce. Raw inputs
+# are hex so that whitespace, separators and binary TPM blobs (including
+# 0x00 bytes) travel exactly. Regeneration is byte-identical.
+set -u
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+
+# hint <product> <kind> <normalized>: SHA-256 over
+# "mecha-hint-v1" || product || 0x00 || kind || 0x00 || normalized.
+hint() {
+	local h
+	h=$( { printf 'mecha-hint-v1%s' "$1"; printf '\0'; printf '%s' "$2"; printf '\0'; printf '%s' "$3"; } | sha256sum)
+	printf '%s' "${h%% *}"
+}
+hexof() { printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n'; }
+
+KATS=()
+kat() { # product kind raw_hex normalized why
+	KATS+=("$(printf '{"product":"%s","kind":"%s","raw_hex":"%s","normalized":"%s","hint":"%s","why":"%s"}' "$1" "$2" "$3" "$4" "$(hint "$1" "$2" "$4")" "$5")")
+}
+REJ=()
+rej() { REJ+=("$(printf '{"product":"%s","kind":"%s","raw_hex":"%s","why":"%s"}' "$1" "$2" "$3" "$4")"); }
+
+V=mecha-validate; R=mecha-rotshield
+kat $V disk "$(hexof 'S4EWNX0R123456K')" s4ewnx0r123456k "uppercase serial lowercased"
+kat $V disk "$(hexof $'  S4EWNX0R123456K \n')" s4ewnx0r123456k "ASCII whitespace trimmed: same hint as above"
+kat $R disk "$(hexof 'S4EWNX0R123456K')" s4ewnx0r123456k "same serial, other product: unrelated hint"
+kat $V disk "$(hexof 'WD-WCC4N1234567')" wd-wcc4n1234567 "interior punctuation kept"
+kat $V mac "$(hexof '00:1A:2B:3C:4D:5E')" 001a2b3c4d5e "colon form"
+kat $V mac "$(hexof '00-1a-2b-3c-4d-5e')" 001a2b3c4d5e "dash form: same hint"
+kat $V mac "$(hexof '001a.2b3c.4d5e')" 001a2b3c4d5e "dotted form: same hint"
+kat $V mac "$(hexof $'001A2B3C4D5E\n')" 001a2b3c4d5e "bare form with newline: same hint"
+kat $R mac "$(hexof '00:1A:2B:3C:4D:5E')" 001a2b3c4d5e "other product: unrelated hint"
+kat $V mac "$(hexof 'fc:aa:14:00:00:01')" fcaa14000001 "first octet 0xfc: universally administered unicast"
+kat $V tpm 525341310008000003 525341310008000003 "binary blob hex-encoded lowercase"
+kat $V tpm 00ff00 00ff00 "0x00 at start and end, 0xff in the middle"
+kat $V tpm 52534131000000 52534131000000 "embedded and trailing 0x00 bytes are data, never terminators"
+kat $R tpm 525341310008000003 525341310008000003 "other product: unrelated hint"
+
+rej $V disk "" "empty"
+rej $V disk "$(hexof $' \t\r\n')" "whitespace only"
+rej $V mac "" "empty"
+rej $V mac "$(hexof '02:1a:2b:3c:4d:5e')" "locally administered (bit 0x02 of first octet)"
+rej $V mac "$(hexof '01:00:5e:00:00:01')" "multicast (bit 0x01 of first octet)"
+rej $V mac "$(hexof 'ff:ff:ff:ff:ff:ff')" "broadcast"
+rej $V mac "$(hexof '00:00:00:00:00:00')" "all zero"
+rej $V mac "$(hexof '00:1a:2b:3c:4d')" "11 hex digits"
+rej $V mac "$(hexof '00:1a:2b:3c:4d:5e:6f')" "14 hex digits"
+rej $V mac "$(hexof '00:1a:2b:3c:4d:5g')" "non-hex digit"
+rej $V mac "$(hexof '00 1a 2b 3c 4d 5e')" "interior space is not a separator"
+rej $V tpm "" "empty"
+
+join() { local IFS=,; printf '%s' "$*"; }
+cat > manifest.json <<JSON
+{
+  "schema": "mecha-hint-vectors/1",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15.1",
+  "note": "hint = sha256sum over 'mecha-hint-v1' || product || 0x00 || kind || 0x00 || normalized. raw_hex is the exact input bytes. normalized was written by hand from the contract; hints were computed by coreutils. rejects must produce no hint (the app omits it).",
+  "kats": [$(join "${KATS[@]}")],
+  "rejects": [$(join "${REJ[@]}")]
+}
+JSON
+jq . manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json

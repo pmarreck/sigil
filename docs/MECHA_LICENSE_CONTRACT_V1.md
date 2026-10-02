@@ -701,39 +701,60 @@ Open questions for Peter, in addition to section 14's four:
   still checks license, certificate, machine and expiry offline, and a seat
   count never becomes an admission input.
 - Observations: the request's existing certificate `machine` value plus an
-  optional `hints` object with at most two keys, `disk` and `mac`, each a
-  lowercase hex SHA-256. A separate machine-id hint is NOT added: `machine`
-  already is the per-product hash of that identifier, and a second hash of
-  the same value adds no evidence. Missing hints are omitted, never empty.
+  optional `hints` object with at most three keys, `disk`, `mac` and
+  `tpm`, each a lowercase hex SHA-256. A separate machine-id hint is NOT
+  added: `machine` already is the per-product hash of that identifier,
+  and a second hash of the same value adds no evidence. Missing hints are
+  omitted, never empty.
 - Hint hash: SHA-256 of `"mecha-hint-v1" || product || 0x00 || kind || 0x00
-  || normalized value`, kind `disk` or `mac`. Normalization:
+  || normalized value`, kind `disk`, `mac` or `tpm`. Normalization:
   - `disk`: serial of the device holding the OS system volume (root on
     Linux and macOS, the Windows system drive), trimmed of ASCII whitespace
     and ASCII-lowercased; omitted when unreadable without elevation.
-  - `mac`: the numerically lowest universally administered MAC among
-    physical interfaces, as 12 lowercase hex digits without separators.
-    Locally administered (second-lowest bit of the first octet set),
-    all-zero and broadcast addresses are skipped, since randomized and
-    virtual MACs carry no device identity.
+  - `mac`: the numerically lowest universally administered unicast MAC
+    among physical interfaces, as 12 lowercase hex digits without
+    separators (input may use colons, dashes, Cisco dots or none; interior
+    spaces are not separators). Locally administered (bit 0x02 of the first
+    octet), multicast (bit 0x01, which includes broadcast) and all-zero
+    addresses are rejected, since randomized and virtual MACs carry no
+    device identity.
+  - `tpm` (Windows only, Peter 2026-10-02): the TPM endorsement public key
+    as the bytes of the NCrypt Platform Crypto Provider property
+    `PCP_EKPUB`, readable without elevation; normalized to lowercase hex of
+    those exact bytes (0x00 bytes are data). Omitted when there is no TPM
+    or the property is unreadable. Linux omits it (`/dev/tpmrm0` is
+    root-only); macOS has none. Without the admin-only EK certificate there
+    is no attestation, so `tpm` is an unauthenticated claim like the
+    others, only harder to fake casually. Not yet run on a Windows 11
+    machine with a TPM; the server must work identically without it.
+  - Rejected values produce no hint and the key is omitted.
   - Single implementation: mecha_policy `hintHash` (additive to ABI 1),
-    with known-answer vectors in sigil examples, exactly as for
-    `machineHash`. No app hashes a hint its own way.
+    with known-answer and reject vectors in sigil examples/hint_vectors
+    (mecha-hint-vectors/1), exactly as for `machineHash`. No app hashes a
+    hint its own way.
 - Salt scope: the hash is salted by product only, deliberately, because
   trial dedupe must match a device across different licenses.
 - Privacy, stated precisely: these hashes are pseudonymous, not secret.
   The server operator could recover a MAC by brute force (with a known
   vendor prefix, about 2^24 candidates), and a disk serial when its format
-  is guessable. The raw values never leave the machine, but the app's
-  disclosure text must say it reports hashed hardware identifiers for
-  license enforcement.
+  is guessable. The `tpm` hash cannot be reversed by guessing, but its
+  input is a lifetime identifier of the chip, so a `tpm` hint links one
+  machine across every license of the same product. The raw values never
+  leave the machine, but the app's disclosure text must say it reports
+  hashed hardware identifiers for license enforcement.
 - Trust: hints are unauthenticated client claims. A modified client can
   report anything, for example the same hints from every machine. That is
   accepted. Like section 10's meter, the cap deters honest overuse and
   casual sharing, and it is not a cryptographic control.
 - Counting (server policy, changeable without any format change): a device
   is a cluster of certificates whose observations overlap in at least 2 of
-  their present values (`machine`, `disk`, `mac`); a request carrying only
-  `machine` joins a cluster only on `machine` equality. The same clustering
+  their present values (`machine`, `disk`, `mac`, `tpm`), or whose `tpm`
+  values are both present and equal (the endorsement key is the strongest
+  observation; a cloned VM with a copied vTPM counts as one device, accepted
+  slippage); a request carrying only `machine` joins a cluster only on
+  `machine` equality. Two `tpm` values that differ do not split a device
+  that matches on 2 other values (a motherboard or CPU swap with firmware
+  TPM). The same clustering
   refuses a second trial to a known device, which replaces the xattr
   marker and meter-checkpoint options for re-trial prevention unless Peter
   says otherwise. Server-signed meter checkpoints are therefore not

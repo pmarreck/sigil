@@ -1,0 +1,193 @@
+{
+  "schema": "mecha-hint-vectors/1",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15.1",
+  "note": "hint = sha256sum over 'mecha-hint-v1' || product || 0x00 || kind || 0x00 || normalized. raw_hex is the exact input bytes. normalized was written by hand from the contract; hints were computed by coreutils. rejects must produce no hint (the app omits it).",
+  "kats": [
+    {
+      "product": "mecha-validate",
+      "kind": "disk",
+      "raw_hex": "533445574e5830523132333435364b",
+      "normalized": "s4ewnx0r123456k",
+      "hint": "5523b5c4c4f35cfa51902d46ae87874dca53fa4211eacb4de732477ce8c28fbd",
+      "why": "uppercase serial lowercased"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "disk",
+      "raw_hex": "2020533445574e5830523132333435364b200a",
+      "normalized": "s4ewnx0r123456k",
+      "hint": "5523b5c4c4f35cfa51902d46ae87874dca53fa4211eacb4de732477ce8c28fbd",
+      "why": "ASCII whitespace trimmed: same hint as above"
+    },
+    {
+      "product": "mecha-rotshield",
+      "kind": "disk",
+      "raw_hex": "533445574e5830523132333435364b",
+      "normalized": "s4ewnx0r123456k",
+      "hint": "a679c640a194589801f9dff45162af56293861dbc34e7ca0dc549f49318ef550",
+      "why": "same serial, other product: unrelated hint"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "disk",
+      "raw_hex": "57442d574343344e31323334353637",
+      "normalized": "wd-wcc4n1234567",
+      "hint": "5a0803a95b02f6e313388d56b6d307c3b564b41f7858af66807b42547bae6f71",
+      "why": "interior punctuation kept"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30303a31413a32423a33433a34443a3545",
+      "normalized": "001a2b3c4d5e",
+      "hint": "12efd76b67bd639c1985baffb76b59acea7f0021b3629c0fcdbfcb81d8586956",
+      "why": "colon form"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30302d31612d32622d33632d34642d3565",
+      "normalized": "001a2b3c4d5e",
+      "hint": "12efd76b67bd639c1985baffb76b59acea7f0021b3629c0fcdbfcb81d8586956",
+      "why": "dash form: same hint"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "303031612e326233632e34643565",
+      "normalized": "001a2b3c4d5e",
+      "hint": "12efd76b67bd639c1985baffb76b59acea7f0021b3629c0fcdbfcb81d8586956",
+      "why": "dotted form: same hint"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "3030314132423343344435450a",
+      "normalized": "001a2b3c4d5e",
+      "hint": "12efd76b67bd639c1985baffb76b59acea7f0021b3629c0fcdbfcb81d8586956",
+      "why": "bare form with newline: same hint"
+    },
+    {
+      "product": "mecha-rotshield",
+      "kind": "mac",
+      "raw_hex": "30303a31413a32423a33433a34443a3545",
+      "normalized": "001a2b3c4d5e",
+      "hint": "8b0dcc726d15ce4c82b613b39937f536973654487dbf428e19e72cd797b8f719",
+      "why": "other product: unrelated hint"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "66633a61613a31343a30303a30303a3031",
+      "normalized": "fcaa14000001",
+      "hint": "ed7ba563b93d790f5f1f1f7c8f1148e1d12fa39d81a6e297c363177a91007e97",
+      "why": "first octet 0xfc: universally administered unicast"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "tpm",
+      "raw_hex": "525341310008000003",
+      "normalized": "525341310008000003",
+      "hint": "161f90531167abc7ae8b61e31aa91de6a52fd0850c403339f815b83cbef7b9a3",
+      "why": "binary blob hex-encoded lowercase"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "tpm",
+      "raw_hex": "00ff00",
+      "normalized": "00ff00",
+      "hint": "8c63a9053792f3bc03de6178f0210fb284608ecb1df037923641827e473b87b5",
+      "why": "0x00 at start and end, 0xff in the middle"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "tpm",
+      "raw_hex": "52534131000000",
+      "normalized": "52534131000000",
+      "hint": "36a4abcb1cd52f6186294ee07321c41776badf1be341982e220b6b5fd7a06950",
+      "why": "embedded and trailing 0x00 bytes are data, never terminators"
+    },
+    {
+      "product": "mecha-rotshield",
+      "kind": "tpm",
+      "raw_hex": "525341310008000003",
+      "normalized": "525341310008000003",
+      "hint": "d3de0f761c5d6dda436be79091115767b5e6ee1ec03c6e1364962f1e26397754",
+      "why": "other product: unrelated hint"
+    }
+  ],
+  "rejects": [
+    {
+      "product": "mecha-validate",
+      "kind": "disk",
+      "raw_hex": "",
+      "why": "empty"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "disk",
+      "raw_hex": "20090d0a",
+      "why": "whitespace only"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "",
+      "why": "empty"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30323a31613a32623a33633a34643a3565",
+      "why": "locally administered (bit 0x02 of first octet)"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30313a30303a35653a30303a30303a3031",
+      "why": "multicast (bit 0x01 of first octet)"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "66663a66663a66663a66663a66663a6666",
+      "why": "broadcast"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30303a30303a30303a30303a30303a3030",
+      "why": "all zero"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30303a31613a32623a33633a3464",
+      "why": "11 hex digits"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30303a31613a32623a33633a34643a35653a3666",
+      "why": "14 hex digits"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "30303a31613a32623a33633a34643a3567",
+      "why": "non-hex digit"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "mac",
+      "raw_hex": "3030203161203262203363203464203565",
+      "why": "interior space is not a separator"
+    },
+    {
+      "product": "mecha-validate",
+      "kind": "tpm",
+      "raw_hex": "",
+      "why": "empty"
+    }
+  ]
+}
