@@ -13,4 +13,10 @@ jq -cnS --arg lic "$LIC" --arg m "$MA" \
 	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}' | tr -d '\n' > "$D/request_activate.json"
 jq -cnS --arg cert "$CERT" '{install_cert:$cert,v:"1"}' | tr -d '\n' > "$D/bundle_cert_only.json"
 jq -cnS --arg lic "$LIC" --arg cert "$CERT" '{install_cert:$cert,license:$lic,v:"1"}' | tr -d '\n' > "$D/bundle_license_and_cert.json"
+# Contract 15.1: the same activation request carrying device hints, each the
+# first mecha-validate known answer per kind from examples/hint_vectors.
+HV="$R/examples/hint_vectors/manifest.json"
+hv() { jq -r --arg k "$1" '[.kats[] | select(.product == "mecha-validate" and .kind == $k)][0].hint' "$HV"; }
+jq -cnS --arg lic "$LIC" --arg m "$MA" --arg d "$(hv disk)" --arg a "$(hv mac)" --arg t "$(hv tpm)" \
+	'{hints:{disk:$d,mac:$a,tpm:$t},installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}' | tr -d '\n' > "$D/request_activate_hints.json"
 echo generated

@@ -568,10 +568,20 @@ carrying files. "Go online" then means "any machine, once".
   canonical form, defined as exactly what `jq -cS` emits (sorted keys, no
   whitespace, non-ASCII raw; jq escapes the quote, backslash, controls
   U+0000-U+001F AND U+007F as `\u007f`, which is the one place it is
-  stricter than RFC 8259 minimal escaping; jq is the rule), every value a string, no other
-  keys, 64 KiB bound. Request:
-  `{"installed_major","installed_minor","license","machine","operation","v":"1"}`
+  stricter than RFC 8259 minimal escaping; jq is the rule), every value a
+  string except the request's `hints` object, no other keys, 64 KiB
+  bound. Request:
+  `{"hints","installed_major","installed_minor","license","machine","operation","v":"1"}`
   with `license` the exact envelope text and `machine` 64 lowercase hex.
+  `hints` (section 15.1, added 2026-10-02) is optional and omitted
+  entirely when the app has no hint; when present it is an object whose
+  keys are a non-empty subset of `disk`, `mac`, `tpm` (sorted, as `jq -cS`
+  sorts nested keys), each value 64 lowercase hex from mecha_policy
+  `hintHash`. Hex-only values mean no escapes are possible. An unknown
+  hint kind, an empty object or a malformed value refuses the whole
+  request as `request_malformed`. Vector:
+  examples/renewal_vectors/request_activate_hints.json, which equals
+  request_activate.json byte-for-byte once `hints` is removed.
   Bundle: `{"install_cert","license","v":"1"}`; `install_cert` always
   present on success, `license` only when one was minted (migrate, renew,
   minor refresh). A refusal returns no bundle, only the online verdict

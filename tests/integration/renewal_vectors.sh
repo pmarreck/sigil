@@ -43,6 +43,31 @@ jq -j .license "$V/bundle_license_and_cert.json" | printable-binary -d > "$WORK/
 if "$SIGIL" verify "$WORK/blic" --pubkey "$LV/test_beta.key.pub" -q >/dev/null 2>&1 && cmp -s "$WORK/blic" "$LV/beta_valid.sigil"; then pass "bundle license is beta_valid and verifies"
 else fail "bundle license"; fi
 
+
+# Contract 15.1: the request may carry an optional `hints` object (disk, mac,
+# tpm; each a 64-hex hint from examples/hint_vectors for the license's own
+# product). Canonical form sorts the nested keys too.
+H="$V/request_activate_hints.json"; HV="$ROOT/examples/hint_vectors/manifest.json"
+if [[ -f "$H" ]]; then
+	jq -cS . "$H" | tr -d '\n' > "$WORK/hcanon"
+	cmp -s "$WORK/hcanon" "$H" && pass "request_activate_hints is canonical (nested keys sorted)" || fail "request_activate_hints is canonical"
+	LC_ALL=C grep -q '\\' "$H" && fail "request_activate_hints contains no backslash" || pass "request_activate_hints contains no backslash"
+	k=$(jq -c 'keys' "$H")
+	[[ "$k" == '["hints","installed_major","installed_minor","license","machine","operation","v"]' ]] && pass "hints request carries exactly seven keys" || fail "hints request keys" "$k"
+	hk=$(jq -c '.hints | keys' "$H")
+	[[ "$hk" == '["disk","mac","tpm"]' ]] && pass "hints object holds disk, mac and tpm" || fail "hints keys" "$hk"
+	[[ $(jq '[.hints[] | select(type == "string" and test("^[0-9a-f]{64}$"))] | length' "$H") -eq 3 ]] && pass "every hint is 64 lowercase hex" || fail "hint value shapes"
+	prod=$(jq -j .license "$H" | printable-binary -d 2>/dev/null | "$SIGIL" verify - --pubkey "$LV/test_beta.key.pub" -q 2>/dev/null | jq -r .product)
+	for kind in disk mac tpm; do
+		v=$(jq -r ".hints.$kind" "$H")
+		n=$(jq --arg p "$prod" --arg k "$kind" --arg v "$v" '[.kats[] | select(.product == $p and .kind == $k and .hint == $v)] | length' "$HV")
+		[[ "$n" -ge 1 ]] && pass "hints.$kind is a $prod known answer from hint_vectors" || fail "hints.$kind is a $prod known answer" "$v"
+	done
+	jq 'del(.hints)' "$H" | jq -cS . | tr -d '\n' > "$WORK/nohints"
+	cmp -s "$WORK/nohints" "$V/request_activate.json" && pass "removing hints yields request_activate byte-identically" || fail "hints request differs only by hints"
+else
+	fail "request_activate_hints.json exists"
+fi
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))
