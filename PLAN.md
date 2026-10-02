@@ -458,11 +458,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       Status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class only), 5
       and 6 answered; 1 and 2 still open. Peter 22:15 (§14.2a): no remote
       version block ever; trial keyed by (product, machine hash), no email.
-- [ ] Trial re-issue prevention when the raw machine id changes: open with
-      Peter (xattr marker vs server-signed meter checkpoints). If
-      checkpoints, the trial-meter key becomes a server role: revise §14.2
-      trial meter, add the role to KEY_REGISTRY, then build the trial class
-      and roles in mecha_policy.
+- [x] Trial re-issue prevention: resolved by contract §15.1 (Peter
+      2026-10-02 device cap 2 + $10 seats, server-side clustering of
+      hashed hints; checkpoints not adopted). — 2026-10-02 12:05 EDT
+- [ ] mecha_policy `hintHash` (kinds disk, mac; additive to ABI 1) +
+      sigil examples hint KAT vectors, TDD, once commerce confirms the
+      §15.1 shape. Then the trial class and roles in mecha_policy.
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration

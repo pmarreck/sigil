@@ -529,7 +529,9 @@ Open questions for Peter (each changes the payload or the policy):
 - The trial keeps the 250 GB scanning limit as a signed countdown (the
   trial-meter bullet above). This answers section 14 question 4: the
   limit belongs to the `trial` class only.
-- OPEN with Peter: preventing repeat trials when the raw machine id
+- RESOLVED 2026-10-02 by section 15.1 (server-side clustering of hashed
+  hints refuses a second trial to a known device). Original: preventing
+  repeat trials when the raw machine id
   changes (`/etc/machine-id` and Windows MachineGuid are user-editable).
   Candidates sent by commerce include an xattr marker (Peter's suggestion)
   and server-signed meter checkpoints. If checkpoints are chosen, the
@@ -587,10 +589,9 @@ carrying files. "Go online" then means "any machine, once".
 - Rebind by file: the customer clicks the email one-time link first (a
   pending rebind recorded server-side), then uploads; the upload stays one
   stateless request.
-- Rebind quota: rebind by email link without the owner signing is Peter's
-  ruling (email 171); NO quota has been chosen (the two-per-year idea is
-  unapproved). Build without a cap; adding one later is a server-side
-  policy change, not a format change.
+- Rebind quota: superseded 2026-10-02 by section 15.1 (2 devices per
+  entitlement, $10 add-on seats, server-side counting). Rebind itself
+  stays an email-link operation without the owner signing (email 171).
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
@@ -628,9 +629,9 @@ which machine may run it under that license. Execution needs both.
 - Self-service rebind: an email-authenticated customer (a one-time link to
   the license's address) can bind the license to a new `machine`; the old
   certificate is marked replaced in the ledger and reported `revoked` by the
-  confirmation endpoint. No replacement quota is approved. Without a quota,
-  binding deters casual sharing only: whoever controls the license's email
-  address can move it.
+  confirmation endpoint. Section 15.1 caps devices per entitlement; a
+  rebind moves a seat, so whoever controls the license's email address
+  can still move one.
 - Refresh (section 14) re-issues the certificate for the new license on the
   same `machine` in the same online call.
 - Normalization (fixed 2026-10-01): the raw id is trimmed of ASCII
@@ -685,3 +686,70 @@ Open questions for Peter, in addition to section 14's four:
    certificates arrive with paid launch. Requiring them for the beta adds a
    new signing role, an online activation path and app-side fingerprinting
    on every platform inside two weeks.
+
+### 15.1 Device cap and server-side device policy (Peter 2026-10-02 11:42 EDT via commerce; sigil ruling 2026-10-02)
+
+- Cap: each paid entitlement allows 2 devices, any mix of operating
+  systems; each additional device is a $10 add-on seat. This replaces
+  "no replacement quota" in section 15 and the rebind-quota bullet in
+  section 14.3. Seats live in the commerce ledger and nowhere in a signed
+  payload: license payload v1 and certificate payload v1 stay frozen, and
+  buying a seat changes no file the customer holds.
+- Decision site: the server decides device counts (Steam style) from
+  observations the app reports at activation, rebind and refresh, online
+  or by section 14.3 file. Client admission is unchanged: mecha_policy
+  still checks license, certificate, machine and expiry offline, and a seat
+  count never becomes an admission input.
+- Observations: the request's existing certificate `machine` value plus an
+  optional `hints` object with at most two keys, `disk` and `mac`, each a
+  lowercase hex SHA-256. A separate machine-id hint is NOT added: `machine`
+  already is the per-product hash of that identifier, and a second hash of
+  the same value adds no evidence. Missing hints are omitted, never empty.
+- Hint hash: SHA-256 of `"mecha-hint-v1" || product || 0x00 || kind || 0x00
+  || normalized value`, kind `disk` or `mac`. Normalization:
+  - `disk`: serial of the device holding the OS system volume (root on
+    Linux and macOS, the Windows system drive), trimmed of ASCII whitespace
+    and ASCII-lowercased; omitted when unreadable without elevation.
+  - `mac`: the numerically lowest universally administered MAC among
+    physical interfaces, as 12 lowercase hex digits without separators.
+    Locally administered (second-lowest bit of the first octet set),
+    all-zero and broadcast addresses are skipped, since randomized and
+    virtual MACs carry no device identity.
+  - Single implementation: mecha_policy `hintHash` (additive to ABI 1),
+    with known-answer vectors in sigil examples, exactly as for
+    `machineHash`. No app hashes a hint its own way.
+- Salt scope: the hash is salted by product only, deliberately, because
+  trial dedupe must match a device across different licenses.
+- Privacy, stated precisely: these hashes are pseudonymous, not secret.
+  The server operator could recover a MAC by brute force (with a known
+  vendor prefix, about 2^24 candidates), and a disk serial when its format
+  is guessable. The raw values never leave the machine, but the app's
+  disclosure text must say it reports hashed hardware identifiers for
+  license enforcement.
+- Trust: hints are unauthenticated client claims. A modified client can
+  report anything, for example the same hints from every machine. That is
+  accepted. Like section 10's meter, the cap deters honest overuse and
+  casual sharing, and it is not a cryptographic control.
+- Counting (server policy, changeable without any format change): a device
+  is a cluster of certificates whose observations overlap in at least 2 of
+  their present values (`machine`, `disk`, `mac`); a request carrying only
+  `machine` joins a cluster only on `machine` equality. The same clustering
+  refuses a second trial to a known device, which replaces the xattr
+  marker and meter-checkpoint options for re-trial prevention unless Peter
+  says otherwise. Server-signed meter checkpoints are therefore not
+  adopted, and the trial-meter key stays as section 14.2 states.
+- Refusal at the cap: activation returns `device_limit_reached`. This is an
+  issuer response, never an app admission reason or a file verdict.
+- Freeing a seat: rebind (email one-time link, as ruled) or
+  email-confirmed "deactivate all devices". Each replaced certificate is
+  marked replaced in the ledger and reported `revoked` by the confirmation
+  endpoint; the app refuses protected work once it learns `revoked`.
+  Accepted slippage: an offline machine keeps running until its next
+  online check or its certificate `expiry`, and an air-gapped machine
+  (section 14.3) learns of revocation only when it next carries a file.
+- Beta (October 15): observe-only. The beta app reports hints, and the
+  server records clusters and counts but never refuses on the cap. sigil
+  rules this as commerce recommended; Peter may override.
+- Future Pro tier (one GUI client, many headless scanner nodes priced per
+  node): noted, not designed. It needs a node class in the ledger and is
+  out of scope for v1.
