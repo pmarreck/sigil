@@ -476,7 +476,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       counter report (epoch + cumulative scanned_bytes, per-(cert, epoch)
       max, unsigned, display only; trial cluster over 250 GB gets no new
       trial). — 2026-10-03 17:20 EDT
-- [ ] Renewal vector request_activate_usage.json once commerce accepts §15.2.
+- [x] Renewal vectors for §15.2: bundle_cert_displaced.json and
+      request_activate_usage.json (u64 bound checked); commerce pinned
+      2734778. Churn threshold waits on Peter. — 2026-10-03 17:20 EDT
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration

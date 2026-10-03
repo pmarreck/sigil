@@ -83,6 +83,24 @@ if [[ -f "$BD" ]]; then
 else
 	fail "bundle_cert_displaced.json exists"
 fi
+
+# Contract 15.2: an optional `usage` object, {epoch: UUIDv7, scanned_bytes:
+# canonical decimal u64}, canonical under jq -cS like `hints`.
+U="$V/request_activate_usage.json"
+if [[ -f "$U" ]]; then
+	jq -cS . "$U" | tr -d '\n' > "$WORK/ucanon"
+	cmp -s "$WORK/ucanon" "$U" && pass "request_activate_usage is canonical" || fail "request_activate_usage is canonical"
+	[[ $(jq -c 'keys' "$U") == '["installed_major","installed_minor","license","machine","operation","usage","v"]' ]] && pass "usage request carries exactly seven keys" || fail "usage request keys" "$(jq -c keys "$U")"
+	[[ $(jq -c '.usage | keys' "$U") == '["epoch","scanned_bytes"]' ]] && pass "usage holds exactly epoch and scanned_bytes" || fail "usage keys"
+	jq -e '.usage.epoch | test("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")' "$U" >/dev/null && pass "epoch is a lowercase UUIDv7" || fail "epoch shape"
+	sb=$(jq -r '.usage.scanned_bytes' "$U")
+	if [[ "$sb" =~ ^(0|[1-9][0-9]*)$ ]] && { [[ ${#sb} -lt 20 ]] || [[ ${#sb} -eq 20 && "$sb" < "18446744073709551616" ]]; }; then pass "scanned_bytes is a canonical decimal u64"
+	else fail "scanned_bytes shape" "$sb"; fi
+	jq 'del(.usage)' "$U" | jq -cS . | tr -d '\n' > "$WORK/uno"
+	cmp -s "$WORK/uno" "$V/request_activate.json" && pass "removing usage yields request_activate byte-identically" || fail "usage request differs only by usage"
+else
+	fail "request_activate_usage.json exists"
+fi
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))

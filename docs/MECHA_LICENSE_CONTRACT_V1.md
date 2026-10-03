@@ -800,8 +800,9 @@ Displacement replaces refusal:
 - When an activation arrives for a new device and no seat is free, the
   issuer revokes the OLDEST activated device of that customer and product
   and activates the new one. "Oldest" is earliest first activation
-  (Peter's word), tie-broken by the earlier `cert_id` (UUIDv7, time
-  ordered), so the choice is deterministic. If Peter rules "least recently
+  (Peter's word), tie-broken by activation order (the same order as
+  `cert_id`, which is a time-ordered UUIDv7), so the choice is
+  deterministic. If Peter rules "least recently
   seen" instead, only this bullet changes; no format changes. The
   requesting device's own cluster is never displaced.
 - The activation response gains `displaced`: either absent, or an object
@@ -859,7 +860,9 @@ Usage counter (lifetime bytes scanned):
   starts: first launch under a certificate, or after its local state is
   lost. In section 14.3 files `usage` is a nested object canonicalized by
   `jq -cS` like `hints`; malformed values refuse the request as
-  `request_malformed`.
+  `request_malformed`. Vector:
+  examples/renewal_vectors/request_activate_usage.json, which equals
+  request_activate.json byte for byte once `usage` is removed.
 - Monotonic rule: the issuer stores, per (`cert_id`, `epoch`), the largest
   `scanned_bytes` it has seen. A lower value for a known pair is ignored,
   never an error and never a decrease. A replayed report changes nothing.

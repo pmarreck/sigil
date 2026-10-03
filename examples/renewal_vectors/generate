@@ -22,4 +22,8 @@ jq -cnS --arg lic "$LIC" --arg m "$MA" --arg d "$(hv disk)" --arg a "$(hv mac)" 
 # Contract 15.2: an activation that displaced the oldest device; the bundle
 # names only that device's first-activation date (unsigned, informational).
 jq -cnS --arg cert "$CERT" '{displaced:{first_activated:"2026-09-17"},install_cert:$cert,v:"1"}' | tr -d '\n' > "$D/bundle_cert_displaced.json"
+# Contract 15.2: the same activation request carrying a usage report (1 GiB
+# scanned in this certificate's current epoch).
+jq -cnS --arg lic "$LIC" --arg m "$MA" \
+	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",usage:{epoch:"0192f3a4-5b6c-7d8e-9f01-23456789abce",scanned_bytes:"1073741824"},v:"1"}' | tr -d '\n' > "$D/request_activate_usage.json"
 echo generated

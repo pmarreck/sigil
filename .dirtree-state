@@ -22,6 +22,7 @@ annotate=[
 	examples/renewal_vectors = Offline-renewal request and bundle vectors (contract §14.3), canonical jq -cS JSON embedding existing signed envelopes
 	examples/renewal_vectors/bundle_cert_displaced.json = Bundle with optional unsigned displaced {first_activated} (contract 15.2); equals bundle_cert_only minus displaced
 	examples/renewal_vectors/request_activate_hints.json = Renewal request with optional hints object (contract 14.3 + 15.1); equals request_activate minus hints
+	examples/renewal_vectors/request_activate_usage.json = Renewal request with optional usage {epoch, scanned_bytes} (contract 15.2); equals request_activate minus usage
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
