@@ -479,6 +479,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Renewal vectors for §15.2: bundle_cert_displaced.json and
       request_activate_usage.json (u64 bound checked); commerce pinned
       2734778. Churn threshold waits on Peter. — 2026-10-03 17:20 EDT
+      Commerce 59c4e24 (pinned 115f505): usage validation on the same u64
+      edge set, max per (cert_id, epoch), usage_total online and in 14.3
+      files; account scope across majors waits on seats by (customer,
+      product), trial per-device total on the trial class.
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration
