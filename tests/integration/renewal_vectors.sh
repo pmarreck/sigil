@@ -68,6 +68,21 @@ if [[ -f "$H" ]]; then
 else
 	fail "request_activate_hints.json exists"
 fi
+
+# Contract 15.2: a bundle may carry an optional unsigned `displaced` object
+# naming only the displaced device's first-activation date.
+BD="$V/bundle_cert_displaced.json"
+if [[ -f "$BD" ]]; then
+	jq -cS . "$BD" | tr -d '\n' > "$WORK/bdcanon"
+	cmp -s "$WORK/bdcanon" "$BD" && pass "bundle_cert_displaced is canonical" || fail "bundle_cert_displaced is canonical"
+	[[ $(jq -c 'keys' "$BD") == '["displaced","install_cert","v"]' ]] && pass "displaced bundle carries exactly displaced, install_cert, v" || fail "displaced bundle keys" "$(jq -c keys "$BD")"
+	[[ $(jq -c '.displaced | keys' "$BD") == '["first_activated"]' ]] && pass "displaced names nothing but first_activated" || fail "displaced keys"
+	jq -e '.displaced.first_activated | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")' "$BD" >/dev/null && pass "first_activated is a YYYY-MM-DD date" || fail "first_activated shape"
+	jq 'del(.displaced)' "$BD" | jq -cS . | tr -d '\n' > "$WORK/bdno"
+	cmp -s "$WORK/bdno" "$V/bundle_cert_only.json" && pass "removing displaced yields bundle_cert_only byte-identically" || fail "displaced bundle differs only by displaced"
+else
+	fail "bundle_cert_displaced.json exists"
+fi
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))

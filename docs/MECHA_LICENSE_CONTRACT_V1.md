@@ -808,6 +808,15 @@ Displacement replaces refusal:
   `{"first_activated":"YYYY-MM-DD"}` naming nothing but that date, so the
   app can say "your device first activated on that date was signed out".
   It carries no hint, machine hash or name.
+- Offline (section 14.3): `renewal.sigil-bundle` gains the same optional
+  `displaced` object, present only when this activation displaced a
+  device: `{"displaced","install_cert","license","v":"1"}`. It is unsigned
+  and informational, never an admission input, and canonical under
+  `jq -cS` like every other key. Vector:
+  examples/renewal_vectors/bundle_cert_displaced.json, which equals
+  bundle_cert_only.json byte for byte once `displaced` is removed.
+- Field name and shape are fixed as `first_activated`, a UTC date. A
+  full timestamp (`first_seen`) adds precision the alert does not need.
 - Idempotency: replaying the same activation (same license, same
   `machine`) returns the stored certificate AND the stored `displaced`
   result. It never displaces a second device.
