@@ -153,10 +153,13 @@ scope in the registry commit.
   the beta command therefore writes entitlements into the durable Worker
   ledger through an authenticated, audited admin path and mints ONLY via
   `issueForEntitlement`. Consequence: durable Worker storage IS
-  beta-critical (one table). D1 vs Durable Object remains Peter's choice;
-  absent his answer by Oct 2 the default is D1, one table, put-if-absent
-  (`INSERT ... ON CONFLICT DO NOTHING`), which is also commerce's and
-  Einstein's recommendation. The in-memory ledger stays test-only.
+  beta-critical. DECIDED: the ledger is a Cloudflare Durable Object with
+  UUIDv7 ids (Peter 2026-10-01 via commerce; reconfirmed 2026-10-02 17:26
+  EDT via LPM, relayed by Einstein 2026-10-03). The earlier D1 one-table
+  default is superseded. Put-if-absent semantics are unchanged: the Object
+  serializes writes, and `recordOnce` stores each envelope once before any
+  delivery. Commerce owns the adapter behind the issuance port; sigil owns
+  this contract. The in-memory ledger stays test-only.
 - Ruling (lead, 2026-09-29 20:25 EDT, on the audited beta command shape):
   ACCEPTED as proposed with two changes. (1) `purchase_date` is NOT a
   request field: the Worker's UTC date at mint is the purchase date, so

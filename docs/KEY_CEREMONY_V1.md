@@ -90,8 +90,9 @@ contract §12 with trust domain `production`.
 1. Choose and name the two cold media, and where they live afterwards.
 2. Run the preflight and the ceremony (sections 1 and 2): ~15 minutes.
 3. Provision the two online secrets with `wrangler secret put` (step 2.5).
-4. Decide D1 vs Durable Object for commerce's durable ledger (gates live
-   PAID issuance only; not needed for the beta).
+4. DONE: the durable ledger is a Durable Object (Peter 2026-10-01,
+   reconfirmed 2026-10-02). It is beta-critical (custody section 5), and
+   commerce owns the adapter.
 5. Approve the production-controlled isolated restore (section 3 (iii)).
 6. Authorize the first real send: the founder license to himself
    (section 4), then the beta invitations.

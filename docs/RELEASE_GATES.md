@@ -124,17 +124,18 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   `recordOnce` ledger call before any delivery; retries reuse the recorded
   bytes; a port without it fails closed; tested across a UTC day boundary
   with a control. Per-product roles per custody v1.3 at 3c237a4. STILL
-  BLOCKING live PAID issuance: the durable ledger adapter (waits on Peter's
-  D1-vs-Durable-Object decision); `roleFor(provider, product)` once
+  BLOCKING live issuance: the durable ledger adapter (Durable Object,
+  DECIDED by Peter 2026-10-01, reconfirmed 2026-10-02; beta-critical per
+  custody section 5); `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); E2E pin moved to the accepted candidate 569808119
   at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).
 - sigil: `keygen --hot-bundle-out` + `hot-bundle open` SHIPPED 380cd22 and
   `sigil paper` cold copies SHIPPED aae83d4 (2026-09-28; Peter's visual
-  approval of the render pending); ceremony preflight script still to
-  write; vector regeneration only on a coordinated schema bump.
+  approval of the render pending); ceremony preflight with --rehearse
+  shipped and runs in ./test; vector regeneration only on a coordinated schema bump.
 - Peter: custody DECIDED 2026-09-28 (all six); still his: key ceremony;
-  D1-vs-Durable-Object; real-send authorization; mecha_policy Mechatron
+  real-send authorization; mecha_policy Mechatron
   webhook; update-contract questions (delta shape, channel switch,
   RotShield namespace).
 

@@ -358,10 +358,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       staging), no delivery-based lockout, no exposure-bound claim, pipe
       = reduction not proof. Hot bundle + per-product Workers marked NEW
       owner choices.
-- [ ] BLOCKER for live PAID issuance (not beta): Worker does not persist
+- [ ] BLOCKER for live issuance (beta included): Worker does not persist
       envelope bytes, so a later-day resend would re-mint with a new
       purchase_date — idempotency violation. Closes with Phase D durable
-      ledger (waits on Peter's D1-vs-Durable-Object decision).
+      ledger: Durable Object (decided 2026-10-01, reconfirmed 2026-10-02);
+      commerce owns the adapter, now beta-critical.
 - [x] Coverage-cap ruling (2026-09-21 14:00 EDT): per-plan cap is NOT a
       lifetime quota; hidden in-admission splitting is the violation; test
       trust never bypasses admission. Contract section 11 clarified.
