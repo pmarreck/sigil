@@ -513,6 +513,9 @@ Open questions for Peter (each changes the payload or the policy):
   but the local meter, and must differ from every license and install-cert
   key. Deterrence only; anyone who extracts it can reset the meter, as
   section 10 already states for client-side metering.
+  Section 15.2 adds the server-side view: usage reports let the server see
+  each trial device cluster's total, and a device over the limit gets no
+  new trial. The local meter stays the offline admission input.
 
 
 ### 14.2a Peter 2026-10-01 22:15 EDT (commerce session): no kill switch, email-free trial
@@ -569,9 +572,9 @@ carrying files. "Go online" then means "any machine, once".
   whitespace, non-ASCII raw; jq escapes the quote, backslash, controls
   U+0000-U+001F AND U+007F as `\u007f`, which is the one place it is
   stricter than RFC 8259 minimal escaping; jq is the rule), every value a
-  string except the request's `hints` object, no other keys, 64 KiB
-  bound. Request:
-  `{"hints","installed_major","installed_minor","license","machine","operation","v":"1"}`
+  string except the request's `hints` and `usage` objects, no other keys,
+  64 KiB bound. Request:
+  `{"hints","installed_major","installed_minor","license","machine","operation","usage","v":"1"}`
   with `license` the exact envelope text and `machine` 64 lowercase hex.
   `hints` (section 15.1, added 2026-10-02) is optional and omitted
   entirely when the app has no hint; when present it is an object whose
@@ -582,6 +585,9 @@ carrying files. "Go online" then means "any machine, once".
   request as `request_malformed`. Vector:
   examples/renewal_vectors/request_activate_hints.json, which equals
   request_activate.json byte-for-byte once `hints` is removed.
+  `usage` (section 15.2, added 2026-10-03) is optional on the same terms:
+  omitted when absent, never empty, keys exactly `epoch` and
+  `scanned_bytes`.
   Bundle: `{"install_cert","license","v":"1"}`; `install_cert` always
   present on success, `license` only when one was minted (migrate, renew,
   minor refresh). A refusal returns no bundle, only the online verdict
@@ -699,7 +705,8 @@ Open questions for Peter, in addition to section 14's four:
 
 ### 15.1 Device cap and server-side device policy (Peter 2026-10-02 11:42 EDT via commerce; sigil ruling 2026-10-02)
 
-- Cap: each paid entitlement allows 2 devices, any mix of operating
+- Cap: each paid entitlement allows 2 devices (seat ownership moved to
+  customer and product by section 15.2), any mix of operating
   systems; each additional device is a $10 add-on seat. This replaces
   "no replacement quota" in section 15 and the rebind-quota bullet in
   section 14.3. Seats live in the commerce ledger and nowhere in a signed
@@ -769,8 +776,9 @@ Open questions for Peter, in addition to section 14's four:
   marker and meter-checkpoint options for re-trial prevention unless Peter
   says otherwise. Server-signed meter checkpoints are therefore not
   adopted, and the trial-meter key stays as section 14.2 states.
-- Refusal at the cap: activation returns `device_limit_reached`. This is an
-  issuer response, never an app admission reason or a file verdict.
+- SUPERSEDED 2026-10-03 by section 15.2 (displacement). Original: refusal
+  at the cap, activation returns `device_limit_reached`, an issuer
+  response, never an app admission reason or a file verdict.
 - Freeing a seat: rebind (email one-time link, as ruled) or
   email-confirmed "deactivate all devices". Each replaced certificate is
   marked replaced in the ledger and reported `revoked` by the confirmation
@@ -784,3 +792,82 @@ Open questions for Peter, in addition to section 14's four:
 - Future Pro tier (one GUI client, many headless scanner nodes priced per
   node): noted, not designed. It needs a node class in the ledger and is
   out of scope for v1.
+
+### 15.2 Displacement at the cap, seat ownership, usage counter (Peter 2026-10-03 via commerce; sigil ruling 2026-10-03)
+
+Displacement replaces refusal:
+
+- When an activation arrives for a new device and no seat is free, the
+  issuer revokes the OLDEST activated device of that customer and product
+  and activates the new one. "Oldest" is earliest first activation
+  (Peter's word), tie-broken by the earlier `cert_id` (UUIDv7, time
+  ordered), so the choice is deterministic. If Peter rules "least recently
+  seen" instead, only this bullet changes; no format changes. The
+  requesting device's own cluster is never displaced.
+- The activation response gains `displaced`: either absent, or an object
+  `{"first_activated":"YYYY-MM-DD"}` naming nothing but that date, so the
+  app can say "your device first activated on that date was signed out".
+  It carries no hint, machine hash or name.
+- Idempotency: replaying the same activation (same license, same
+  `machine`) returns the stored certificate AND the stored `displaced`
+  result. It never displaces a second device.
+- The displaced device's certificate is marked replaced and reported
+  `revoked` at its next online check, where the app shows its own alert and
+  refuses protected work. Slippage is as in section 15.1.
+- A refunded or expired add-on seat displaces the oldest devices beyond
+  the new seat count, by the same rule and with the same alert.
+- Churn control (server policy, changeable without a format change):
+  displacement lets a shared license rotate across machines, each running
+  until its next check-in, and two machines can ping-pong by re-activating.
+  The issuer counts displacements per customer and product. Past a
+  threshold (proposed: more than 2 in 30 days), a further displacement
+  requires the email one-time link, exactly like rebind. That stops
+  ping-pong and leaves honest "new computer" moves automatic.
+- Beta: still observe-only. The server records what it would have
+  displaced and never revokes on the cap.
+
+Seat ownership:
+
+- Seats attach to (customer, product), not to one purchase's entitlement,
+  and carry over to new major versions. "Customer" is the
+  email-verified account the license is issued to; its ledger key is the
+  hashed entitlement id commerce already uses, so no address enters the
+  audit. Seats stay ledger-only; no signed payload changes. Peter's
+  undecided "$15 seat for all current and future products" would only
+  widen the scope from one product to all, also ledger-only.
+
+Usage counter (lifetime bytes scanned):
+
+- Purpose: a visible feature, owned and displayed by validate and
+  validate_gui. Bytes only for now; failure counts come later. It is never
+  an admission input, never billing, and never a license term.
+- Report: requests to the issuer (activation, refresh, the monthly
+  check-in and section 14.3 files) MAY carry
+  `usage: {"epoch":"<UUIDv7>","scanned_bytes":"<decimal>"}`. `scanned_bytes`
+  is the cumulative count for this certificate since `epoch` began: a
+  base-10 string of an unsigned 64-bit integer, no sign, no leading zeros
+  ("0" for zero). `epoch` is a UUIDv7 the app mints when its local counter
+  starts: first launch under a certificate, or after its local state is
+  lost. In section 14.3 files `usage` is a nested object canonicalized by
+  `jq -cS` like `hints`; malformed values refuse the request as
+  `request_malformed`.
+- Monotonic rule: the issuer stores, per (`cert_id`, `epoch`), the largest
+  `scanned_bytes` it has seen. A lower value for a known pair is ignored,
+  never an error and never a decrease. A replayed report changes nothing.
+  Lost local state starts a new epoch at 0, so nothing is double-counted
+  and nothing already reported is lost.
+- Totals: an account's lifetime total is the sum of the stored maxima over
+  every certificate and epoch of that customer and product, across all
+  seats and majors. A trial device has no account, so its total is summed
+  over its device cluster (section 15.1 clustering). The response returns
+  the account total as `usage_total` (decimal string) for display.
+- Signing: reports are unsigned client claims, like hints. A modified app
+  can under- or over-report. That is acceptable because the counter
+  authorizes nothing. No signed checkpoint role is added: it would be a
+  new online key for a display feature. If Peter later wants a tamper
+  resistant counter, that is a new role and a new ceremony item.
+- Trial limit (section 14.2 reopened and settled): the local MAC'd meter
+  stays the offline admission input for 250 GB. The server additionally
+  refuses a new trial certificate to a device cluster whose reported total
+  has reached 250 GB, which closes the "delete settings and re-trial"
+  loop whenever the device goes online.

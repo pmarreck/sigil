@@ -470,6 +470,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       12/12 mutants killed. — 2026-10-02 12:05 EDT
 - [ ] Then: the trial class and roles in mecha_policy. A Windows 11 TPM
       run of PCP_EKPUB is still owed by an app team before tpm is relied on.
+- [x] Contract §15.2 (Peter 2026-10-03): displacement of the oldest device
+      replaces refusal (idempotent, churn threshold then email link, beta
+      observe-only); seats on (customer, product) across majors; usage
+      counter report (epoch + cumulative scanned_bytes, per-(cert, epoch)
+      max, unsigned, display only; trial cluster over 250 GB gets no new
+      trial). — 2026-10-03 17:20 EDT
+- [ ] Renewal vector request_activate_usage.json once commerce accepts §15.2.
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration
