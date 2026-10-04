@@ -798,13 +798,13 @@ Open questions for Peter, in addition to section 14's four:
 Displacement replaces refusal:
 
 - When an activation arrives for a new device and no seat is free, the
-  issuer revokes the OLDEST activated device of that customer and product
-  and activates the new one. "Oldest" is earliest first activation
-  (Peter's word), tie-broken by activation order (the same order as
-  `cert_id`, which is a time-ordered UUIDv7), so the choice is
-  deterministic. If Peter rules "least recently
-  seen" instead, only this bullet changes; no format changes. The
-  requesting device's own cluster is never displaced.
+  issuer revokes the LEAST RECENTLY REPORTED-IN device of that customer
+  and product and activates the new one (Peter 2026-10-03 20:09 EDT,
+  replacing "earliest first activation"). A contact is any request that
+  device's certificate makes to the issuer: activation, refresh, section
+  14.3 renewal, and the monthly check-in once it exists. Ties go to the
+  earlier first activation, then to record order, so the choice is
+  deterministic. The requesting device's own cluster is never displaced.
 - The activation response gains `displaced`: either absent, or an object
   `{"first_activated":"YYYY-MM-DD"}` naming nothing but that date, so the
   app can say "your device first activated on that date was signed out".
@@ -824,15 +824,22 @@ Displacement replaces refusal:
 - The displaced device's certificate is marked replaced and reported
   `revoked` at its next online check, where the app shows its own alert and
   refuses protected work. Slippage is as in section 15.1.
-- A refunded or expired add-on seat displaces the oldest devices beyond
-  the new seat count, by the same rule and with the same alert.
-- Churn control (server policy, changeable without a format change):
-  displacement lets a shared license rotate across machines, each running
-  until its next check-in, and two machines can ping-pong by re-activating.
-  The issuer counts displacements per customer and product. Past a
-  threshold (proposed: more than 2 in 30 days), a further displacement
-  requires the email one-time link, exactly like rebind. That stops
-  ping-pong and leaves honest "new computer" moves automatic.
+- A refunded or expired add-on seat displaces the least recently
+  reported-in devices beyond the new seat count, by the same rule and
+  with the same alert. Seat displacement is not a churn event.
+- Churn limit (Peter approved 2026-10-03 20:09 EDT): displacement lets a
+  shared license rotate across machines and two machines ping-pong by
+  re-activating. The issuer counts displacements per customer and
+  product over a rolling 30 days. An activation that would displace is
+  automatic while fewer than 2 displacements happened in that window, so
+  2 are automatic and the third needs confirmation. Past the limit the
+  issuer refuses with `displacement_needs_confirmation` (HTTP 409) and
+  changes nothing; the customer then confirms through the email one-time
+  link, sharing the rebind link flow. The count follows the device across
+  reactivation and cluster merging, so ping-pong still counts. Replays
+  count zero. The beta never needs confirmation (observe-only). Like
+  `device_limit_reached` before it, the code is an issuer response, never
+  an app admission reason or a file verdict.
 - Beta: still observe-only. The server records what it would have
   displaced and never revokes on the cap.
 

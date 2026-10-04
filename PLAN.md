@@ -483,6 +483,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       edge set, max per (cert_id, epoch), usage_total online and in 14.3
       files; account scope across majors waits on seats by (customer,
       product), trial per-device total on the trial class.
+- [x] §15.2: least recently reported-in victim, churn limit 2 per rolling
+      30 days then displacement_needs_confirmation (409) + email link (Peter
+      2026-10-03 20:09; commerce built). — 2026-10-03 20:20 EDT
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration
