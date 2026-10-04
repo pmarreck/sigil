@@ -130,6 +130,9 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); E2E pin moved to the accepted candidate 569808119
   at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).
+  Known gap 2026-10-03 (commerce LT17f): the §15.2 churn limit counts per
+  entitlement until seats move to (customer, product); a new major
+  purchase resets it until then.
 - sigil: `keygen --hot-bundle-out` + `hot-bundle open` SHIPPED 380cd22 and
   `sigil paper` cold copies SHIPPED aae83d4 (2026-09-28; Peter's visual
   approval of the render pending); ceremony preflight with --rehearse

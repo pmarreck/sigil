@@ -486,6 +486,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] §15.2: least recently reported-in victim, churn limit 2 per rolling
       30 days then displacement_needs_confirmation (409) + email link (Peter
       2026-10-03 20:09; commerce built). — 2026-10-03 20:20 EDT
+      KNOWN GAP (commerce LT17f): churn counted per entitlement until seats
+      move to (customer, product), so a new major purchase resets the count.
+      Seat-refund revocations excluded and test-locked.
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration
