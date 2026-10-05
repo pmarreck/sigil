@@ -492,8 +492,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] §15.2 usage revised on validate's questions: epoch per installation
       (lazy mint, survives refresh, rebind, license change), what counts
       (odometer of admitted user-file bytes; coverage excluded; git when
-      measurable), monotonic key (account scope, epoch). Commerce must
-      rekey from (cert_id, epoch). — 2026-10-05 12:50 EDT
+      measurable), monotonic key (account scope, epoch). Commerce rekeyed
+      at 0888fc6 (one epoch over two certificates counts once; old key
+      fails the test; scope = entitlement until LT17f). — 2026-10-05 12:50 EDT
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration
