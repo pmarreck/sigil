@@ -489,6 +489,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       KNOWN GAP (commerce LT17f): churn counted per entitlement until seats
       move to (customer, product), so a new major purchase resets the count.
       Seat-refund revocations excluded and test-locked.
+- [x] §15.2 usage revised on validate's questions: epoch per installation
+      (lazy mint, survives refresh, rebind, license change), what counts
+      (odometer of admitted user-file bytes; coverage excluded; git when
+      measurable), monotonic key (account scope, epoch). Commerce must
+      rekey from (cert_id, epoch). — 2026-10-05 12:50 EDT
 - [x] validate 23001eadd certificate admission pre-checked (rebuild matches
       all four hashes, five-key scan, admission matrix); relayed to red team;
       §15 adopts _not_authentic and _machine_unavailable; ./test integration

@@ -861,25 +861,45 @@ Usage counter (lifetime bytes scanned):
 - Report: requests to the issuer (activation, refresh, the monthly
   check-in and section 14.3 files) MAY carry
   `usage: {"epoch":"<UUIDv7>","scanned_bytes":"<decimal>"}`. `scanned_bytes`
-  is the cumulative count for this certificate since `epoch` began: a
+  is the cumulative count on this installation since `epoch` began: a
   base-10 string of an unsigned 64-bit integer, no sign, no leading zeros
-  ("0" for zero). `epoch` is a UUIDv7 the app mints when its local counter
-  starts: first launch under a certificate, or after its local state is
-  lost. In section 14.3 files `usage` is a nested object canonicalized by
-  `jq -cS` like `hints`; malformed values refuse the request as
-  `request_malformed`. Vector:
+  ("0" for zero). In section 14.3 files `usage` is a nested object
+  canonicalized by `jq -cS` like `hints`; malformed values refuse the
+  request as `request_malformed`. Vector:
   examples/renewal_vectors/request_activate_usage.json, which equals
   request_activate.json byte for byte once `usage` is removed.
-- Monotonic rule: the issuer stores, per (`cert_id`, `epoch`), the largest
-  `scanned_bytes` it has seen. A lower value for a known pair is ignored,
-  never an error and never a decrease. A replayed report changes nothing.
-  Lost local state starts a new epoch at 0, so nothing is double-counted
-  and nothing already reported is lost.
+- Epoch (revised 2026-10-05 on validate's questions): a UUIDv7 the app
+  mints when it first counts bytes with no local counter state, that is
+  on the first admitted scan of a fresh install or after local state is
+  lost. Minting lazily is correct: `license status` stays read-only, and a
+  request made before any scan omits `usage`. The epoch is per
+  installation and per product, NOT per certificate: it survives
+  certificate refresh, rebind to this machine, license replacement and
+  trial-to-paid conversion. Only lost local state starts a new one.
+- What counts (the same definition drives section 14.2's trial meter):
+  the size in bytes of every user file admitted to protected work, each
+  time it is scanned. It is an odometer, not a count of distinct files, so
+  rescans and `--stress` repeats count. Synthetic data that the app
+  generates itself, such as statistical coverage runs, does not count.
+  Git repository validation counts once validate can report the object
+  bytes it reads; until then it is excluded, and the app must not guess.
+- Monotonic rule (revised 2026-10-05; was per (`cert_id`, `epoch`)): the
+  issuer stores, per (account scope, `epoch`), the largest
+  `scanned_bytes` it has seen. Account scope is (customer, product) for
+  beta and paid licenses, and the device cluster for a trial. A lower value
+  for a known key is ignored, never an error and never a decrease. A
+  replayed report changes nothing. Because the epoch outlives
+  certificates, bytes scanned between writing a section 14.3 request and
+  importing its bundle are reported later under the same epoch, and none
+  are lost. Lost local state starts a new epoch at 0, so nothing is
+  double-counted.
 - Totals: an account's lifetime total is the sum of the stored maxima over
-  every certificate and epoch of that customer and product, across all
-  seats and majors. A trial device has no account, so its total is summed
-  over its device cluster (section 15.1 clustering). The response returns
-  the account total as `usage_total` (decimal string) for display.
+  every epoch reported in that account scope, across all seats, majors and
+  certificates. The response returns it as `usage_total` (decimal string)
+  for display. Accepted slippage, display only: one epoch reported under
+  two account scopes (a trial converting to paid, or a different
+  customer's license imported on the same machine) appears in both
+  totals; a cloned machine sharing one epoch is counted once.
 - Signing: reports are unsigned client claims, like hints. A modified app
   can under- or over-report. That is acceptable because the counter
   authorizes nothing. No signed checkpoint role is added: it would be a
