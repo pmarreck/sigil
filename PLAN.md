@@ -468,6 +468,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       basenc + xxd oracles, rehearsal green; samples emailed to Peter for
       visual approval. — 2026-10-06 10:45 EDT
 - [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
+- [ ] Peter: GUI demos before the ceremony - refusal-only (1) or a labeled
+      test-trust demo build (2)? Emailed 2026-10-06 17:40 EDT; validate_gui told
+      no production keys or real licenses exist.
 - [x] Restore check signs examples/restore_check/payload.json (no license or
       certificate shape; policy refuses it as malformed under every role);
       live put without --env, restore check its own env. — 2026-10-06 10:45 EDT
