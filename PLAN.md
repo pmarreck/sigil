@@ -461,6 +461,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       brief A1/B1 2026-10-06; RotShield expired Verify indefinite, C1).
       Commerce agreed 2026-10-06; validate asked the same day. Payload v2
       vectors start on validate's agreement.
+      Earlier status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class
+      only), 5 and 6 answered then; Peter 22:15 (§14.2a): no remote version
+      block ever; trial keyed by (product, machine hash), no email.
 - [x] Paper cold copies switched to uppercase hex (walking brief I2),
       basenc + xxd oracles, rehearsal green; samples emailed to Peter for
       visual approval. — 2026-10-06 10:45 EDT
@@ -468,11 +471,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
 - [x] Restore check signs examples/restore_check/payload.json (no license or
       certificate shape; policy refuses it as malformed under every role);
       live put without --env, restore check its own env. — 2026-10-06 10:45 EDT
-- [ ] Commerce: Worker accepts sigil hot-bundle open PEM verbatim (end-to-end
-      test requested 2026-10-06); production Worker waits on Peter (F2).
-      Status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class only), 5
-      and 6 answered; 1 and 2 still open. Peter 22:15 (§14.2a): no remote
-      version block ever; trial keyed by (product, machine hash), no email.
+- [x] Commerce e4473d7: Worker accepts sigil hot-bundle open PEM verbatim (e2e
+      with real keygen, sign, native verify; it had been bare-base64 only, a
+      day-of-ceremony failure averted); restore_check payload embedded with a
+      signing control; separate restore-check Worker. — 2026-10-06 10:50 EDT
+- [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
 - [x] Trial re-issue prevention: resolved by contract §15.1 (Peter
       2026-10-02 device cap 2 + $10 seats, server-side clustering of
       hashed hints; checkpoints not adopted). — 2026-10-02 12:05 EDT
