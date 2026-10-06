@@ -484,6 +484,10 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       refetches a held FOD path). Fixed: capture only zig-pkg (cross-platform
       bazuso8k…, equal on Linux and Mac), evaluation guard on build.zig.zon's
       sha256, test-cli check given its oracles. All six flake checks green.
+- [x] macOS static libraries Apple-consumable: build.zig re-archives the exact
+      Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic)
+      so members are 8-byte aligned and readable; tests/integration/
+      macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT
       — 2026-10-06 18:30 EDT
 - [x] Trial re-issue prevention: resolved by contract §15.1 (Peter
       2026-10-02 device cap 2 + $10 seats, server-side clustering of

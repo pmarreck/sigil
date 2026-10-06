@@ -47,6 +47,7 @@ annotate=[
 	tests/integration/install_cert_vectors.sh = Verifies install-cert vectors under their key only, license hashes against real envelopes, machine hashes via coreutils
 	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards
 	tests/integration/license_vectors_v2.sh = v2 vectors verify under their role only; evals carry app_minor; regeneration byte-identical; v1 frozen
+	tests/integration/macos_archive.sh = Cross-builds both Mac archs; every archive member 8-byte aligned and owner-readable (Apple ld64/libtool)
 	tests/integration/renewal_vectors.sh = Checks renewal vectors are canonical, carry exact keys, and embed exact verifiable envelopes
 	tests/integration/restore_check_payload.sh = Restore-check payload carries no license or certificate key (classifier over required keys)
 	tests/integration/update_vectors.sh = CI-gated vector suite: purpose boundary (license↔update replay must fail at SIGNATURE), tamper/wrong-key cases, vacuity guards

@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) void {
 		.linkage = .static,
 		.root_module = ffi_mod,
 	});
-	b.installArtifact(lib);
+	installStaticLib(b, lib, target);
 
 	// -- Signing library, kept SEPARATE from libsigil.a. The products link the
 	//    verifier only, so a shipped binary does not contain the code to mint a
@@ -71,7 +71,7 @@ pub fn build(b: *std.Build) void {
 		.linkage = .static,
 		.root_module = sign_ffi_mod,
 	});
-	b.installArtifact(sign_lib);
+	installStaticLib(b, sign_lib, target);
 
 	// -- Module probe: a TEST FIXTURE, not a deliverable. `b.addModule` emits no
 	//    binary, so the custody control could not see the sanctioned sibling-Zig
@@ -171,4 +171,29 @@ pub fn build(b: *std.Build) void {
 	test_compile_step.dependOn(&ffi_tests.step);
 	test_compile_step.dependOn(&sign_tests.step);
 	test_compile_step.dependOn(&sign_ffi_tests.step);
+}
+
+/// Install a shipped static library so every toolchain can consume it. For
+/// macOS targets, Zig's own archiver writes object members unaligned and
+/// with mode 0, which Apple's ld64 and libtool silently skip (validate_gui
+/// measured it, 2026-10-06). There, copy the EXACT member bytes out of Zig's
+/// archive with `zig ar p` (which reads them whatever their stored mode), and
+/// re-archive them with `zig ar --format=darwin` in deterministic mode:
+/// 8-byte aligned, readable members, zeroed timestamps, identical code.
+/// Elsewhere, install the artifact as-is.
+fn installStaticLib(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
+	if (!target.result.os.tag.isDarwin()) {
+		b.installArtifact(lib);
+		return;
+	}
+	const member = b.fmt("lib{s}_zcu.o", .{lib.name});
+	const extract = b.addSystemCommand(&.{ b.graph.zig_exe, "ar", "p" });
+	extract.addArtifactArg(lib);
+	extract.addArg(member);
+	const obj = extract.captureStdOut(.{ .basename = member });
+	const archive_name = b.fmt("lib{s}.a", .{lib.name});
+	const ar = b.addSystemCommand(&.{ b.graph.zig_exe, "ar", "qcsD", "--format=darwin" });
+	const archive = ar.addOutputFileArg(archive_name);
+	ar.addFileArg(obj);
+	b.getInstallStep().dependOn(&b.addInstallLibFile(archive, archive_name).step);
 }
