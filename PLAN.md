@@ -459,11 +459,17 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       unchanged, no 250 GB limit. Contract §14 rev 2.0 DRAFT written.
 - [x] Peter answered §14/§15 questions 1-6 (1 ceiling, 2 free renewal: walking
       brief A1/B1 2026-10-06; RotShield expired Verify indefinite, C1).
-      Peers agreeing on §14 is the remaining step (asked commerce 2026-10-06).
+      Commerce agreed 2026-10-06; validate asked the same day. Payload v2
+      vectors start on validate's agreement.
 - [x] Paper cold copies switched to uppercase hex (walking brief I2),
       basenc + xxd oracles, rehearsal green; samples emailed to Peter for
       visual approval. — 2026-10-06 10:45 EDT
 - [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
+- [x] Restore check signs examples/restore_check/payload.json (no license or
+      certificate shape; policy refuses it as malformed under every role);
+      live put without --env, restore check its own env. — 2026-10-06 10:45 EDT
+- [ ] Commerce: Worker accepts sigil hot-bundle open PEM verbatim (end-to-end
+      test requested 2026-10-06); production Worker waits on Peter (F2).
       Status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class only), 5
       and 6 answered; 1 and 2 still open. Peter 22:15 (§14.2a): no remote
       version block ever; trial keyed by (product, machine hash), no email.
