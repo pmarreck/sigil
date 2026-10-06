@@ -104,8 +104,13 @@ For each ROLE in `validate-beta-license`, `install-cert-validate`,
    `sigil pubkey --pubkey ROLE.key.pub --format hex`. Record both.
 5. Beta and install-cert roles only, the online step (commerce's account,
    production environment, nothing else): `sigil hot-bundle open
-   ROLE.hot.sealed | wrangler secret put SIGNING_KEY_<ROLE> --env
-   production`. Never to a file. The paid key stays cold.
+   ROLE.hot.sealed | wrangler secret put SIGNING_KEY_<ROLE>` against the
+   live `mecha-commerce` Worker (no `--env`; commerce 2026-10-06). Never to a
+   file. The paid key stays cold. Secret names: `SIGNING_KEY_` + the role
+   uppercased, dashes as underscores (`SIGNING_KEY_VALIDATE_BETA_LICENSE`,
+   `SIGNING_KEY_INSTALL_CERT_VALIDATE`). If the production Worker does not
+   exist yet at the session, skip this step: the keys stay cold and the put
+   happens later from the hot bundle, no second ceremony.
 6. Registry: add the row to `docs/KEY_REGISTRY.md` with fingerprint, `.pub`
    sha256 (`sha256sum ROLE.key.pub`), date, sigil commit, and paste the
    preflight's residual-assumption list into the commit message. Commit and
@@ -120,8 +125,11 @@ For each ROLE in `validate-beta-license`, `install-cert-validate`,
 - (ii) OFFLINE identity check: step 2.4, both keys.
 - (iii) Production-controlled isolated restore (custody 2 (ii)(b)): a
   production-account Worker environment with issuance routes disabled and no
-  customer traffic; the restored secret signs `examples/demo/payload.json`;
-  verified by native `sigil verify` under the registry `.pub`. Commerce
+  customer traffic, deployed as its own Worker (`wrangler --env
+  restore-check`, `MODE=restore_check`), never the live one; the restored
+  secret signs `examples/restore_check/payload.json`, which has no license
+  or certificate shape (revised 2026-10-06), and the result is verified by
+  native `sigil verify` under the registry `.pub`. Commerce
   builds the environment; Peter runs the put; sigil verifies the output.
   Separately approved by Peter; never staging.
 

@@ -23,6 +23,7 @@ annotate=[
 	examples/renewal_vectors/bundle_cert_displaced.json = Bundle with optional unsigned displaced {first_activated} (contract 15.2); equals bundle_cert_only minus displaced
 	examples/renewal_vectors/request_activate_hints.json = Renewal request with optional hints object (contract 14.3 + 15.1); equals request_activate minus hints
 	examples/renewal_vectors/request_activate_usage.json = Renewal request with optional usage {epoch, scanned_bytes} (contract 15.2); equals request_activate minus usage
+	examples/restore_check/payload.json = Isolated-restore payload signed by real production keys; no license/cert shape so it authorizes nothing
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
@@ -44,6 +45,7 @@ annotate=[
 	tests/integration/install_cert_vectors.sh = Verifies install-cert vectors under their key only, license hashes against real envelopes, machine hashes via coreutils
 	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards
 	tests/integration/renewal_vectors.sh = Checks renewal vectors are canonical, carry exact keys, and embed exact verifiable envelopes
+	tests/integration/restore_check_payload.sh = Restore-check payload carries no license or certificate key (classifier over required keys)
 	tests/integration/update_vectors.sh = CI-gated vector suite: purpose boundary (license↔update replay must fail at SIGNATURE), tamper/wrong-key cases, vacuity guards
 	tests/test_no_signing_symbols = MFIC control: nm asserts libsigil.a contains no signing code. Verified to fail when violated.
 ]

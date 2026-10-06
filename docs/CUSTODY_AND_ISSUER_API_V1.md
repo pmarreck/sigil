@@ -86,8 +86,11 @@ bundle from COLD and verify its PKCS#8 public half equals the registry
 prove Worker acceptance; (b) a production-controlled isolated Worker
 environment — same account, same secret handling and access controls,
 issuance routes disabled, no customer traffic — into which the restored
-secret is put, then signs `examples/demo/payload.json`, verified by
-native `sigil verify`; proves Worker-side restore of the real key without
+secret is put, then signs `examples/restore_check/payload.json` (a
+payload with no license or certificate shape, so a real signature over it
+authorizes nothing; revised 2026-10-06, it was the license-shaped
+`examples/demo/payload.json`), verified by native `sigil verify`;
+proves Worker-side restore of the real key without
 any customer issuance. Neither check exercises customer fulfillment; that
 is by design.
 
@@ -117,7 +120,8 @@ Preflight (section 3). Then for each role: (1) `randompassdict 6`; record
 the passphrase in the COLD locations; (2) `sigil keygen --out ROLE.key
 --hot-bundle-out ROLE.hot.sealed` (passphrase prompted twice; both
 artifacts sealed; seed wiped); (3) `sigil hot-bundle open ROLE.hot.sealed
-| wrangler secret put SIGNING_KEY_<ROLE> --env production` (passphrase
+| wrangler secret put SIGNING_KEY_<ROLE>` against the live
+`mecha-commerce` Worker (passphrase
 prompted); (4) `sigil pubkey --pubkey ROLE.key.pub --format c` into the
 consumer trust set; registry entry with fingerprint. Then the restore
 assurance exactly as section 2 splits it, in this order and all
