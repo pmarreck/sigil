@@ -527,9 +527,11 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       test; contract §15 in force for the beta; runbook + registry carry
       install-cert-validate; byte-scan now five test keys; commerce's hashed
       entitlement id and certificate audit accepted. — 2026-10-01 16:20 EDT
-- [ ] On agreement: mecha_policy ABI 2 (app_minor, payload v2, max_minor)
-      TDD against an extended vector manifest; new v2 vectors in
-      examples/license_vectors; notify validate/validate_gui/commerce.
+- [x] Payload v2 + mecha_policy ABI 2: sigil examples/license_vectors_v2
+      (13 vectors, hand-written expects, incl. v2_bad_expiry from a surviving
+      mutant); mecha_policy cfdfb9d (decide takes app_minor, v2 schema gate,
+      CLI --app-minor required, 0.2.0, 9/9 mutants killed). Consumers
+      notified. — 2026-10-06 14:00 EDT
 - [ ] After the ceremony: verify registry row + identity-check outputs;
       relay the production `.pub` to validate and commerce; then the
       production-trust positive control per KEY_CEREMONY_V1 section 4.

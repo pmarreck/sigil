@@ -231,6 +231,22 @@
       ]
     },
     {
+      "file": "v2_bad_expiry.sigil",
+      "payload": "v2_bad_expiry.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "expiry must be a real date"
+        }
+      ]
+    },
+    {
       "file": "v2_valid_under_beta_key.sigil",
       "payload": "v2_valid.payload.json",
       "signed_by_role": "test-beta",

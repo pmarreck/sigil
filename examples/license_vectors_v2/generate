@@ -29,9 +29,10 @@ v2 v2_max_minor_plus txn_v2_0006 paddle '"expiry":"2027-10-17",' '"max_minor":"+
 v2 v2_beta_class beta_v2_0007 beta '"expiry":"2027-10-17",' '"max_minor":"3",' 2
 v2 v2_unknown_field txn_v2_0008 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 2 '"seats":"5",'
 v2 v1_with_max_minor txn_v2_0009 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 1
+v2 v2_bad_expiry txn_v2_0010 paddle '"expiry":"2027-13-01",' '"max_minor":"3",' 2
 
 sign() { "$SIGIL" sign "$1.payload.json" --key "$2" --passphrase-file "$3" --out "$4.sigil" || { echo "FATAL: signing $4" >&2; exit 1; }; }
-for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor; do
+for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor v2_bad_expiry; do
 	sign "$n" "$V1/test_paid.key" "$ppp" "$n"
 done
 sign v2_beta_class "$V1/test_beta.key" "$ppb" v2_beta_class
@@ -69,6 +70,7 @@ VECS=(
 "$(vec v2_beta_class.sigil v2_beta_class.payload.json test-beta "$(e 2026-10-17 $M 1 0 malformed 'v2 is the paid versioned grant; beta stays v1')")"
 "$(vec v2_unknown_field.sigil v2_unknown_field.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'unknown fields fail the schema')")"
 "$(vec v1_with_max_minor.sigil v1_with_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is a v2 field')")"
+"$(vec v2_bad_expiry.sigil v2_bad_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'expiry must be a real date')")"
 "$(vec v2_valid_under_beta_key.sigil v2_valid.payload.json test-beta "$(e 2026-10-17 $M 1 0 class_key_mismatch 'a leaked beta key cannot mint paid grants')")"
 "$(vec ../license_vectors/beta_valid.sigil ../license_vectors/beta_valid.payload.json test-beta \
 	"$(e 2026-10-17 $M 1 99 authorized 'v1 grants are major-only under the v2 entry point')" \
