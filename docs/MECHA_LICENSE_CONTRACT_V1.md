@@ -418,7 +418,10 @@ open questions below are answered.
 - mecha_policy: the request gains `app_minor`; ABI version 2
   (`mecha_policy_abi_version() == 2`), one decide entrypoint; consumers
   assert 2 at startup. TDD against an extended vector manifest before any
-  consumer moves.
+  consumer moves. Vectors: examples/license_vectors_v2 (mecha-license-vectors/2,
+  2026-10-06; every eval carries app_minor; the v1 set stays frozen). Peers
+  agreed to section 14 on 2026-10-06 (commerce, validate). Canonical decimal
+  only for `max_minor`: no sign, no leading zeros.
 - Refresh: a new issuer operation, `refreshEntitlement(entitlement_id,
   installed_major, installed_minor)`, reached from the app's online check
   carrying its current license. It mints through `issueForEntitlement` as a

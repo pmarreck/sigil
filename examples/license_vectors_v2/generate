@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Payload v2 vectors (contract section 14: the versioned paid grant, with
+# max_minor and a mandatory 1-year expiry; ceiling rule answered by Peter
+# 2026-10-06). Additive: the v1 set in ../license_vectors stays frozen, and
+# this set reuses its TEST keys (passphrases public by design). The expected
+# decision of every eval is written HERE by hand from the contract text, so
+# mecha_policy's ABI 2 decide is judged by answers it did not produce.
+# Ed25519 is deterministic: regeneration is byte-identical.
+set -u
+D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; R="$(cd "$D/../.." && pwd)"
+SIGIL="${SIGIL_BIN:-$R/zig-out/bin/sigil}"
+V1="$R/examples/license_vectors"
+cd "$D" || exit 1
+ppb="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"; ppp="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"
+trap 'rm -f "$ppb" "$ppp"' EXIT
+printf '%s' "test-beta-not-for-production" > "$ppb"; printf '%s' "test-paid-not-for-production" > "$ppp"
+
+# v2 payload: every v1 field plus max_minor; expiry mandatory. Alphabetical keys.
+v2() { # name ref provider expiry max_minor v [extra-json-fields]
+	printf '{"customer_email":"customer@example.com","customer_name_canonical":"paying customer",%s"features":"full","max_major":"1",%s"offline_days":"365","payment_provider":"%s","payment_ref":"%s","product":"mecha-validate","purchase_date":"2026-09-17",%s"v":"%s"}' \
+		"$4" "$5" "$3" "$2" "${7:-}" "$6" > "$1.payload.json"
+}
+v2 v2_valid txn_v2_0001 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 2
+v2 v2_leap txn_v2_0002 paddle '"expiry":"2029-02-28",' '"max_minor":"0",' 2
+v2 v2_missing_expiry txn_v2_0003 paddle '' '"max_minor":"3",' 2
+v2 v2_missing_max_minor txn_v2_0004 paddle '"expiry":"2027-10-17",' '' 2
+v2 v2_max_minor_leading_zero txn_v2_0005 paddle '"expiry":"2027-10-17",' '"max_minor":"03",' 2
+v2 v2_max_minor_plus txn_v2_0006 paddle '"expiry":"2027-10-17",' '"max_minor":"+3",' 2
+v2 v2_beta_class beta_v2_0007 beta '"expiry":"2027-10-17",' '"max_minor":"3",' 2
+v2 v2_unknown_field txn_v2_0008 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 2 '"seats":"5",'
+v2 v1_with_max_minor txn_v2_0009 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 1
+
+sign() { "$SIGIL" sign "$1.payload.json" --key "$2" --passphrase-file "$3" --out "$4.sigil" || { echo "FATAL: signing $4" >&2; exit 1; }; }
+for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor; do
+	sign "$n" "$V1/test_paid.key" "$ppp" "$n"
+done
+sign v2_beta_class "$V1/test_beta.key" "$ppb" v2_beta_class
+# The valid v2 payload under the BETA key: the key binding must refuse it.
+sign v2_valid "$V1/test_beta.key" "$ppb" v2_valid_under_beta_key
+
+# e <now> <product> <major> <minor> <expect> [why]
+e() { jq -cn --arg n "$1" --arg p "$2" --argjson ma "$3" --argjson mi "$4" --arg x "$5" --arg w "${6:-}" \
+	'{now_utc_date:$n,product:$p,app_major:$ma,app_minor:$mi,expect:$x} + (if $w == "" then {} else {why:$w} end)'; }
+vec() { # file payload role evals...
+	local f="$1" p="$2" r="$3"; shift 3
+	jq -cn --arg f "$f" --arg p "$p" --arg r "$r" --argjson ev "[$(IFS=,; echo "$*")]" \
+		'{file:$f,payload:$p,signed_by_role:$r,sigil_verify:"verified",policy_evals:$ev}'
+}
+M=mecha-validate
+VECS=(
+"$(vec v2_valid.sigil v2_valid.payload.json test-paid \
+	"$(e 2026-10-17 $M 1 0 authorized 'ceiling: 1.0 is below 1.3')" \
+	"$(e 2026-10-17 $M 1 2 authorized)" \
+	"$(e 2026-10-17 $M 1 3 authorized 'the licensed minor itself')" \
+	"$(e 2026-10-17 $M 1 4 version_ceiling 'a later minor needs a refresh')" \
+	"$(e 2026-10-17 $M 2 0 version_ceiling 'a later major needs a purchase')" \
+	"$(e 2026-10-17 $M 0 99 authorized 'an earlier major is below the ceiling whatever its minor')" \
+	"$(e 2027-10-17 $M 1 3 authorized 'expiry day is inclusive')" \
+	"$(e 2027-10-18 $M 1 3 expired)" \
+	"$(e 2026-10-17 mecha-rotshield 1 3 wrong_product)")"
+"$(vec v2_leap.sigil v2_leap.payload.json test-paid \
+	"$(e 2029-02-28 $M 1 0 authorized 'minted 2028-02-29; +1 year clamps to Feb 28')" \
+	"$(e 2029-03-01 $M 1 0 expired)" \
+	"$(e 2029-02-28 $M 1 1 version_ceiling)")"
+"$(vec v2_missing_expiry.sigil v2_missing_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'expiry is mandatory in v2')")"
+"$(vec v2_missing_max_minor.sigil v2_missing_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is mandatory in v2')")"
+"$(vec v2_max_minor_leading_zero.sigil v2_max_minor_leading_zero.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'canonical decimal only')")"
+"$(vec v2_max_minor_plus.sigil v2_max_minor_plus.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'canonical decimal only')")"
+"$(vec v2_beta_class.sigil v2_beta_class.payload.json test-beta "$(e 2026-10-17 $M 1 0 malformed 'v2 is the paid versioned grant; beta stays v1')")"
+"$(vec v2_unknown_field.sigil v2_unknown_field.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'unknown fields fail the schema')")"
+"$(vec v1_with_max_minor.sigil v1_with_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is a v2 field')")"
+"$(vec v2_valid_under_beta_key.sigil v2_valid.payload.json test-beta "$(e 2026-10-17 $M 1 0 class_key_mismatch 'a leaked beta key cannot mint paid grants')")"
+"$(vec ../license_vectors/beta_valid.sigil ../license_vectors/beta_valid.payload.json test-beta \
+	"$(e 2026-10-17 $M 1 99 authorized 'v1 grants are major-only under the v2 entry point')" \
+	"$(e 2026-10-17 $M 2 0 version_ceiling)")"
+"$(vec ../license_vectors/paid_valid.sigil ../license_vectors/paid_valid.payload.json test-paid \
+	"$(e 2026-10-17 $M 1 99 authorized 'v1 paid grant: no minor ceiling')")"
+)
+jq -n --argjson v "[$(IFS=,; echo "${VECS[*]}")]" '{
+  schema: "mecha-license-vectors/2",
+  contract: "docs/MECHA_LICENSE_CONTRACT_V1.md section 14 (payload v2, version ceiling answered 2026-10-06)",
+  note: "Every eval carries app_minor. Expected decisions are hand-written from the contract. v1 vectors are referenced from ../license_vectors, which stays frozen. mecha_policy ABI 2 decide must reproduce every expect.",
+  trust_roles: {"test-beta": {pubkey: "../license_vectors/test_beta.key.pub"}, "test-paid": {pubkey: "../license_vectors/test_paid.key.pub"}},
+  vectors: $v
+}' > manifest.json
+echo "generated $(ls -1 ./*.sigil | wc -l) envelopes"

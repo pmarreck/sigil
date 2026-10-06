@@ -1,0 +1,289 @@
+{
+  "schema": "mecha-license-vectors/2",
+  "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 14 (payload v2, version ceiling answered 2026-10-06)",
+  "note": "Every eval carries app_minor. Expected decisions are hand-written from the contract. v1 vectors are referenced from ../license_vectors, which stays frozen. mecha_policy ABI 2 decide must reproduce every expect.",
+  "trust_roles": {
+    "test-beta": {
+      "pubkey": "../license_vectors/test_beta.key.pub"
+    },
+    "test-paid": {
+      "pubkey": "../license_vectors/test_paid.key.pub"
+    }
+  },
+  "vectors": [
+    {
+      "file": "v2_valid.sigil",
+      "payload": "v2_valid.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized",
+          "why": "ceiling: 1.0 is below 1.3"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 2,
+          "expect": "authorized"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "authorized",
+          "why": "the licensed minor itself"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 4,
+          "expect": "version_ceiling",
+          "why": "a later minor needs a refresh"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 2,
+          "app_minor": 0,
+          "expect": "version_ceiling",
+          "why": "a later major needs a purchase"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 0,
+          "app_minor": 99,
+          "expect": "authorized",
+          "why": "an earlier major is below the ceiling whatever its minor"
+        },
+        {
+          "now_utc_date": "2027-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "authorized",
+          "why": "expiry day is inclusive"
+        },
+        {
+          "now_utc_date": "2027-10-18",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "expired"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "wrong_product"
+        }
+      ]
+    },
+    {
+      "file": "v2_leap.sigil",
+      "payload": "v2_leap.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2029-02-28",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized",
+          "why": "minted 2028-02-29; +1 year clamps to Feb 28"
+        },
+        {
+          "now_utc_date": "2029-03-01",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "expired"
+        },
+        {
+          "now_utc_date": "2029-02-28",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 1,
+          "expect": "version_ceiling"
+        }
+      ]
+    },
+    {
+      "file": "v2_missing_expiry.sigil",
+      "payload": "v2_missing_expiry.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "expiry is mandatory in v2"
+        }
+      ]
+    },
+    {
+      "file": "v2_missing_max_minor.sigil",
+      "payload": "v2_missing_max_minor.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "max_minor is mandatory in v2"
+        }
+      ]
+    },
+    {
+      "file": "v2_max_minor_leading_zero.sigil",
+      "payload": "v2_max_minor_leading_zero.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "canonical decimal only"
+        }
+      ]
+    },
+    {
+      "file": "v2_max_minor_plus.sigil",
+      "payload": "v2_max_minor_plus.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "canonical decimal only"
+        }
+      ]
+    },
+    {
+      "file": "v2_beta_class.sigil",
+      "payload": "v2_beta_class.payload.json",
+      "signed_by_role": "test-beta",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "v2 is the paid versioned grant; beta stays v1"
+        }
+      ]
+    },
+    {
+      "file": "v2_unknown_field.sigil",
+      "payload": "v2_unknown_field.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "unknown fields fail the schema"
+        }
+      ]
+    },
+    {
+      "file": "v1_with_max_minor.sigil",
+      "payload": "v1_with_max_minor.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "max_minor is a v2 field"
+        }
+      ]
+    },
+    {
+      "file": "v2_valid_under_beta_key.sigil",
+      "payload": "v2_valid.payload.json",
+      "signed_by_role": "test-beta",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "class_key_mismatch",
+          "why": "a leaked beta key cannot mint paid grants"
+        }
+      ]
+    },
+    {
+      "file": "../license_vectors/beta_valid.sigil",
+      "payload": "../license_vectors/beta_valid.payload.json",
+      "signed_by_role": "test-beta",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 99,
+          "expect": "authorized",
+          "why": "v1 grants are major-only under the v2 entry point"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 2,
+          "app_minor": 0,
+          "expect": "version_ceiling"
+        }
+      ]
+    },
+    {
+      "file": "../license_vectors/paid_valid.sigil",
+      "payload": "../license_vectors/paid_valid.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 99,
+          "expect": "authorized",
+          "why": "v1 paid grant: no minor ceiling"
+        }
+      ]
+    }
+  ]
+}
