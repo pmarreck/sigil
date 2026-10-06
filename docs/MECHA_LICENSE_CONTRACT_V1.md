@@ -645,9 +645,15 @@ carrying files. "Go online" then means "any machine, once".
   omitted when absent, never empty, keys exactly `epoch` and
   `scanned_bytes`.
   Bundle: `{"install_cert","license","v":"1"}`; `install_cert` always
-  present on success, `license` only when one was minted (migrate, renew,
-  minor refresh). A refusal returns no bundle, only the online verdict
-  code. Idempotency key: SHA-256 of the exact request bytes.
+  present on success, `license` whenever the grant the certificate binds
+  is not the license the request carried (revised 2026-10-06, commerce
+  0d2d20a; was "only when one was minted"). That covers a fresh mint and a
+  lost bundle: when the app re-sends its old license and the ledger's
+  latest grant is `current`, the bundle must carry that grant, or the app
+  would hold a certificate for a license it lacks
+  (`install_cert_other_license`). The rule is that the app always ends up
+  holding the exact license its certificate binds. A refusal returns no
+  bundle, only the online verdict code. Idempotency key: SHA-256 of the exact request bytes.
 - Embedded envelopes (Peter, 2026-10-01 17:20 EDT): `license` and
   `install_cert` hold the printable-binary ENCODING of the exact envelope
   bytes, so neither file contains any JSON escape and a reader may refuse
