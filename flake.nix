@@ -32,9 +32,22 @@
         # access precisely because the output hash is declared up front) and
         # then copied into the cache of every real build.
         #
-        # To refresh after build.zig.zon changes: set this to
-        # pkgs.lib.fakeHash, run `nix build`, paste the hash it prints.
-        zigDepsHash = "sha256-Ia5GfeuNSczsLca/7CVU7NpFtOtECBMMlzErOz+QTFM=";
+        # To refresh after build.zig.zon changes: set zigDepsHash to
+        # pkgs.lib.fakeHash, run `nix build --rebuild` on the zig-deps
+        # derivation, paste the hash it prints, and set zigDepsZonSha256 to
+        # `sha256sum build.zig.zon`. Both move together or evaluation stops.
+        #
+        # Why the guard: Nix never refetches a fixed-output path whose hash it
+        # already holds, so a stale hash keeps "working" on every machine that
+        # built it before the pin moved, and fails only on a clean machine.
+        # That happened: printable-binary moved to 3f697d5 while this stayed
+        # at the old tree (found on a fresh Mac, 2026-10-06).
+        zigDepsHash = "sha256-bazuso8k9Sq8pNtPadUPYIe98ol13ZF/qfe7h476wF0=";
+        zigDepsZonSha256 = "103a633ba09facda1f19b4d6c6e176d6f60a5026aa651f6064cea66a013facd4";
+        zigDepsGuard =
+          let actual = builtins.hashFile "sha256" ./build.zig.zon; in
+          if actual == zigDepsZonSha256 then true
+          else throw "build.zig.zon changed (sha256 ${actual}) but zigDepsHash was computed for ${zigDepsZonSha256}; refresh both (see the comment above zigDepsHash)";
         zigDeps = pkgs.stdenv.mkDerivation {
           pname = "${pname}-zig-deps";
           inherit version;
@@ -42,7 +55,7 @@
           nativeBuildInputs = [ zigPkg pkgs.git pkgs.cacert ];
           outputHashMode = "recursive";
           outputHashAlgo = "sha256";
-          outputHash = zigDepsHash;
+          outputHash = assert zigDepsGuard; zigDepsHash;
           dontConfigure = true;
           dontFixup = true;
           dontPatchShebangs = true;
@@ -54,13 +67,15 @@
             export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             zig build --fetch=all
           '';
-          # Zig 0.16 stages fetched deps into a project-local `zig-pkg/` as well
-          # as (sometimes) the global cache's `p/`. Capture whichever appear so
-          # this keeps working if upstream settles on one of them.
+          # Zig 0.16 unpacks fetched deps into a project-local `zig-pkg/` and
+          # also leaves the downloaded tarball in the global cache's `p/`.
+          # Capture exactly ONE tree, `zig-pkg/` when present, else `p/`:
+          # copying both put a redundant tarball in the output and made the
+          # hash depend on which trees appeared (2026-10-06).
           installPhase = ''
             mkdir -p $out
-            if [ -d zig-pkg ]; then cp -r zig-pkg $out/zig-pkg; fi
-            if [ -d "$TMPDIR/zig-cache/p" ]; then cp -r "$TMPDIR/zig-cache/p" $out/p; fi
+            if [ -d zig-pkg ]; then cp -r zig-pkg $out/zig-pkg
+            elif [ -d "$TMPDIR/zig-cache/p" ]; then cp -r "$TMPDIR/zig-cache/p" $out/p; fi
             if [ ! -d $out/zig-pkg ] && [ ! -d $out/p ]; then
               echo "zig build --fetch=all produced no package directory" >&2
               exit 1
@@ -230,8 +245,11 @@
             pname = "${pname}-test-cli";
             inherit version;
             src = ./.;
+            # The CLI suite's independent oracles (openssl, poppler, zbar, qpdf,
+            # xxd) must be here too, or this granular check fails on its own.
             nativeBuildInputs = with pkgs; [
               bash coreutils gnugrep gnused diffutils jq
+              openssl zbar poppler-utils qpdf xxd
             ];
             dontConfigure = true;
             dontFixup = true;

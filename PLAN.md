@@ -479,10 +479,12 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       day-of-ceremony failure averted); restore_check payload embedded with a
       signing control; separate restore-check Worker. — 2026-10-06 10:50 EDT
 - [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
-- [ ] sigil zig-deps FOD hashes differently on Darwin (got jOO1wTSH…, want
-      Ia5GfeuN…; validate_gui 2026-10-06). Hypothesis: Darwin also writes p/
-      beside zig-pkg/ and installPhase copies both. Awaiting the Mac tree
-      listing before changing the derivation.
+- [x] zig-deps FOD hash was STALE, not Darwin-specific: a fresh Linux build also
+      got jOO1… (old Ia5… predated the printable-binary 3f697d5 bump; Nix never
+      refetches a held FOD path). Fixed: capture only zig-pkg (cross-platform
+      bazuso8k…, equal on Linux and Mac), evaluation guard on build.zig.zon's
+      sha256, test-cli check given its oracles. All six flake checks green.
+      — 2026-10-06 18:30 EDT
 - [x] Trial re-issue prevention: resolved by contract §15.1 (Peter
       2026-10-02 device cap 2 + $10 seats, server-side clustering of
       hashed hints; checkpoints not adopted). — 2026-10-02 12:05 EDT
