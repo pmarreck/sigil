@@ -101,6 +101,27 @@ if [[ -f "$U" ]]; then
 else
 	fail "request_activate_usage.json exists"
 fi
+
+# Contract 14.4: a renew/migrate bundle carries the v2 license AND a fresh
+# certificate bound to exactly that license on the same machine.
+RB="$V/bundle_renew_v2.json"; L2="$ROOT/examples/license_vectors_v2"
+if [[ -f "$RB" ]]; then
+	jq -cS . "$RB" | tr -d '\n' > "$WORK/rbcanon"
+	cmp -s "$WORK/rbcanon" "$RB" && pass "bundle_renew_v2 is canonical" || fail "bundle_renew_v2 is canonical"
+	[[ $(jq -c keys "$RB") == '["install_cert","license","v"]' ]] && pass "renew bundle carries install_cert, license, v" || fail "renew bundle keys"
+	jq -j .license "$RB" | printable-binary -d > "$WORK/rlic" 2>/dev/null
+	cmp -s "$WORK/rlic" "$L2/v2_valid.sigil" && pass "renew bundle license is the exact v2_valid envelope" || fail "renew bundle license bytes"
+	jq -j .install_cert "$RB" | printable-binary -d > "$WORK/rcert" 2>/dev/null
+	if "$SIGIL" verify "$WORK/rcert" --pubkey "$IV/test_install_cert.key.pub" -q > "$WORK/rcert.json" 2>/dev/null; then pass "renew bundle certificate verifies under test-install-cert"
+	else fail "renew bundle certificate verifies under test-install-cert"; fi
+	lh=$(sha256sum "$WORK/rlic"); lh=${lh%% *}
+	[[ $(jq -r .license_sha256 "$WORK/rcert.json") == "$lh" ]] && pass "the certificate binds the SHA-256 of the bundled v2 license" || fail "certificate license binding"
+	[[ $(jq -r .machine "$WORK/rcert.json") == "$(jq -r .machines.A "$IV/manifest.json")" ]] && pass "the certificate binds machine A" || fail "certificate machine"
+	lexp=$(jq -r .expiry "$L2/v2_valid.payload.json"); cexp=$(jq -r .expiry "$WORK/rcert.json")
+	[[ ! "$cexp" > "$lexp" ]] && pass "certificate expiry $cexp is not after the license expiry $lexp" || fail "certificate outlives license"
+else
+	fail "bundle_renew_v2.json exists"
+fi
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))

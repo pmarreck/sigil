@@ -575,12 +575,17 @@ grant. Commerce's five choices where this section was silent, as ruled:
   release catalog has published for that major, else `unreleased_version`,
   so a client cannot pre-buy future minors. If the catalog cannot be read,
   the refresh fails closed with a retryable error and mints nothing.
+  Only final releases count: a prerelease such as 1.4.0-beta.1 does not
+  make 1.4 refreshable (sigil 2026-10-06; Peter may decide that
+  beta-channel buyers count prereleases).
 - Installation certificate: the same call re-issues the certificate for the
   new license on the same `machine` (section 15). The certificate binds
   `license_sha256`, so a new license without a new certificate fails
   admission at once. The response carries both, online and in the section
   14.3 bundle (`{"install_cert","license","v":"1"}`). A `current` response
   returns the stored certificate for that license and machine.
+  Vector: examples/renewal_vectors/bundle_renew_v2.json (the v2_valid
+  license plus a certificate bound to its SHA-256 on machine A).
 - Codes: `not_yet` (with `retry_from` = purchase + 1 calendar month + 1
   day), `adjustment_pending`, `entitlement_inactive`, `major_mismatch`,
   `unreleased_version`, `invalid_version`, `not_refreshable`,

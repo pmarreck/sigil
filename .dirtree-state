@@ -22,6 +22,7 @@ annotate=[
 	examples/license_vectors_v2 = Payload v2 vectors (contract 14, mecha-license-vectors/2): max_minor ceiling, mandatory expiry; hand-written expects
 	examples/renewal_vectors = Offline-renewal request and bundle vectors (contract §14.3), canonical jq -cS JSON embedding existing signed envelopes
 	examples/renewal_vectors/bundle_cert_displaced.json = Bundle with optional unsigned displaced {first_activated} (contract 15.2); equals bundle_cert_only minus displaced
+	examples/renewal_vectors/bundle_renew_v2.json = Renew/migrate bundle: v2 license + install cert bound to its SHA-256 on machine A (contract 14.4)
 	examples/renewal_vectors/request_activate_hints.json = Renewal request with optional hints object (contract 14.3 + 15.1); equals request_activate minus hints
 	examples/renewal_vectors/request_activate_usage.json = Renewal request with optional usage {epoch, scanned_bytes} (contract 15.2); equals request_activate minus usage
 	examples/restore_check/payload.json = Isolated-restore payload signed by real production keys; no license/cert shape so it authorizes nothing

@@ -26,4 +26,15 @@ jq -cnS --arg cert "$CERT" '{displaced:{first_activated:"2026-09-17"},install_ce
 # scanned in this certificate's current epoch).
 jq -cnS --arg lic "$LIC" --arg m "$MA" \
 	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",usage:{epoch:"0192f3a4-5b6c-7d8e-9f01-23456789abce",scanned_bytes:"1073741824"},v:"1"}' | tr -d '\n' > "$D/request_activate_usage.json"
+# Contract 14.4: a renew/migrate bundle. The v2 license from
+# examples/license_vectors_v2 plus a certificate minted for EXACTLY that
+# license on machine A (test-install-cert, passphrase public by design).
+SIGIL="${SIGIL_BIN:-$R/zig-out/bin/sigil}"
+L2="$R/examples/license_vectors_v2"
+lh=$(sha256sum "$L2/v2_valid.sigil"); lh=${lh%% *}
+printf '{"cert_id":"0192f3a4-5b6c-7d8e-9f01-23456789abcf","expiry":"2027-10-17","issued":"2026-10-17","license_sha256":"%s","machine":"%s","product":"mecha-validate","v":"1"}' "$lh" "$MA" > "$D/renew_cert.payload.json"
+icpp="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"; printf '%s' "test-install-cert-not-for-production" > "$icpp"
+"$SIGIL" sign "$D/renew_cert.payload.json" --key "$IV/test_install_cert.key" --passphrase-file "$icpp" --out "$D/renew_cert.sigil" >/dev/null 2>&1 || { rm -f "$icpp"; echo "FATAL: signing renew_cert" >&2; exit 1; }
+rm -f "$icpp"
+jq -cnS --arg lic "$(pb "$L2/v2_valid.sigil")" --arg cert "$(pb "$D/renew_cert.sigil")" '{install_cert:$cert,license:$lic,v:"1"}' | tr -d '\n' > "$D/bundle_renew_v2.json"
 echo generated
