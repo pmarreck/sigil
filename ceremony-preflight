@@ -148,14 +148,14 @@ if [[ $REHEARSE -eq 1 ]]; then
 	for pair in "p1:$KEY:keyfile" "p2:$BUNDLE:hot bundle"; do
 		p=${pair%%:*}; rest=${pair#*:}; want=${rest%%:*}; what=${rest#*:}
 		sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$R/$p.txt" > "$R/$p.trim" 2>/dev/null
-		if grep -E '^[A-Za-z0-9+/=]{4,64}$' "$R/$p.trim" > "$R/$p.b64" 2>/dev/null; then :; fi
-		if base64 -d "$R/$p.b64" > "$R/$p.bin" 2>/dev/null && cmp -s "$R/$p.bin" "$want"; then ok "pdftotext: the $what page's base64 text decodes to the artifact"
-		else bad "pdftotext: the $what page's base64 text does not decode to the artifact"; fi
+		if grep -E '^[0-9A-F]{1,8}( [0-9A-F]{1,8}){0,7}$' "$R/$p.trim" > "$R/$p.hex" 2>/dev/null; then :; fi
+		if tr -d ' \n' < "$R/$p.hex" > "$R/$p.flat" && basenc --base16 -d "$R/$p.flat" > "$R/$p.bin" 2>/dev/null && cmp -s "$R/$p.bin" "$want"; then ok "pdftotext: the $what page's hex text decodes to the artifact"
+		else bad "pdftotext: the $what page's hex text does not decode to the artifact"; fi
 	done
 	if pdftoppm -r 150 -png "$R/cold.pdf" "$R/page" 2>/dev/null; then :; fi
 	for pair in "page-1.png:$KEY:keyfile" "page-2.png:$BUNDLE:hot bundle"; do
 		png=${pair%%:*}; rest=${pair#*:}; want=${rest%%:*}; what=${rest#*:}
-		if zbarimg --raw -q -Sbinary "$R/$png" > "$R/$png.b64" 2>/dev/null && base64 -d "$R/$png.b64" > "$R/$png.bin" 2>/dev/null && cmp -s "$R/$png.bin" "$want"; then ok "zbar: the $what page's QR decodes to the artifact"
+		if zbarimg --raw -q -Sbinary "$R/$png" > "$R/$png.hex" 2>/dev/null && tr -d ' \n' < "$R/$png.hex" > "$R/$png.flat" && basenc --base16 -d "$R/$png.flat" > "$R/$png.bin" 2>/dev/null && cmp -s "$R/$png.bin" "$want"; then ok "zbar: the $what page's QR decodes to the artifact"
 		else bad "zbar: the $what page's QR does not decode to the artifact"; fi
 	done
 

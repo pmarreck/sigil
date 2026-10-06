@@ -1,12 +1,13 @@
 //! Paper cold copies: a sealed keyfile or hot bundle as a printable page.
 //! Custody contract v1.3 (c), Peter 2026-09-28: a QR code in a PDF, the
-//! base64 printed as real text so it can be copied out, and text on the page
-//! saying what the artifact is. Pure: bytes and labels in, PDF bytes out; the
+//! text form printed as real text so it can be copied out, and text on the
+//! page saying what the artifact is. The text form is uppercase hex (Peter
+//! 2026-10-06, walking brief I2): 64 digits per line in groups of 8. Pure: bytes and labels in, PDF bytes out; the
 //! date is a parameter, never a clock read.
 //!
-//! The QR and the text carry the SAME base64 of the sealed bytes, so either
-//! restores the file: `base64 -d` of the scan or of the typed text yields the
-//! artifact byte for byte. The artifact is already passphrase-encrypted, so
+//! The QR and the text carry the SAME hex digits of the sealed bytes (the QR
+//! without the spaces), so either restores the file: hex-decoding the scan
+//! or the typed text, whitespace ignored, yields the artifact byte for byte. The artifact is already passphrase-encrypted, so
 //! paper needs no second secret and is inert without the passphrase.
 
 const std = @import("std");
@@ -44,7 +45,9 @@ const margin: f32 = 54;
 /// with room to spare, and Helvetica 9 is narrower still.
 pub const max_line_chars: usize = 92;
 const title_max_chars: usize = 60;
-const b64_cols: usize = 64;
+/// Hex digits per printed line, shown as 8 groups of 8 for typing.
+const hex_cols: usize = 64;
+const hex_group: usize = 8;
 /// Medium error correction: a scanner still reads a page with a coffee ring
 /// on it, and the artifacts are small enough that the code stays modest.
 pub const qr_level: qr.EcLevel = .M;
@@ -91,7 +94,7 @@ fn kindNoun(kind: Kind) []const u8 {
     };
 }
 
-fn composePage(arena: std.mem.Allocator, art: Artifact, meta: Meta, b64: []const u8, code: qr.Code) Error!pdf.Page {
+fn composePage(arena: std.mem.Allocator, art: Artifact, meta: Meta, digits: []const u8, code: qr.Code) Error!pdf.Page {
     const texts = try arena.create(Texts);
     texts.* = .empty;
     const rects = try arena.create(Rects);
@@ -110,10 +113,17 @@ fn composePage(arena: std.mem.Allocator, art: Artifact, meta: Meta, b64: []const
 
     // Purpose and restore instructions.
     const purpose = switch (art.kind) {
-        .keyfile => try std.fmt.allocPrint(arena, "This page is a cold copy of the {s} signing keyfile. The bytes are encrypted at rest under the key's passphrase, so the page is useless to anyone without it. To restore: scan the QR code, or type the text form below, and base64-decode it into a file named {s}. The decoded file must have the SHA-256 shown here. Then sign with:", .{ art.label, art.filename }),
-        .hot_bundle => try std.fmt.allocPrint(arena, "This page is a cold copy of the {s} hot bundle, the sealed PKCS#8 form of the same key, made at generation for putting the key back into the online issuer. The bytes are encrypted at rest under the key's passphrase, so the page is useless to anyone without it. To restore: scan the QR code, or type the text form below, and base64-decode it into a file named {s}. The decoded file must have the SHA-256 shown here. Then, and only through a pipe, never into a file:", .{ art.label, art.filename }),
+        .keyfile => try std.fmt.allocPrint(arena, "This page is a cold copy of the {s} signing keyfile. The bytes are encrypted at rest under the key's passphrase, so the page is useless to anyone without it. To restore: scan the QR code, or type the text form below, and hex-decode it into a file named {s}; spaces and line breaks are ignored. The decoded file must have the SHA-256 shown here.", .{ art.label, art.filename }),
+        .hot_bundle => try std.fmt.allocPrint(arena, "This page is a cold copy of the {s} hot bundle, the sealed PKCS#8 form of the same key, made at generation for putting the key back into the online issuer. The bytes are encrypted at rest under the key's passphrase, so the page is useless to anyone without it. To restore: scan the QR code, or type the text form below, and hex-decode it into a file named {s}; spaces and line breaks are ignored. The decoded file must have the SHA-256 shown here.", .{ art.label, art.filename }),
     };
     try c.paragraph(.helvetica, 9, 11.5, purpose, max_line_chars);
+    try c.line(.helvetica, 9, 11.5, "Decode the typed text (Linux, then macOS):");
+    try c.paragraph(.courier, 9, 11.5, try std.fmt.allocPrint(arena, "tr -d ' \\n' < typed.txt | basenc --base16 -d > {s}", .{art.filename}), max_line_chars);
+    try c.paragraph(.courier, 9, 11.5, try std.fmt.allocPrint(arena, "xxd -r -p typed.txt > {s}", .{art.filename}), max_line_chars);
+    try c.line(.helvetica, 9, 11.5, switch (art.kind) {
+        .keyfile => "Then sign with:",
+        .hot_bundle => "Then, and only through a pipe, never into a file:",
+    });
     const command = switch (art.kind) {
         .keyfile => try std.fmt.allocPrint(arena, "sigil sign --key {s} <payload>", .{art.filename}),
         .hot_bundle => try std.fmt.allocPrint(arena, "sigil hot-bundle open {s} | wrangler secret put SIGNING_KEY_<ROLE>", .{art.filename}),
@@ -158,14 +168,43 @@ fn composePage(arena: std.mem.Allocator, art: Artifact, meta: Meta, b64: []const
     c.y = top - qr_side;
     c.gap(18);
 
-    // The text form, 64 columns like `base64 -w64`.
-    try c.line(.helvetica, 9, 12, "Text form (base64, 64 columns; the QR code holds exactly this text):");
+    // The text form: 64 uppercase hex digits per line in groups of 8.
+    try c.line(.helvetica, 9, 12, "Text form (hex, 8 groups of 8 per line; the QR holds the same digits, no spaces):");
     var at: usize = 0;
-    while (at < b64.len) : (at += b64_cols) {
-        try c.line(.courier, 9, 11, b64[at..@min(b64.len, at + b64_cols)]);
+    while (at < digits.len) : (at += hex_cols) {
+        try c.line(.courier, 9, 11, try groupDigits(arena, digits[at..@min(digits.len, at + hex_cols)]));
     }
 
     return .{ .width = page_w, .height = page_h, .texts = texts.items, .rects = rects.items };
+}
+
+/// Uppercase hex: decodable by coreutils `basenc --base16 -d` (which rejects
+/// lowercase) and by `xxd -r -p`, and unambiguous to read aloud or retype.
+fn upperHex(arena: std.mem.Allocator, bytes: []const u8) Error![]u8 {
+    const out = try arena.alloc(u8, bytes.len * 2);
+    const table = "0123456789ABCDEF";
+    for (bytes, 0..) |b, i| {
+        out[2 * i] = table[b >> 4];
+        out[2 * i + 1] = table[b & 0x0f];
+    }
+    return out;
+}
+
+/// One printed line: the digits split into space-separated groups of
+/// `hex_group` so a person retyping the page keeps their place.
+fn groupDigits(arena: std.mem.Allocator, digits: []const u8) Error![]u8 {
+    const groups = (digits.len + hex_group - 1) / hex_group;
+    const out = try arena.alloc(u8, digits.len + groups -| 1);
+    var n: usize = 0;
+    for (digits, 0..) |d, i| {
+        if (i > 0 and i % hex_group == 0) {
+            out[n] = ' ';
+            n += 1;
+        }
+        out[n] = d;
+        n += 1;
+    }
+    return out[0..n];
 }
 
 /// One page per artifact, in order.
@@ -176,12 +215,10 @@ pub fn render(allocator: std.mem.Allocator, artifacts: []const Artifact, meta: M
 
     var pages: std.ArrayListUnmanaged(pdf.Page) = .empty;
     for (artifacts) |art| {
-        const enc = std.base64.standard.Encoder;
-        const b64 = try arena.alloc(u8, enc.calcSize(art.bytes.len));
-        _ = enc.encode(b64, art.bytes);
-        var code = try qr.encodeBytes(arena, b64, qr_level);
+        const digits = try upperHex(arena, art.bytes);
+        var code = try qr.encodeBytes(arena, digits, qr_level);
         defer code.deinit();
-        try pages.append(arena, try composePage(arena, art, meta, b64, code));
+        try pages.append(arena, try composePage(arena, art, meta, digits, code));
     }
     return pdf.render(allocator, pages.items);
 }
@@ -240,27 +277,47 @@ test "the page names the artifact: label, file, kind, date, version, SHA-256" {
     try testing.expect(std.mem.indexOf(u8, out, "Public key \\(hex\\) " ++ "ab" ** 16 ++ "cd" ** 16) != null);
 }
 
-test "the base64 lines are 64 columns of real text and decode to the bytes" {
+/// Uppercase hex of `bytes`, the exact digits the QR code carries. Test helper.
+fn testHex(a: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    const out = try a.alloc(u8, bytes.len * 2);
+    const digits = "0123456789ABCDEF";
+    for (bytes, 0..) |b, i| {
+        out[2 * i] = digits[b >> 4];
+        out[2 * i + 1] = digits[b & 0x0f];
+    }
+    return out;
+}
+
+test "the hex lines are 64 uppercase digits in groups of 8 and decode to the bytes" {
     const a = testing.allocator;
     const out = try render(a, &.{sampleKeyfile()}, sample_meta);
     defer a.free(out);
 
-    const enc = std.base64.standard.Encoder;
-    const b64 = try a.alloc(u8, enc.calcSize(sample_bytes.len));
-    defer a.free(b64);
-    _ = enc.encode(b64, sample_bytes);
-
+    const hex = try testHex(a, sample_bytes);
+    defer a.free(hex);
     var at: usize = 0;
     var lines: usize = 0;
-    while (at < b64.len) : (at += 64) {
-        const line = b64[at..@min(b64.len, at + 64)];
-        testing.expectEqual(@as(usize, 1), countTj(out, line)) catch |e| {
-            std.debug.print("base64 line not found exactly once: {s}\n", .{line});
+    var grouped: [64 + 7]u8 = undefined;
+    while (at < hex.len) : (at += 64) {
+        const digits = hex[at..@min(hex.len, at + 64)];
+        var n: usize = 0;
+        for (digits, 0..) |d, i| {
+            if (i > 0 and i % 8 == 0) {
+                grouped[n] = ' ';
+                n += 1;
+            }
+            grouped[n] = d;
+            n += 1;
+        }
+        testing.expectEqual(@as(usize, 1), countTj(out, grouped[0..n])) catch |e| {
+            std.debug.print("hex line not found exactly once: {s}\n", .{grouped[0..n]});
             return e;
         };
         lines += 1;
     }
-    try testing.expect(lines >= 2);
+    try testing.expect(lines >= 3);
+    // No base64 form remains on the page.
+    try testing.expect(std.mem.indexOf(u8, out, "base64") == null);
 }
 
 test "restore instructions match the kind" {
@@ -269,6 +326,9 @@ test "restore instructions match the kind" {
     defer a.free(key_page);
     try testing.expect(std.mem.indexOf(u8, key_page, "sigil sign --key validate_beta.key") != null);
     try testing.expect(std.mem.indexOf(u8, key_page, "wrangler") == null);
+    try testing.expect(std.mem.indexOf(u8, key_page, "hex-decode") != null);
+    try testing.expect(std.mem.indexOf(u8, key_page, "basenc --base16 -d > validate_beta.key") != null);
+    try testing.expect(std.mem.indexOf(u8, key_page, "xxd -r -p typed.txt > validate_beta.key") != null);
 
     const bundle_page = try render(a, &.{sampleBundle()}, sample_meta);
     defer a.free(bundle_page);
@@ -284,16 +344,14 @@ test "one page per artifact" {
     try testing.expect(std.mem.indexOf(u8, out, "/Count 2") != null);
 }
 
-test "the QR carries exactly the base64 text, drawn as one rectangle per dark run" {
+test "the QR carries exactly the hex digits without spaces, drawn as one rectangle per dark run" {
     const a = testing.allocator;
     const out = try render(a, &.{sampleKeyfile()}, sample_meta);
     defer a.free(out);
 
-    const enc = std.base64.standard.Encoder;
-    const b64 = try a.alloc(u8, enc.calcSize(sample_bytes.len));
-    defer a.free(b64);
-    _ = enc.encode(b64, sample_bytes);
-    var code = try qr.encodeBytes(a, b64, qr_level);
+    const hex = try testHex(a, sample_bytes);
+    defer a.free(hex);
+    var code = try qr.encodeBytes(a, hex, qr_level);
     defer code.deinit();
 
     var runs: usize = 0;
@@ -330,10 +388,11 @@ test "text never runs past the printable width" {
 }
 
 test "nothing is drawn below the bottom margin for artifacts of the real size" {
-    // A sealed keyfile or hot bundle is a few hundred bytes; its page must
-    // fit. Every text baseline and every rectangle stays above the margin.
+    // A sealed keyfile or hot bundle is under 300 bytes (measured: 255-272
+    // for keyfiles, 290 for a hot bundle); 500 leaves 70% headroom. Every
+    // text baseline and every rectangle stays above the margin.
     const a = testing.allocator;
-    const big = "x" ** 700;
+    const big = "x" ** 500;
     const out = try render(a, &.{.{ .kind = .hot_bundle, .label = "fit", .filename = "fit.hot.sealed", .bytes = big, .pubkey = [_]u8{1} ** 32 }}, sample_meta);
     defer a.free(out);
     var it = std.mem.splitScalar(u8, out, '\n');

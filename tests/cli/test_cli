@@ -299,10 +299,11 @@ assert_status 64 "hot-bundle open with no bundle path is a usage error" "$SIGIL"
 # ── paper: QR-in-PDF cold copies ────────────────────────────────────────────
 #
 # Custody contract v1.3 (c): each sealed artifact as a QR code in a PDF with
-# its base64 as real text. Four independent oracles, none of which sigil
-# wrote: qpdf (structure), pdfinfo/pdftotext (pages, selectable text),
-# pdftoppm + zbarimg (the QR read back from a raster of the page). A missing
-# oracle FAILS.
+# its uppercase hex as real text (Peter 2026-10-06, walking brief I2). Five
+# independent oracles, none of which sigil wrote: qpdf (structure),
+# pdfinfo/pdftotext (pages, selectable text), pdftoppm + zbarimg (the QR read
+# back from a raster of the page), coreutils basenc and xxd (the two decode
+# commands the page prints). A missing oracle FAILS.
 
 PAPER="$WORK/cold.pdf"
 assert_status 0 "paper renders a keyfile and a hot bundle into one PDF" \
@@ -323,7 +324,7 @@ if command -v pdfinfo >/dev/null 2>&1 && command -v pdftotext >/dev/null 2>&1 &&
 	if [[ "$paper_pages" == "2" ]]; then pass "the PDF has one page per artifact"
 	else fail "the PDF has one page per artifact" "pdfinfo says: $paper_pages"; fi
 
-	# Selectable text: the identification and the base64, per page.
+	# Selectable text: the identification and the hex, per page.
 	if pdftotext -layout "$PAPER" "$WORK/cold.txt" 2>/dev/null; then pass "pdftotext extracts the page text"
 	else fail "pdftotext extracts the page text"; fi
 	if grep -q 'Mecha Validate beta-license (TEST)' "$WORK/cold.txt"; then pass "the label is real text on the page"
@@ -341,18 +342,24 @@ if command -v pdfinfo >/dev/null 2>&1 && command -v pdftotext >/dev/null 2>&1 &&
 	if grep -q "Public key (hex) $paper_pub" "$WORK/cold.txt"; then pass "the keyfile page prints the public key as hex"
 	else fail "the keyfile page prints the public key as hex"; fi
 
-	# The base64 text, copied out of the page, decodes to the artifact.
-	# pdftotext separates pages with a form feed; base64 lines are the only
-	# bare [A-Za-z0-9+/=] lines (the SHA-256 and public key carry prefixes).
+	# The hex text, copied out of the page, decodes to the artifact with BOTH
+	# commands the page prints. pdftotext separates pages with a form feed;
+	# hex lines are the only bare uppercase-hex group lines (the SHA-256 and
+	# public key carry prefixes and are lowercase).
 	awk 'BEGIN { RS="\f" } NR == 1 { print > "'"$WORK"'/cold.p1.txt" } NR == 2 { print > "'"$WORK"'/cold.p2.txt" }' "$WORK/cold.txt"
 	for pair in "cold.p1.txt:$HOT:keyfile" "cold.p2.txt:$BUNDLE:hot bundle"; do
 		page_txt=${pair%%:*}; rest=${pair#*:}; want_file=${rest%%:*}; what=${rest#*:}
 		sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$WORK/$page_txt" > "$WORK/$page_txt.trim"
-		if grep -E '^[A-Za-z0-9+/=]{4,64}$' "$WORK/$page_txt.trim" > "$WORK/$page_txt.b64"; then :; fi
-		if base64 -d "$WORK/$page_txt.b64" > "$WORK/$page_txt.bin" 2>/dev/null && cmp -s "$WORK/$page_txt.bin" "$want_file"; then
-			pass "the $what page's base64 text copies out and decodes to the artifact"
+		if grep -E '^[0-9A-F]{1,8}( [0-9A-F]{1,8}){0,7}$' "$WORK/$page_txt.trim" > "$WORK/$page_txt.hex"; then :; fi
+		if tr -d ' \n' < "$WORK/$page_txt.hex" > "$WORK/$page_txt.flat" && basenc --base16 -d "$WORK/$page_txt.flat" > "$WORK/$page_txt.bin" 2>/dev/null && cmp -s "$WORK/$page_txt.bin" "$want_file"; then
+			pass "the $what page's hex text copies out and basenc decodes it to the artifact"
 		else
-			fail "the $what page's base64 text copies out and decodes to the artifact"
+			fail "the $what page's hex text copies out and basenc decodes it to the artifact"
+		fi
+		if command -v xxd >/dev/null 2>&1 && xxd -r -p "$WORK/$page_txt.hex" > "$WORK/$page_txt.xxd" 2>/dev/null && cmp -s "$WORK/$page_txt.xxd" "$want_file"; then
+			pass "the $what page's hex text decodes with xxd -r -p, the macOS command it prints"
+		else
+			fail "the $what page's hex text decodes with xxd -r -p, the macOS command it prints"
 		fi
 	done
 
@@ -361,7 +368,7 @@ if command -v pdfinfo >/dev/null 2>&1 && command -v pdftotext >/dev/null 2>&1 &&
 	else fail "pdftoppm rasterizes both pages"; fi
 	for pair in "coldpage-1.png:$HOT:keyfile" "coldpage-2.png:$BUNDLE:hot bundle"; do
 		png=${pair%%:*}; rest=${pair#*:}; want_file=${rest%%:*}; what=${rest#*:}
-		if zbarimg --raw -q -Sbinary "$WORK/$png" > "$WORK/$png.b64" 2>/dev/null && base64 -d "$WORK/$png.b64" > "$WORK/$png.bin" 2>/dev/null && cmp -s "$WORK/$png.bin" "$want_file"; then
+		if zbarimg --raw -q -Sbinary "$WORK/$png" > "$WORK/$png.hex" 2>/dev/null && tr -d ' \n' < "$WORK/$png.hex" > "$WORK/$png.flat" && basenc --base16 -d "$WORK/$png.flat" > "$WORK/$png.bin" 2>/dev/null && cmp -s "$WORK/$png.bin" "$want_file"; then
 			pass "zbar decodes the $what page's QR code to the artifact bytes"
 		else
 			fail "zbar decodes the $what page's QR code to the artifact bytes"

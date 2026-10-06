@@ -436,12 +436,17 @@ open questions below are answered.
   grant's `expiry` is what bounds use.
 
 Open questions for Peter (each changes the payload or the policy):
-1. Ceiling or exact: does a 1.3 grant also run 1.0-1.2? Recommended:
-   ceiling, matching `max_major`.
-2. Renewal: when a year ends with no new minor, does an online refresh
-   issue another year for the same major.minor, free, indefinitely within
-   the major? This reading makes a purchase effectively perpetual for its
-   major with a yearly check-in.
+1. ANSWERED 2026-10-06 (Peter, walking brief A1): CEILING. A 1.3 grant
+   also runs 1.0, 1.1 and 1.2, exactly the lexicographic
+   (app_major, app_minor) <= (max_major, max_minor) rule above.
+   Original: ceiling or exact?
+2. ANSWERED 2026-10-06 (Peter, walking brief B1): YES. When a year ends
+   with no new minor, refresh issues another year for the same
+   major.minor, free, whenever the entitlement remains active (not
+   refunded, not revoked). A purchase is therefore perpetual for its
+   licensed version, with a yearly online or section 14.3 check-in.
+   Original: does refresh issue another year for the same major.minor,
+   free, indefinitely within the major?
 3. Month-end offline gap: the year grant can only be minted after the
    refund window closes, so a buyer who is offline at the end of the month
    loses access until they reconnect. Recommended: purchase-grant expiry =
@@ -498,7 +503,9 @@ Open questions for Peter (each changes the payload or the policy):
 - Concrete expired and offline: Validate stops validating. RotShield keeps
   verifying existing protected data and does not create, update or repair,
   which section 13 already guarantees because Verify is grant-free.
-  Whether this degraded mode itself ends is open with Peter.
+  This degraded mode never ends (Peter 2026-10-06, walking brief C1):
+  verifying existing protected data stays available indefinitely after
+  any license expires.
 - Trial: a cloud-issued signed grant, class `trial` (`payment_provider`
   "trial"), mandatory `expiry` = issue date + 7 days, signed by its own
   per-product role (`validate-trial-license`, `rotshield-trial-license`)

@@ -182,7 +182,7 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pbCli ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -266,6 +266,8 @@
             pkgs.zbar
             pkgs.poppler-utils
             pkgs.qpdf
+            # xxd -r -p is the macOS decode command the paper page prints.
+            pkgs.xxd
             pbCli
           ];
         };
