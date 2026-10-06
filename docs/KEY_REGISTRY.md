@@ -18,6 +18,8 @@ any grant they signed is still valid.
 | install-cert-rotshield | mecha-rotshield | — | — | not yet generated | — | pending (RotShield launch) |
 | rotshield-beta-license | mecha-rotshield | — | — | not yet generated | — | pending ceremony |
 | rotshield-paid-license | mecha-rotshield | — | — | not yet generated | — | pending ceremony |
+| validate-trial-license | mecha-validate | — | — | not yet generated | — | pending (trial class not built; optional at the first ceremony) |
+| rotshield-trial-license | mecha-rotshield | — | — | not yet generated | — | pending (RotShield launch) |
 | confirmation | both | — | — | not yet generated | — | pending (endpoint not built) |
 | update (per product+channel) | both | — | — | not yet generated | — | deferred until the release publisher exists |
 

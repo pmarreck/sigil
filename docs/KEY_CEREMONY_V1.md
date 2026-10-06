@@ -1,6 +1,6 @@
 # Key ceremony v1: the shortest path to a licensed October 15 beta
 
-Status: runbook, 2026-09-29. Authority: only Peter runs it, on his say-so;
+Status: runbook, 2026-09-29; role inventory and session checklist 2026-10-06. Authority: only Peter runs it, on his say-so;
 nothing here generates a production secret until he does. Custody terms are
 `docs/CUSTODY_AND_ISSUER_API_V1.md` v1.3 (decided 2026-09-28); this file is
 the executable order of operations plus what remains his alone.
@@ -16,6 +16,58 @@ endpoint exists. Because a second ceremony costs a second isolated session,
 the recommendation is to generate `validate-beta-license`,
 `install-cert-validate` AND `validate-paid-license` in one sitting and
 provision ONLY the first two secrets to the Worker now. Everything else stays cold.
+
+## 0a. Role inventory (2026-10-06, Peter's walking brief H1)
+
+Every signing role the contract names today. "Generate now" is the
+recommendation for the attended session; Peter decides at the session.
+
+| Role | Product | Signs | Needed by | Custody after the session | Generate now? |
+|---|---|---|---|---|---|
+| validate-beta-license | mecha-validate | beta and alpha grants (class `beta`) | Oct 15 beta | online Worker secret + 2 cold copies | YES |
+| install-cert-validate | mecha-validate | installation certificates (§15) | Oct 15 beta | online Worker secret + 2 cold copies | YES |
+| validate-paid-license | mecha-validate | paid grants: plastic now, concrete (payload v2) later | paid launch | cold only | YES (saves a second session) |
+| validate-trial-license | mecha-validate | free trial grants (§14.2) | trial launch; trial class not built yet | cold only | OPTIONAL, Peter's call |
+| rotshield-beta-license, rotshield-paid-license, install-cert-rotshield, rotshield-trial-license | mecha-rotshield | as the Validate rows | RotShield launch | not generated | no |
+| confirmation | both | hash-only confirmation responses | endpoint not built | not generated | no |
+| update (per product and channel) | both | release descriptors | release publisher | not generated | no |
+
+Not signing roles, and never generated in a ceremony: the trial-meter MAC
+key (app-embedded, §14.2), device hints (§15.1, hashes only) and the five
+TEST roles in `KEY_REGISTRY.md`.
+
+## 0b. Attended-session checklist (about 30 minutes for three keys)
+
+Peter brings, decided before the session starts:
+
+- [ ] The ceremony host: a machine with Nix and this repo, offline-capable.
+      Full-disk encryption on, swap off or encrypted.
+- [ ] Two cold media on different physical devices, and where each will
+      live afterwards (§5 item 1).
+- [ ] A printer for the paper copies. The pages hold only sealed,
+      passphrase-encrypted bytes, so the print path sees nothing usable.
+- [ ] Commerce's production Cloudflare account logged in for `wrangler`, and
+      commerce's confirmation that the production Worker exists to hold
+      `SIGNING_KEY_<ROLE>`. If it does not exist yet, step 2.5 waits: the
+      keys stay cold and the hot bundle allows a later put without a second
+      ceremony.
+- [ ] `randompassdict` on the host, and paper or the cold media for writing
+      each passphrase by hand.
+- [ ] Decision: three keys, or four with `validate-trial-license`.
+
+sigil provides beforehand: a CI-passing sigil commit to build from, a green
+`./ceremony-preflight --rehearse` on that commit (last run 2026-10-06 on
+thelio: 20 ok, 0 failed, hex paper read back by poppler, zbar, basenc and
+xxd), and fresh paper samples for Peter's visual approval (I2).
+
+During the session, in order: preflight with `--media A --media B
+--rehearse --strict` on the ceremony host; then section 2 for each role;
+online put only for the beta and install-cert roles; registry commit with
+the residual assumptions the preflight printed.
+
+After the session: `.pub` files handed to validate and commerce; Peter
+approves the isolated restore (§3 (iii)); Peter authorizes the founder
+license send (§4).
 
 ## 1. Preflight (Peter, ~5 minutes, any day before; repeat on the day)
 
@@ -123,8 +175,9 @@ carry it (`expiry` is any date) but the mint rule changes and he must say so.
 
 | Date | Owner | Deliverable |
 |---|---|---|
-| Oct 2 | Peter + sigil | preflight green with `--rehearse --strict` on the ceremony host; ceremony scheduled |
-| Oct 2-5 | Peter | ceremony (section 2); registry row pushed; `.pub` handed to validate and commerce |
+| Oct 2 (SLIPPED) | Peter + sigil | preflight green with `--rehearse --strict` on the ceremony host; ceremony scheduled. Rehearsal re-run green on thelio 2026-10-06; the strict run waits for the host and media |
+| Oct 2-5 (SLIPPED) | Peter | ceremony (section 2) |
+| by Oct 9 (revised 2026-10-06) | Peter + sigil | attended session per section 0b; registry rows pushed; `.pub` handed to validate and commerce. The Oct 7 production-trust control needs the production key, so it moves to just after the session; later than Oct 9 squeezes the Oct 12 recovery rehearsal |
 | Oct 5 | validate_gui + validate | staged licensing: GUI import/status/About against the accepted core (569808119 or later), test trust; validate production build embeds the registry `.pub` |
 | Oct 7 | commerce + validate_gui | native artifact download, import, licensed scan on a hosted build; production-trust positive control (section 4) with the founder license |
 | Oct 12 | commerce + Peter | invitation dry-run previews (section 6 table), recovery rehearsal: cold copy -> `hot-bundle open` -> isolated restore (section 3 (iii)) |
