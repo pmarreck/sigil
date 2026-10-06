@@ -440,7 +440,9 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       docs/KEY_CEREMONY_V1.md runbook (Oct 15 shortest path, Peter's exact
       actions, production positive control, executed expiry dry-run,
       milestones); docs/KEY_REGISTRY.md template. — 2026-09-29 20:30 EDT
-- [ ] Oct 2: preflight green on the ceremony host with Peter; ceremony
+- [ ] Ceremony (SLIPPED from Oct 2-5): Peter picks a slot by Oct 9 (asked
+      2026-10-06 with inventory + checklist, runbook §0a/§0b, a4991ec);
+      commerce asked whether the production Worker exists. Was: preflight green on the ceremony host with Peter; ceremony
       scheduled (Peter's action; sigil verifies outputs afterwards).
 - [x] Custody §5 RULED (2026-09-29 20:10 EDT): no amendment; beta command
       persists entitlements durably and mints via issueForEntitlement; durable
@@ -455,7 +457,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       ids (overrides D1 default); paid terms (1-month purchase grant, 1-year
       major.minor grant via online refresh, refund/chargeback rules); beta
       unchanged, no 250 GB limit. Contract §14 rev 2.0 DRAFT written.
-- [ ] Peter: answer §14/§15 open questions 1-6; then peers agree on §14-15.
+- [x] Peter answered §14/§15 questions 1-6 (1 ceiling, 2 free renewal: walking
+      brief A1/B1 2026-10-06; RotShield expired Verify indefinite, C1).
+      Peers agreeing on §14 is the remaining step (asked commerce 2026-10-06).
+- [x] Paper cold copies switched to uppercase hex (walking brief I2),
+      basenc + xxd oracles, rehearsal green; samples emailed to Peter for
+      visual approval. — 2026-10-06 10:45 EDT
+- [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
       Status 2026-10-01 22:30 EDT: 3 (no overlap), 4 (trial class only), 5
       and 6 answered; 1 and 2 still open. Peter 22:15 (§14.2a): no remote
       version block ever; trial keyed by (product, machine hash), no email.
