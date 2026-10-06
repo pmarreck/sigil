@@ -552,6 +552,47 @@ Open questions for Peter (each changes the payload or the policy):
   server signing role, which changes the trial-meter bullet and adds a
   role to KEY_REGISTRY.
 
+### 14.4 Refresh rules (commerce 8c8883f, sigil ruling 2026-10-06)
+
+`refreshEntitlement(license, installed_major, installed_minor)` mints the v2
+grant. Commerce's five choices where this section was silent, as ruled:
+
+- Renewal window: if the entitlement's LATEST grant in the ledger already
+  covers the installed version and expires more than 30 days from today,
+  the response is `current` with that stored grant's exact bytes. Otherwise
+  the issuer mints a new year from the mint date (`minted`). "Latest grant"
+  is read from the ledger, never from the license the app presented. A
+  retry after a dropped response therefore returns the grant already
+  minted and never mints twice. A new installed minor is not covered, so
+  it mints at once and restarts the year (section 14, Peter 2026-10-01).
+- The ceiling never lowers: the new `max_minor` is the larger of the
+  installed minor and the latest grant's `max_minor`.
+- Proof of purchase: any authentic license this issuer minted for the
+  purchase, the plastic grant included, whose product, payment_ref and
+  email match the purchase record. Beta, comp and trial grants are
+  `not_refreshable`.
+- Release bound: the installed minor must be at most the highest minor the
+  release catalog has published for that major, else `unreleased_version`,
+  so a client cannot pre-buy future minors. If the catalog cannot be read,
+  the refresh fails closed with a retryable error and mints nothing.
+- Installation certificate: the same call re-issues the certificate for the
+  new license on the same `machine` (section 15). The certificate binds
+  `license_sha256`, so a new license without a new certificate fails
+  admission at once. The response carries both, online and in the section
+  14.3 bundle (`{"install_cert","license","v":"1"}`). A `current` response
+  returns the stored certificate for that license and machine.
+- Codes: `not_yet` (with `retry_from` = purchase + 1 calendar month + 1
+  day), `adjustment_pending`, `entitlement_inactive`, `major_mismatch`,
+  `unreleased_version`, `invalid_version`, `not_refreshable`,
+  `license_not_authentic`. Success returns status `minted` or `current`
+  with the license bytes and the certificate. These are issuer responses,
+  never app admission reasons.
+- Revocation standing (commerce fcecb29), worst wins: an approved full
+  refund or approved chargeback revokes; a pending refund, a chargeback
+  warning or an unknown action or status is `adjustment_pending` (the
+  plastic grant stays valid until Paddle decides); a partial refund or a
+  credit keeps the entitlement. A reversed adjustment no longer counts.
+
 ### 14.3 Offline renewal by file (Peter, 2026-10-01 16:50 EDT)
 
 For air-gapped machines, every online license operation also works by
