@@ -39,6 +39,18 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       v2_rotshield_valid (ceiling 1.2, refused at 1.3 and 2.0, beta-key
       twin refused) and cert_rotshield_paid_valid (6 evals); mecha_policy
       cfdfb9d agrees on all 15 new rows.
+- [ ] Gate (2026-10-10 19:45 EDT): validate candidate 7 (test-trust bin
+      bc9c7bfe…05bb, unpublished, JPEG hold) gets a full fresh review when
+      nominated: rebuild, four hashes, license-surface diff from ba8f1adb7,
+      key scan, full matrix, then red team. ba8f1adb7 evidence does not
+      transfer.
+- [ ] Gate: red-team review of ba8f1adb7 (needs a red-team session).
+- [ ] Gate: RotShield first nomination (commit, four hashes, entrypoint
+      list) once test-trust admission is green; then the entrypoint matrix.
+- [ ] Gate: validate_gui commits its core repin (committed pin e3cdb68 was
+      never nominated) to a pre-checked or accepted core, then nominates.
+- [ ] Gate: commerce local workerd ledger rehearsal plus test-key import
+      into ba8f1adb7 test-trust; OCT12 deployed rehearsal stays owner-gated.
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
       without a properly signed license (+ installation certificate).

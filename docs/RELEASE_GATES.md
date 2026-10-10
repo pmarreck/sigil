@@ -93,6 +93,27 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   relayed to commerce (E11d) and validate_gui (repin target). 58c033e30 WAS
   the last accepted candidate until this acceptance; its evidence stays
   bound to the d5257b77 artifact only (historical).
+- Gate snapshot 2026-10-10 19:45 EDT (what each artifact has actually
+  earned; nothing transfers to other bytes, platforms or production trust):
+  - Accepted (Linux x86_64 only, historical for newer bytes): validate
+    569808119 (red team, 2026-09-29). Its acceptance does not cover any
+    later commit.
+  - Pre-checked by sigil, not accepted: validate ba8f1adb7 (rebuild, hashes,
+    key scan, 21/21 test-trust matrix; red-team review not yet run). This
+    evidence binds the four ba8f1adb7 files only.
+  - Unnominated: validate candidate 7, reported passing its full test entry
+    point with test-trust bin sha256 bc9c7bfe…05bb, unpublished (yolo is
+    still ba8f1adb7) and held under the JPEG freshness hold. It needs its own
+    full review: rebuild, all four hashes, license-surface diff from
+    ba8f1adb7, key scan and the full matrix, then red-team review. An empty
+    license diff narrows what to read, not what to run.
+  - validate_gui: committed core pin e3cdb68 (2026-10-06), never nominated;
+    an uncommitted lock moves it to ba8f1adb7 (459 changed lines in
+    c_api.zig and license_gate.zig since e3cdb68). No GUI nomination.
+  - RotShield: no gated artifact. Test vectors for both classes are
+    published (sigil 339efec beta pair, 1652b29 paid v2 pair).
+  - Unexecuted for every candidate: macOS, Windows and Linux aarch64 cells;
+    production trust (no production keys exist).
 - validate: commit the direct-ABI precedence regression test (ordinary
   pin); land popen exit-status handling + regression so the PLAN-only
   freshness exception (71a229207) can be accepted; keep every new export
@@ -126,7 +147,11 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   Next milestone after a first-protection UUID regression fix: test-trust
   core admission across core, C ABI, prepared channel, both CLIs and
   fused server, pins mecha_policy cfdfb9d (ABI 2). The withdrawn
-  never-licensed reading was never implemented.
+  never-licensed reading was never implemented. Fixtures 2026-10-10:
+  beta grant+certificate pair (sigil 339efec) and paid v2 pair with
+  ceiling 1.2 (1652b29), both decided as written by mecha_policy cfdfb9d.
+  Owner asked for an exact first nomination (commit, four hashes,
+  entrypoint list) when the test-trust gate is green.
 - mecha-commerce: Phase D idempotency CLOSED IN LOGIC at e16f5a5
   (2026-09-28): the envelope is minted once under a put-if-absent
   `recordOnce` ledger call before any delivery; retries reuse the recorded
@@ -135,9 +160,14 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   DONE (Durable Object, commerce 631a2b5, recordOnce; D1 removed 23ae2ab;
   audit 2026-10-10). Restore-then-resend byte identity is proven on the
   CLI file ledger; Durable Object export/restore is local simulation
-  only (commerce 18c5166, fake Durable Object). STILL BLOCKING live
-  issuance: OCT5c-4 runbook, deployed recovery rehearsal (OCT12),
-  deployment and production keys (last three owner-gated); `roleFor(provider, product)` once
+  only (commerce 18c5166, fake Durable Object); loss fence, signed-only
+  export and restore fixes closed in source at 524c3ee; runbook OCT5c-4
+  done. Next testable without the owner: the same ledger in a real local
+  workerd runtime (real storage and input gates, 16 MiB restore, forced
+  interruption, Paddle replay returning the stored envelope bytes) and a
+  test-key envelope plus certificate importing into the validate
+  ba8f1adb7 test-trust bin. STILL BLOCKING live issuance (owner-gated):
+  deployed recovery rehearsal (OCT12), deployment and production keys; `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); E2E pin moved to the accepted candidate 569808119
   at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).
