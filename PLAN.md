@@ -12,7 +12,10 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] OCT5c-3 review (2026-10-10, commerce 18c5166, source only): F1 high,
+- [x] OCT5c-3 review (2026-10-10, commerce 18c5166, source only; F1-F5 fixed
+      at dea2ba3, R1 missing-genesis restore fixed at 524c3ee, closed in
+      source 13:40 EDT; acceptance waits on the owner-gated OCT12 deployed
+      rehearsal): F1 high,
       no fail-closed fence between ledger loss and restore (a redelivered
       paid webhook mints a second license); F2 export unbounded vs 16 MiB
       restore cap; F3 custody ruling: bulk export signed-only, bearer for
@@ -24,7 +27,8 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       during storage operations, so any non-storage await (crypto.subtle,
       fetch) between the conflict check and the writes would let another
       request in.
-- [ ] validate: nominate ba8f1adb7 (section 12) now; pre-check, then relay
+- [x] validate ba8f1adb7 nominated 13:11, pre-checked 13:38 EDT (rebuild,
+      hashes, key scan, 21/21 matrix), relayed
       to the red team. 23001eadd superseded.
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
