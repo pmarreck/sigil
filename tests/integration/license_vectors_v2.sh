@@ -37,6 +37,31 @@ done
 for f in v2_valid v2_leap; do
 	[[ $(jq -r '.v + "/" + .max_minor' "$V/$f.payload.json") =~ ^2/[0-9]+$ ]] && pass "$f is a v2 payload with max_minor" || fail "$f v2 shape"
 done
+# Each product has a paid v2 grant admitted at its own ceiling and refused
+# one minor and one major above it; authorized evals name the payload's own
+# product.
+for prod in mecha-validate mecha-rotshield; do
+	q='[.vectors[] | select(.signed_by_role == "test-paid" and (.file | startswith("v2_"))) as $v
+		| ($v.payload) as $p | $v.policy_evals[] | select(.product == $prod) | . + {payload: $p}]'
+	rows=$(jq -c --arg prod "$prod" "$q" "$M")
+	ok=1
+	while IFS='|' read -r payload ma mi x; do
+		mm=$(jq -r '.max_major + "|" + .max_minor + "|" + .product' "$V/$payload")
+		IFS='|' read -r pma pmi pprod <<< "$mm"
+		case "$x" in
+			authorized) [[ "$pprod" == "$prod" ]] || ok=0
+				[[ "$ma" == "$pma" && "$mi" == "$pmi" ]] && seen_at=1 ;;
+			version_ceiling)
+				[[ "$ma" == "$pma" && "$mi" == $((pmi + 1)) ]] && seen_minor=1
+				[[ "$ma" == $((pma + 1)) ]] && seen_major=1 ;;
+		esac
+	done < <(jq -r '.[] | [.payload, .app_major, .app_minor, .expect] | join("|")' <<< "$rows")
+	[[ ${seen_at:-0} == 1 ]] && pass "$prod: paid v2 grant admitted at its own ceiling" || fail "$prod: paid v2 grant admitted at its own ceiling"
+	[[ ${seen_minor:-0} == 1 ]] && pass "$prod: refused one minor above the ceiling" || fail "$prod: refused one minor above the ceiling"
+	[[ ${seen_major:-0} == 1 ]] && pass "$prod: refused one major above the ceiling" || fail "$prod: refused one major above the ceiling"
+	[[ $ok == 1 ]] && pass "$prod: authorized evals name the payload's product" || fail "$prod: an authorized eval names another product"
+	unset seen_at seen_minor seen_major
+done
 before=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json | sha256sum)
 v1before=$(cd "$V1" && sha256sum ./*.sigil manifest.json | sha256sum)
 bash "$V/generate" >/dev/null 2>&1

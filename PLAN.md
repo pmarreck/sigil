@@ -35,7 +35,10 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       (license_vectors/wrong_product.sigil) to the RotShield machine hash,
       with expiry, other-machine, other-license, cross-product and
       rollback negatives. mecha_policy cfdfb9d decides all 7 rows as
-      written. Paid v2 RotShield grant not built (beta stays v1).
+      written. Paid pair added 18:50 EDT at entropy_shield's request:
+      v2_rotshield_valid (ceiling 1.2, refused at 1.3 and 2.0, beta-key
+      twin refused) and cert_rotshield_paid_valid (6 evals); mecha_policy
+      cfdfb9d agrees on all 15 new rows.
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
       without a properly signed license (+ installation certificate).

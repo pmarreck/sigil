@@ -247,6 +247,84 @@
       ]
     },
     {
+      "file": "v2_rotshield_valid.sigil",
+      "payload": "v2_rotshield_valid.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 2,
+          "expect": "authorized",
+          "why": "the licensed minor itself"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "version_ceiling",
+          "why": "a later minor needs a refresh"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 2,
+          "app_minor": 0,
+          "expect": "version_ceiling",
+          "why": "a later major needs a purchase"
+        },
+        {
+          "now_utc_date": "2027-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 2,
+          "expect": "authorized",
+          "why": "expiry day is inclusive"
+        },
+        {
+          "now_utc_date": "2027-10-18",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 2,
+          "expect": "expired"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "wrong_product",
+          "why": "a RotShield grant never unlocks validate"
+        }
+      ]
+    },
+    {
+      "file": "v2_rotshield_valid_under_beta_key.sigil",
+      "payload": "v2_rotshield_valid.payload.json",
+      "signed_by_role": "test-beta",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "class_key_mismatch",
+          "why": "a leaked beta key cannot mint paid RotShield grants"
+        }
+      ]
+    },
+    {
       "file": "v2_valid_under_beta_key.sigil",
       "payload": "v2_valid.payload.json",
       "signed_by_role": "test-beta",

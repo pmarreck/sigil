@@ -29,8 +29,9 @@ for ((i = 0; i < nv; i++)); do
 	done
 done
 
-for name in beta_valid wrong_product; do
-	h=$(sha256sum "$LV/$name.sigil"); h=${h%% *}
+for name in $(jq -r ".licenses | keys[]" "$M"); do
+	lf="$LV/$name.sigil"; [[ -f "$lf" ]] || lf="$ROOT/examples/license_vectors_v2/$name.sigil"
+	h=$(sha256sum "$lf" 2>/dev/null); h=${h%% *}
 	want=$(jq -r ".licenses.$name" "$M")
 	[[ "$h" == "$want" ]] && pass "license hash for $name matches the real envelope bytes" || fail "license hash for $name" "file $h manifest $want"
 done
@@ -60,6 +61,8 @@ for prod in mecha-validate mecha-rotshield; do
 	n=$(jq --arg p "$prod" '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p)] | length' "$M")
 	[[ "$n" -ge 1 ]] && pass "$prod has $n positive certificate evals" || fail "$prod has a positive certificate eval"
 done
+n=$(jq '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == "mecha-rotshield" and .license == "v2_rotshield_valid")] | length' "$M")
+[[ "$n" -ge 1 ]] && pass "the paid v2 RotShield grant has a matching certificate" || fail "the paid v2 RotShield grant has a matching certificate"
 for ((i = 0; i < nv; i++)); do
 	p=$(jq -r ".vectors[$i].payload" "$M")
 	while IFS='|' read -r prod lic mach; do
