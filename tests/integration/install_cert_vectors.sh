@@ -46,6 +46,30 @@ for ((i = 0; i < nk; i++)); do
 	[[ "$h" == "$want" ]] && pass "machine-hash KAT $i recomputes with coreutils" || fail "machine-hash KAT $i" "got $h want $want"
 done
 
+# Every machine label resolves to a coreutils-computed KAT, so a label can
+# never carry a hash the generator did not derive from a raw id.
+for label in $(jq -r '.machines | keys[]' "$M"); do
+	h=$(jq -r ".machines[\"$label\"]" "$M")
+	if jq -e --arg h "$h" 'any(.machine_hash_kats[]; .machine == $h)' "$M" >/dev/null; then pass "machine label $label is a KAT hash"
+	else fail "machine label $label is a KAT hash" "$h"; fi
+done
+
+# Each positive eval names a certificate whose payload binds exactly that
+# product, license envelope and machine; each product has such a control.
+for prod in mecha-validate mecha-rotshield; do
+	n=$(jq --arg p "$prod" '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p)] | length' "$M")
+	[[ "$n" -ge 1 ]] && pass "$prod has $n positive certificate evals" || fail "$prod has a positive certificate eval"
+done
+for ((i = 0; i < nv; i++)); do
+	p=$(jq -r ".vectors[$i].payload" "$M")
+	while IFS='|' read -r prod lic mach; do
+		[[ -z "$prod" ]] && continue
+		got=$(jq -r '[.product, .license_sha256, .machine] | join("|")' "$V/$p")
+		want="$prod|$(jq -r ".licenses[\"$lic\"]" "$M")|$(jq -r ".machines[\"$mach\"]" "$M")"
+		[[ "$got" == "$want" ]] && pass "$p binds its positive eval ($prod, $lic, $mach)" || fail "$p binds its positive eval" "got $got want $want"
+	done < <(jq -r ".vectors[$i].evals[] | select(.expect == \"install_cert_valid\") | [.product, .license, .machine] | join(\"|\")" "$M" | sort -u)
+done
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))

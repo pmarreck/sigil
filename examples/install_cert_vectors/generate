@@ -38,17 +38,21 @@ RAW_B="fedcba9876543210fedcba9876543210"
 M_A=$(machine_hash mecha-validate "$RAW_A")
 M_B=$(machine_hash mecha-validate "$RAW_B")
 M_A_ROT=$(machine_hash mecha-rotshield "$RAW_A")
+M_B_ROT=$(machine_hash mecha-rotshield "$RAW_B")
 
 CID="0192f3a4-5b6c-7d8e-9f01-23456789abcd"
 cert() { printf '{"cert_id":"%s","expiry":"%s","issued":"%s","license_sha256":"%s","machine":"%s","product":"%s","v":"1"}' "$1" "$2" "$3" "$4" "$5" "$6"; }
 
 cert "$CID" 2026-10-17 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_valid.payload.json
 cert "$CID" 2026-10-17 2026-09-17 "$LIC" "$M_A_ROT" mecha-rotshield > cert_other_product.payload.json
+# The RotShield positive control: bound to the genuine RotShield beta grant
+# (license_vectors/wrong_product.sigil, named for its role against validate).
+cert "0192f3a4-5b6c-7d8e-9f01-23456789abce" 2026-10-17 2026-09-17 "$LIC_OTHER" "$M_A_ROT" mecha-rotshield > cert_rotshield_valid.payload.json
 cert "0192f3a4-5b6c-4d8e-9f01-23456789abcd" 2026-10-17 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_bad_uuid_version.payload.json
 cert "$CID" 2026-09-16 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_expiry_before_issued.payload.json
 cert "$CID" 2026-10-17 2026-09-17 "${LIC^^}" "$M_A" mecha-validate > cert_uppercase_hex.payload.json
 
-for n in cert_valid cert_other_product cert_bad_uuid_version cert_expiry_before_issued cert_uppercase_hex; do
+for n in cert_valid cert_other_product cert_rotshield_valid cert_bad_uuid_version cert_expiry_before_issued cert_uppercase_hex; do
 	"$SIGIL" sign "$n.payload.json" --key test_install_cert.key --passphrase-file "$ppf" --out "$n.sigil" || exit 1
 done
 
@@ -56,16 +60,17 @@ cat > manifest.json <<JSON
 {
   "schema": "mecha-install-cert-vectors/1",
   "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15",
-  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors.",
+  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors. Machine labels resolve to final hashes: A and B are the mecha-validate hashes of the two raw ids, A_rotshield and B_rotshield the mecha-rotshield hashes of the same raw ids. The license named wrong_product is a genuine mecha-rotshield beta grant.",
   "trust_roles": {"test-install-cert": {"pubkey": "test_install_cert.key.pub"}},
   "machine_hash_kats": [
     {"product": "mecha-validate", "raw_id": "$RAW_A", "machine": "$M_A"},
     {"product": "mecha-validate", "raw_id": "$RAW_B", "machine": "$M_B"},
     {"product": "mecha-rotshield", "raw_id": "$RAW_A", "machine": "$M_A_ROT"},
+    {"product": "mecha-rotshield", "raw_id": "$RAW_B", "machine": "$M_B_ROT"},
     {"product": "mecha-validate", "raw_id": "  0123456789ABCDEF0123456789ABCDEF\\n", "machine": "$M_A", "why": "normalization: trim whitespace, lowercase"}
   ],
   "licenses": {"beta_valid": "$LIC", "wrong_product": "$LIC_OTHER"},
-  "machines": {"A": "$M_A", "B": "$M_B"},
+  "machines": {"A": "$M_A", "B": "$M_B", "A_rotshield": "$M_A_ROT", "B_rotshield": "$M_B_ROT"},
   "vectors": [
     {"file": "cert_valid.sigil", "payload": "cert_valid.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid"},
@@ -78,6 +83,15 @@ cat > manifest.json <<JSON
     ]},
     {"file": "cert_other_product.sigil", "payload": "cert_other_product.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"}
+    ]},
+    {"file": "cert_rotshield_valid.sigil", "payload": "cert_rotshield_valid.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_valid", "why": "RotShield positive control"},
+      {"now": "2026-10-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_valid", "why": "expiry day inclusive"},
+      {"now": "2026-10-18", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_expired"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "B_rotshield", "expect": "install_cert_other_machine"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "beta_valid", "machine": "A_rotshield", "expect": "install_cert_other_license"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "wrong_product", "machine": "A", "expect": "install_cert_wrong_product", "why": "a RotShield certificate never admits validate"},
+      {"now": "2026-09-17", "hwm": "2026-09-20", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_clock_rollback"}
     ]},
     {"file": "cert_bad_uuid_version.sigil", "payload": "cert_bad_uuid_version.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "cert_id must be a UUIDv7"}

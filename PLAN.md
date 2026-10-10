@@ -30,6 +30,12 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 - [x] validate ba8f1adb7 nominated 13:11, pre-checked 13:38 EDT (rebuild,
       hashes, key scan, 21/21 matrix), relayed
       to the red team. 23001eadd superseded.
+- [x] RotShield positive certificate control added 2026-10-10 18:45 EDT:
+      cert_rotshield_valid binds the genuine RotShield beta grant
+      (license_vectors/wrong_product.sigil) to the RotShield machine hash,
+      with expiry, other-machine, other-license, cross-product and
+      rollback negatives. mecha_policy cfdfb9d decides all 7 rows as
+      written. Paid v2 RotShield grant not built (beta stays v1).
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
       without a properly signed license (+ installation certificate).

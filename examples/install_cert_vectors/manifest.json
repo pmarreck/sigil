@@ -1,16 +1,17 @@
 {
   "schema": "mecha-install-cert-vectors/1",
   "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 15",
-  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors.",
+  "note": "All certs signed by test-install-cert. Machine hashes are sha256sum over 'mecha-install-v1' || product || 0x00 || normalized raw id (trimmed of ASCII whitespace, ASCII-lowercased). license_sha256 is the sha256 of the exact license envelope bytes in examples/license_vectors. Machine labels resolve to final hashes: A and B are the mecha-validate hashes of the two raw ids, A_rotshield and B_rotshield the mecha-rotshield hashes of the same raw ids. The license named wrong_product is a genuine mecha-rotshield beta grant.",
   "trust_roles": {"test-install-cert": {"pubkey": "test_install_cert.key.pub"}},
   "machine_hash_kats": [
     {"product": "mecha-validate", "raw_id": "0123456789abcdef0123456789abcdef", "machine": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c"},
     {"product": "mecha-validate", "raw_id": "fedcba9876543210fedcba9876543210", "machine": "f4ae35d9fbdfa65235e1b435cb6c50cb210a685fb4273c160f0ee69a49f8e7c9"},
     {"product": "mecha-rotshield", "raw_id": "0123456789abcdef0123456789abcdef", "machine": "3a1a08d3faabe92840f8cb7715067db94e9ef8a24ce285b05be29b956e6f8666"},
+    {"product": "mecha-rotshield", "raw_id": "fedcba9876543210fedcba9876543210", "machine": "b3a44980d11f0d9eba8514f9871c051c0df76e404121f2dec34f4466b68bf7cc"},
     {"product": "mecha-validate", "raw_id": "  0123456789ABCDEF0123456789ABCDEF\n", "machine": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c", "why": "normalization: trim whitespace, lowercase"}
   ],
   "licenses": {"beta_valid": "f8247856a3dc5e8ae25b40249e5e35917918074c0cb4ab04627c37cde404da01", "wrong_product": "ef021ae874ef456145cde15bdc7f970e3f785a47aa29366c83a067566f9a909d"},
-  "machines": {"A": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c", "B": "f4ae35d9fbdfa65235e1b435cb6c50cb210a685fb4273c160f0ee69a49f8e7c9"},
+  "machines": {"A": "6f3e27ac78557b82c862b20f0c57e6f856f79a4fa572bed56182b813031e995c", "B": "f4ae35d9fbdfa65235e1b435cb6c50cb210a685fb4273c160f0ee69a49f8e7c9", "A_rotshield": "3a1a08d3faabe92840f8cb7715067db94e9ef8a24ce285b05be29b956e6f8666", "B_rotshield": "b3a44980d11f0d9eba8514f9871c051c0df76e404121f2dec34f4466b68bf7cc"},
   "vectors": [
     {"file": "cert_valid.sigil", "payload": "cert_valid.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_valid"},
@@ -23,6 +24,15 @@
     ]},
     {"file": "cert_other_product.sigil", "payload": "cert_other_product.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_wrong_product"}
+    ]},
+    {"file": "cert_rotshield_valid.sigil", "payload": "cert_rotshield_valid.payload.json", "evals": [
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_valid", "why": "RotShield positive control"},
+      {"now": "2026-10-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_valid", "why": "expiry day inclusive"},
+      {"now": "2026-10-18", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_expired"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "wrong_product", "machine": "B_rotshield", "expect": "install_cert_other_machine"},
+      {"now": "2026-09-17", "product": "mecha-rotshield", "license": "beta_valid", "machine": "A_rotshield", "expect": "install_cert_other_license"},
+      {"now": "2026-09-17", "product": "mecha-validate", "license": "wrong_product", "machine": "A", "expect": "install_cert_wrong_product", "why": "a RotShield certificate never admits validate"},
+      {"now": "2026-09-17", "hwm": "2026-09-20", "product": "mecha-rotshield", "license": "wrong_product", "machine": "A_rotshield", "expect": "install_cert_clock_rollback"}
     ]},
     {"file": "cert_bad_uuid_version.sigil", "payload": "cert_bad_uuid_version.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "cert_id must be a UUIDv7"}
