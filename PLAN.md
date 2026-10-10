@@ -12,12 +12,18 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
-- [ ] Peter 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
-      entropy_shield (Mecha RotShield) must refuse to run without a properly
-      signed license (+ installation certificate). Directive sent with pins and
-      acceptance tests; sigil tracks nominations. Reading recorded: the app
-      opens only to import/status; never-licensed RotShield refuses all, an
-      expired one keeps Verify (§13).
+- [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
+      entropy_shield (Mecha RotShield) must refuse to run main features
+      without a properly signed license (+ installation certificate).
+      Directive sent with pins and acceptance tests; sigil tracks
+      nominations. Reading CORRECTED 2026-10-10 (audit): the app always
+      opens to import/status. RotShield Verify is the explicit §13
+      exception (2026-09-28 "no license for verify"; C1 2026-10-06): it
+      needs no grant and no installation certificate, whether the copy was
+      never licensed, is expired, or runs an uncovered major. Create,
+      Update and Repair need license AND certificate (§15). The Oct 1
+      line "never-licensed RotShield refuses all" was an unconfirmed
+      sigil gloss and is withdrawn.
 
 ### Self-update signing boundary (Einstein request, 2026-08-27 01:50)
 
@@ -358,11 +364,13 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       staging), no delivery-based lockout, no exposure-bound claim, pipe
       = reduction not proof. Hot bundle + per-product Workers marked NEW
       owner choices.
-- [ ] BLOCKER for live issuance (beta included): Worker does not persist
-      envelope bytes, so a later-day resend would re-mint with a new
-      purchase_date — idempotency violation. Closes with Phase D durable
-      ledger: Durable Object (decided 2026-10-01, reconfirmed 2026-10-02);
-      commerce owns the adapter, now beta-critical.
+- [x] Live-issuance persistence blocker CLOSED IN CODE (audit 2026-10-10):
+      issueForEntitlement mints once under ledger recordOnce
+      (put-if-absent) and every resend reuses the stored bytes; the
+      Durable Object ledger (commerce 631a2b5) implements recordOnce, D1
+      removed (23ae2ab); byte-identical resend after ledger restore is
+      tested (commerce tests/cli/beta.test.bash). Remaining for live
+      issuance is deployment and production keys, both owner-gated.
 - [x] Coverage-cap ruling (2026-09-21 14:00 EDT): per-plan cap is NOT a
       lifetime quota; hidden in-admission splitting is the violation; test
       trust never bypasses admission. Contract section 11 clarified.

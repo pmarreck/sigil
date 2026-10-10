@@ -112,8 +112,9 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
 - entropy_shield: RotShield gate + import/status per contract (rev 1.3:
   Verify grant-free, Create/Update/Repair licensed); entrypoint matrix
   acceptance tests (Clear/strip rules, resource-fork conditional paths,
-  debug exports removed, Verify positive with no grant and with an expired
-  grant, Verify-then-Repair refused at the Repair step); first nomination.
+  debug exports removed, Verify positive with no grant, with an expired
+  grant and with no installation certificate (audit 2026-10-10),
+  Verify-then-Repair refused at the Repair step); first nomination.
   Trial terms remain Peter's.
   Status 2026-10-02 13:08 EDT: Peter's directive acknowledged; admission
   (license AND installation certificate, §15) queued behind Peter's
@@ -123,10 +124,10 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   (2026-09-28): the envelope is minted once under a put-if-absent
   `recordOnce` ledger call before any delivery; retries reuse the recorded
   bytes; a port without it fails closed; tested across a UTC day boundary
-  with a control. Per-product roles per custody v1.3 at 3c237a4. STILL
-  BLOCKING live issuance: the durable ledger adapter (Durable Object,
-  DECIDED by Peter 2026-10-01, reconfirmed 2026-10-02; beta-critical per
-  custody section 5); `roleFor(provider, product)` once
+  with a control. Per-product roles per custody v1.3 at 3c237a4. Durable ledger adapter
+  DONE (Durable Object, commerce 631a2b5, recordOnce; D1 removed 23ae2ab;
+  audit 2026-10-10). STILL BLOCKING live issuance: deployment and
+  production keys (owner-gated); `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); E2E pin moved to the accepted candidate 569808119
   at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).

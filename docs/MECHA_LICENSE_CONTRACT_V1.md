@@ -346,6 +346,11 @@ supersedes his immediately prior answer that licensed both.
   discovery, and it stays available with no grant, with an expired grant,
   and for a major the grant does not cover. Create, Update and Repair
   REQUIRE a valid grant (mecha_policy `authorized`) at admission.
+- Installation certificates (section 15) gate protected operations only.
+  Verify needs no certificate either: a copy that was never licensed, has
+  no certificate, or holds an expired one still verifies (clarified
+  2026-10-10 from the rulings above and the 2026-10-06 owner ruling,
+  walking brief C1, which keeps expired Verify available indefinitely).
 - Verify never chains. A Verify result may inform the user, never admit
   work: any repair, re-protect, create or update reached from a Verify
   flow (GUI confirmation callback, CLI convenience, backend adapter) is a
