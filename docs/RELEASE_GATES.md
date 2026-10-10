@@ -120,14 +120,23 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   (license AND installation certificate, §15) queued behind Peter's
   settings-exclusions repair; pins sigil 121e42f, mecha_policy 3fb8cb8; no
   date claimed. Activation will need mecha_policy 2f02a21 (hintHash, §15.1).
+  Status 2026-10-10: at RotShield f9668681 the license dependencies,
+  admission and import/status APIs are ABSENT; no gated candidate exists.
+  Next milestone after a first-protection UUID regression fix: test-trust
+  core admission across core, C ABI, prepared channel, both CLIs and
+  fused server, pins mecha_policy cfdfb9d (ABI 2). The withdrawn
+  never-licensed reading was never implemented.
 - mecha-commerce: Phase D idempotency CLOSED IN LOGIC at e16f5a5
   (2026-09-28): the envelope is minted once under a put-if-absent
   `recordOnce` ledger call before any delivery; retries reuse the recorded
   bytes; a port without it fails closed; tested across a UTC day boundary
   with a control. Per-product roles per custody v1.3 at 3c237a4. Durable ledger adapter
   DONE (Durable Object, commerce 631a2b5, recordOnce; D1 removed 23ae2ab;
-  audit 2026-10-10). STILL BLOCKING live issuance: deployment and
-  production keys (owner-gated); `roleFor(provider, product)` once
+  audit 2026-10-10). Restore-then-resend byte identity is proven on the
+  CLI file ledger; Durable Object export/restore is local simulation
+  only (commerce 18c5166, fake Durable Object). STILL BLOCKING live
+  issuance: OCT5c-4 runbook, deployed recovery rehearsal (OCT12),
+  deployment and production keys (last three owner-gated); `roleFor(provider, product)` once
   per-product keys exist; confirmation Worker (separate key, hash-only,
   unknown = fail-open); E2E pin moved to the accepted candidate 569808119
   at ded9398 (done 2026-09-29; earlier target 58c033e30 is historical).

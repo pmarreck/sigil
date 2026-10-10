@@ -12,6 +12,20 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
+- [ ] OCT5c-3 review (2026-10-10, commerce 18c5166, source only): F1 high,
+      no fail-closed fence between ledger loss and restore (a redelivered
+      paid webhook mints a second license); F2 export unbounded vs 16 MiB
+      restore cap; F3 custody ruling: bulk export signed-only, bearer for
+      per-customer actions only; F4 per-key restore in a real Durable
+      Object needs batching and a measured max-size rehearsal; F5 409
+      recovery in the OCT5c-4 runbook. F1 gates ALL live issuance (paid,
+      beta, admin, activation, refresh, renewal). Re-review the changed
+      surface and the real interleaving assumptions: input gates close only
+      during storage operations, so any non-storage await (crypto.subtle,
+      fetch) between the conflict check and the writes would let another
+      request in.
+- [ ] validate: nominate ba8f1adb7 (section 12) now; pre-check, then relay
+      to the red team. 23001eadd superseded.
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
       without a properly signed license (+ installation certificate).
@@ -368,9 +382,14 @@ entropy_shield, mecha-commerce. Canonical directive: LICENSE_OPERATIONS.md
       issueForEntitlement mints once under ledger recordOnce
       (put-if-absent) and every resend reuses the stored bytes; the
       Durable Object ledger (commerce 631a2b5) implements recordOnce, D1
-      removed (23ae2ab); byte-identical resend after ledger restore is
-      tested (commerce tests/cli/beta.test.bash). Remaining for live
-      issuance is deployment and production keys, both owner-gated.
+      removed (23ae2ab). Byte-identical resend after restore is tested on
+      the CLI file ledger (commerce tests/cli/beta.test.bash) and, for the
+      Worker, only against a fake Durable Object (commerce 18c5166,
+      OCT5c-3; sigil source review 2026-10-10). Real Durable Object
+      transaction, concurrency and eviction behavior is unproven. Open for live issuance: OCT5c-4
+      runbook (replay Paddle notifications newer than the backup), the
+      deployed recovery rehearsal (OCT12), deployment and production keys
+      (the last three owner-gated).
 - [x] Coverage-cap ruling (2026-09-21 14:00 EDT): per-plan cap is NOT a
       lifetime quota; hidden in-admission splitting is the violation; test
       trust never bypasses admission. Contract section 11 clarified.
