@@ -39,9 +39,9 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       v2_rotshield_valid (ceiling 1.2, refused at 1.3 and 2.0, beta-key
       twin refused) and cert_rotshield_paid_valid (6 evals); mecha_policy
       cfdfb9d agrees on all 15 new rows.
-- [ ] Gate (2026-10-10 19:45 EDT): validate candidate 7 (test-trust bin
-      bc9c7bfe…05bb, unpublished, JPEG hold) gets a full fresh review when
-      nominated: rebuild, four hashes, license-surface diff from ba8f1adb7,
+- [ ] Gate (2026-10-10 19:45 EDT): validate's next nomination (candidate 8
+      in progress; candidate 7 bc9c7bfe…05bb superseded) gets a full fresh
+      review: rebuild, four hashes, license-surface diff from ba8f1adb7,
       key scan, full matrix, then red team. ba8f1adb7 evidence does not
       transfer.
 - [ ] Gate: red-team review of ba8f1adb7 (needs a red-team session).
@@ -51,6 +51,9 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       never nominated) to a pre-checked or accepted core, then nominates.
 - [ ] Gate: commerce local workerd ledger rehearsal plus test-key import
       into ba8f1adb7 test-trust; OCT12 deployed rehearsal stays owner-gated.
+      Provisional ba8f1adb7 identity (bin 961b1b17…1195) and fixture pair
+      relayed 2026-10-10 20:05 EDT, pending red-team acceptance; commerce
+      reruns the import on the first accepted §15 candidate before repin.
 - [ ] BDFN 2026-10-01 16:55 EDT: validate_gui (Mecha Validate) and
       entropy_shield (Mecha RotShield) must refuse to run main features
       without a properly signed license (+ installation certificate).

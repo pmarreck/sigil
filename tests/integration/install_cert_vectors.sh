@@ -73,6 +73,21 @@ for ((i = 0; i < nv; i++)); do
 	done < <(jq -r ".vectors[$i].evals[] | select(.expect == \"install_cert_valid\") | [.product, .license, .machine] | join(\"|\")" "$M" | sort -u)
 done
 
+# PKCS#8 TEST seeds for WebCrypto issuers (the commerce Worker cannot open
+# sealed keyfiles): RFC 8410 DER shape, and openssl -- an implementation sigil
+# did not write -- derives from each seed the public key sigil derives from the
+# committed .pub. A seed that does not belong to its role fails here.
+for pair in "$V/test_install_cert" "$LV/test_beta" "$LV/test_paid"; do
+	role=$(basename "$pair"); pem="$pair.pkcs8.pem"
+	if [[ ! -f "$pem" ]]; then fail "$role.pkcs8.pem exists"; continue; fi
+	prefix=$(sed -n '2p' "$pem" | base64 -d 2>/dev/null | head -c 16 | od -An -tx1 | tr -d ' \n')
+	len=$(sed -n '2p' "$pem" | base64 -d 2>/dev/null | wc -c)
+	[[ "$len" == 48 && "$prefix" == 302e020100300506032b657004220420 ]] && pass "$role.pkcs8.pem is Ed25519 PKCS#8 (RFC 8410)" || fail "$role.pkcs8.pem shape" "len=$len prefix=$prefix"
+	got=$(openssl pkey -in "$pem" -pubout -outform DER 2>/dev/null | tail -c 32 | od -An -tx1 | tr -d ' \n')
+	want=$("$SIGIL" pubkey --pubkey "$pair.key.pub" --format hex 2>/dev/null)
+	[[ -n "$want" && "$got" == "$want" ]] && pass "$role.pkcs8.pem seed derives the $role public key (openssl)" || fail "$role.pkcs8.pem seed derives the $role public key" "openssl=$got sigil=$want"
+done
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 exit $(( FAIL > 0 ? 1 : 0 ))

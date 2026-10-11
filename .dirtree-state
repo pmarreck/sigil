@@ -17,6 +17,7 @@ annotate=[
 	examples/embed_minimal.c = Smallest useful embedder (verify license, print payload) — compiled with stock cc and run with tamper control by tests/test_c_conformance
 	examples/hint_vectors = Device-hint KATs and rejects (contract 15.1, mecha-hint-vectors/1), hashed by coreutils; oracle for mecha_policy hintHash
 	examples/install_cert_vectors = Installation-certificate test vectors (contract §15): test-install-cert key, signed certs, coreutils machine-hash KATs, expected-decision manifest
+	examples/install_cert_vectors/test_install_cert.pkcs8.pem = TEST-only PKCS#8 copy of the test-install-cert seed for WebCrypto issuers (commerce Worker); public by design
 	examples/license_vectors = License-class fixture matrix: test-beta/test-paid TEST-ONLY keypairs, 9 signed vectors (valid/expired/boundary/clamp/leap/wrong-product/wrong-class/malformed-expiry), manifest.json = mecha_policy TDD spec, regenerable via ./generate
 	examples/license_vectors/README.md = What each test-trust artifact is; PKCS#8 seeds exist for WebCrypto issuers, derived offline, no seed-export command in sigil
 	examples/license_vectors_v2 = Payload v2 vectors (contract 14, mecha-license-vectors/2): max_minor ceiling, mandatory expiry; hand-written expects

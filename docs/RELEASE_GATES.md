@@ -101,10 +101,11 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   - Pre-checked by sigil, not accepted: validate ba8f1adb7 (rebuild, hashes,
     key scan, 21/21 test-trust matrix; red-team review not yet run). This
     evidence binds the four ba8f1adb7 files only.
-  - Unnominated: validate candidate 7, reported passing its full test entry
-    point with test-trust bin sha256 bc9c7bfe…05bb, unpublished (yolo is
-    still ba8f1adb7) and held under the JPEG freshness hold. It needs its own
-    full review: rebuild, all four hashes, license-surface diff from
+  - Unnominated: validate candidate 7 (test-trust bin bc9c7bfe…05bb,
+    unpublished, JPEG hold) is superseded as the next release by candidate 8
+    (in progress 2026-10-10 19:50 EDT: CAF2 and z7z cc626ef on top of
+    candidate 7; uncommitted, no binary). Whatever validate nominates next
+    needs its own full review: rebuild, all four hashes, license-surface diff from
     ba8f1adb7, key scan and the full matrix, then red-team review. An empty
     license diff narrows what to read, not what to run.
   - validate_gui: committed core pin e3cdb68 (2026-10-06), never nominated;
