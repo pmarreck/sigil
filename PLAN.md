@@ -12,6 +12,18 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
 
 ## In Progress
 
+- [x] Downstream Zig artifact contract (2026-10-13 12:40 EDT): Zig 0.16
+      `dependency("sigil").artifact("sigil")` panicked "ambiguous" because the
+      CLI and verifier library shared the artifact name. CLI renamed to
+      `sigil-cli`, still installed as bin/sigil; macOS registers the
+      verifier without installing Zig's archive. tests/zig_consumer +
+      tests/integration/zig_consumer.sh: resolves on 5 targets, links the C
+      conformance program, no signing exports. Red 7/7 before the fix.
+- [ ] Shared calendar regression: mecha_policy 0f4a8b0 rejects impossible
+      dates (RotShield consumer RED, 2026-02-30 authorized at cfdfb9d).
+      Supply signed impossible-date vectors here; relay the pin to
+      RotShield, validate and commerce; reconcile the validate ba8f1adb7
+      acceptance-stage wording (Turing, 2026-10-13).
 - [x] OCT5c-3 review (2026-10-10, commerce 18c5166, source only; F1-F5 fixed
       at dea2ba3, R1 missing-genesis restore fixed at 524c3ee, closed in
       source 13:40 EDT; acceptance waits on the owner-gated OCT12 deployed

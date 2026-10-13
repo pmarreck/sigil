@@ -105,10 +105,15 @@ pub fn build(b: *std.Build) void {
 		.flags = &.{ "-std=c11", "-Wall", "-Wextra" },
 	});
 	cli_mod.addIncludePath(b.path("include"));
-	const cli = b.addExecutable(.{ .name = "sigil", .root_module = cli_mod });
+	// Artifact name "sigil-cli", installed as bin/sigil: downstream builds call
+	// `dependency("sigil").artifact("sigil")` and must get the verifier library,
+	// never an ambiguity panic or the CLI. tests/integration/zig_consumer.sh.
+	const cli = b.addExecutable(.{ .name = "sigil-cli", .root_module = cli_mod });
 	cli_mod.linkLibrary(lib);
 	cli_mod.linkLibrary(sign_lib);
-	b.installArtifact(cli);
+	b.getInstallStep().dependOn(&b.addInstallArtifact(cli, .{
+		.dest_sub_path = b.fmt("sigil{s}", .{target.result.exeFileExt()}),
+	}).step);
 
 	const run_cmd = b.addRunArtifact(cli);
 	run_cmd.step.dependOn(b.getInstallStep());
@@ -186,6 +191,9 @@ fn installStaticLib(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Bui
 		b.installArtifact(lib);
 		return;
 	}
+	// Register the artifact without installing it, so a downstream Zig build can
+	// still find it by name with `artifact()` and link it the Zig way.
+	b.getInstallStep().dependOn(&b.addInstallArtifact(lib, .{ .dest_dir = .disabled }).step);
 	const member = b.fmt("lib{s}_zcu.o", .{lib.name});
 	const extract = b.addSystemCommand(&.{ b.graph.zig_exe, "ar", "p" });
 	extract.addArtifactArg(lib);
