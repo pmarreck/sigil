@@ -25,7 +25,10 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       v2_century_expiry, cert_impossible_issued; cfdfb9d mis-decides those 3
       of 59, 0f4a8b0 agrees on 59. Acceptance stages defined in
       RELEASE_GATES (ba8f1adb7 is pre-checked, not accepted).
-- [ ] Repin to mecha_policy 0f4a8b0: validate (next nomination). Commerce
+- [ ] Repin to mecha_policy 0f4a8b0: validate staged it in candidate 18
+      (14:56 EDT; red at cfdfb9d on all 3 vectors plus an injected now of
+      2026-02-30, complete ./test green), uncommitted under its JPEG provider
+      hold. Closes when cand18 is committed and nominated. Commerce
       done 2026-10-13 13:35 EDT (eeba2b7, pins e3a61ab + 0f4a8b0, 45/45):
       builders proven over 6,930 dates; operator `expires` and Paddle
       `occurred_at` accepted rolled-forward dates (fixed red-first, shared
