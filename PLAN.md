@@ -25,8 +25,16 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       v2_century_expiry, cert_impossible_issued; cfdfb9d mis-decides those 3
       of 59, 0f4a8b0 agrees on 59. Acceptance stages defined in
       RELEASE_GATES (ba8f1adb7 is pre-checked, not accepted).
-- [ ] Repin to mecha_policy 0f4a8b0: RotShield, validate (next
-      nomination); commerce checks its own date validation on the vectors.
+- [ ] Repin to mecha_policy 0f4a8b0: validate (next nomination). Commerce
+      done 2026-10-13 13:35 EDT (eeba2b7, pins e3a61ab + 0f4a8b0, 45/45):
+      builders proven over 6,930 dates; operator `expires` and Paddle
+      `occurred_at` accepted rolled-forward dates (fixed red-first, shared
+      src/calendar.mjs); differentials fail on cfdfb9d as expected. Residual:
+      test-only injected-clock parsers accept date-only input; production
+      feeds only the Worker's ISO clock. RotShield done
+      2026-10-13 13:30 EDT (sigil e3a61ab, mecha_policy 0f4a8b0; selector
+      removed; 13/13 consumer unit controls, all 80 eval rows and 5 KATs;
+      application Create without credentials still RED until runtime wiring).
 - [x] OCT5c-3 review (2026-10-10, commerce 18c5166, source only; F1-F5 fixed
       at dea2ba3, R1 missing-genesis restore fixed at 524c3ee, closed in
       source 13:40 EDT; acceptance waits on the owner-gated OCT12 deployed
