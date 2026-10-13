@@ -247,6 +247,38 @@
       ]
     },
     {
+      "file": "v2_impossible_expiry.sigil",
+      "payload": "v2_impossible_expiry.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "2027-02-29 does not exist"
+        }
+      ]
+    },
+    {
+      "file": "v2_century_expiry.sigil",
+      "payload": "v2_century_expiry.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "malformed",
+          "why": "2100 is not a leap year"
+        }
+      ]
+    },
+    {
       "file": "v2_rotshield_valid.sigil",
       "payload": "v2_rotshield_valid.payload.json",
       "signed_by_role": "test-paid",

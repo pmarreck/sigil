@@ -48,6 +48,9 @@
     {"file": "cert_expiry_before_issued.sigil", "payload": "cert_expiry_before_issued.payload.json", "evals": [
       {"now": "2026-09-16", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed"}
     ]},
+    {"file": "cert_impossible_issued.sigil", "payload": "cert_impossible_issued.payload.json", "evals": [
+      {"now": "2026-10-01", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "2026-09-31 does not exist"}
+    ]},
     {"file": "cert_uppercase_hex.sigil", "payload": "cert_uppercase_hex.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "hex fields are lowercase only"}
     ]}

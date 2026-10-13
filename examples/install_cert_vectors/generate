@@ -54,9 +54,10 @@ cert "0192f3a4-5b6c-7d8e-9f01-23456789abce" 2026-10-17 2026-09-17 "$LIC_OTHER" "
 cert "0192f3a4-5b6c-7d8e-9f01-23456789abcf" 2027-10-17 2026-09-17 "$LIC_RS_PAID" "$M_A_ROT" mecha-rotshield > cert_rotshield_paid_valid.payload.json
 cert "0192f3a4-5b6c-4d8e-9f01-23456789abcd" 2026-10-17 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_bad_uuid_version.payload.json
 cert "$CID" 2026-09-16 2026-09-17 "$LIC" "$M_A" mecha-validate > cert_expiry_before_issued.payload.json
+cert "$CID" 2026-10-17 2026-09-31 "$LIC" "$M_A" mecha-validate > cert_impossible_issued.payload.json
 cert "$CID" 2026-10-17 2026-09-17 "${LIC^^}" "$M_A" mecha-validate > cert_uppercase_hex.payload.json
 
-for n in cert_valid cert_other_product cert_rotshield_valid cert_rotshield_paid_valid cert_bad_uuid_version cert_expiry_before_issued cert_uppercase_hex; do
+for n in cert_valid cert_other_product cert_rotshield_valid cert_rotshield_paid_valid cert_bad_uuid_version cert_expiry_before_issued cert_impossible_issued cert_uppercase_hex; do
 	"$SIGIL" sign "$n.payload.json" --key test_install_cert.key --passphrase-file "$ppf" --out "$n.sigil" || exit 1
 done
 
@@ -110,6 +111,9 @@ cat > manifest.json <<JSON
     ]},
     {"file": "cert_expiry_before_issued.sigil", "payload": "cert_expiry_before_issued.payload.json", "evals": [
       {"now": "2026-09-16", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed"}
+    ]},
+    {"file": "cert_impossible_issued.sigil", "payload": "cert_impossible_issued.payload.json", "evals": [
+      {"now": "2026-10-01", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "2026-09-31 does not exist"}
     ]},
     {"file": "cert_uppercase_hex.sigil", "payload": "cert_uppercase_hex.payload.json", "evals": [
       {"now": "2026-09-17", "product": "mecha-validate", "license": "beta_valid", "machine": "A", "expect": "install_cert_malformed", "why": "hex fields are lowercase only"}

@@ -93,6 +93,31 @@ on Linux x86_64 for this candidate; other OS/arch cells unexecuted.
   relayed to commerce (E11d) and validate_gui (repin target). 58c033e30 WAS
   the last accepted candidate until this acceptance; its evidence stays
   bound to the d5257b77 artifact only (historical).
+- Acceptance stages (2026-10-13; each claim names its stage and evidence):
+  1. Nominated: the producer names a commit and its file hashes.
+  2. Pre-checked: sigil rebuilt it, matched the hashes, scanned for keys
+     and ran the manifest matrix. Evidence lives in this record.
+  3. Accepted: the red team ran its section C cells on those exact bytes
+     and filed `findings/candidate-<commit>-<platform>.md`. Only this stage
+     clears an artifact for a release gate.
+  4. Exact-commit CI green and a development pin are build evidence. They
+     are not stages 2 or 3 and confer no acceptance.
+  As of 2026-10-13 12:55 EDT the only accepted validate artifact is
+  569808119 (Linux x86_64). ba8f1adb7 is at stage 2: the red team has no
+  candidate-ba8f1adb7 finding, and validate_gui's ba8f1adb7 pin is a
+  development pin. Any description of ba8f1adb7 as accepted means stage 2
+  or 4, not stage 3.
+- Calendar regression (2026-10-13): mecha_policy cfdfb9d, the policy validate
+  ba8f1adb7 pins, accepts impossible dates (an injected now of
+  2026-02-30 is authorized; signed expiry 2027-02-29 and issued 2026-09-31
+  pass the schema). Found by RotShield's independent
+  consumer control. Fixed in mecha_policy 0f4a8b0 (0.2.1, ABI 2
+  unchanged). Signed vectors v2_impossible_expiry, v2_century_expiry and
+  cert_impossible_issued: cfdfb9d mis-decides exactly those 3 of 59 evals,
+  0f4a8b0 agrees on all 59. Products that link mecha_policy repin to
+  0f4a8b0 or later before their next nomination; commerce, which consumes
+  the manifests, checks its own date validation against the new vectors.
+  ba8f1adb7's pre-check does not cover this.
 - Gate snapshot 2026-10-10 19:45 EDT (what each artifact has actually
   earned; nothing transfers to other bytes, platforms or production trust):
   - Accepted (Linux x86_64 only, historical for newer bytes): validate

@@ -19,11 +19,14 @@ See `docs/DESIGN.md` for the envelope format, prior art, and reasoning.
       verifier without installing Zig's archive. tests/zig_consumer +
       tests/integration/zig_consumer.sh: resolves on 5 targets, links the C
       conformance program, no signing exports. Red 7/7 before the fix.
-- [ ] Shared calendar regression: mecha_policy 0f4a8b0 rejects impossible
-      dates (RotShield consumer RED, 2026-02-30 authorized at cfdfb9d).
-      Supply signed impossible-date vectors here; relay the pin to
-      RotShield, validate and commerce; reconcile the validate ba8f1adb7
-      acceptance-stage wording (Turing, 2026-10-13).
+- [x] Shared calendar regression (2026-10-13 13:20 EDT): mecha_policy
+      0f4a8b0 rejects impossible dates (RotShield consumer RED, 2026-02-30
+      authorized at cfdfb9d). Signed vectors v2_impossible_expiry,
+      v2_century_expiry, cert_impossible_issued; cfdfb9d mis-decides those 3
+      of 59, 0f4a8b0 agrees on 59. Acceptance stages defined in
+      RELEASE_GATES (ba8f1adb7 is pre-checked, not accepted).
+- [ ] Repin to mecha_policy 0f4a8b0: RotShield, validate (next
+      nomination); commerce checks its own date validation on the vectors.
 - [x] OCT5c-3 review (2026-10-10, commerce 18c5166, source only; F1-F5 fixed
       at dea2ba3, R1 missing-genesis restore fixed at 524c3ee, closed in
       source 13:40 EDT; acceptance waits on the owner-gated OCT12 deployed

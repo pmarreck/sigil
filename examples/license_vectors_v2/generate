@@ -30,12 +30,16 @@ v2 v2_beta_class beta_v2_0007 beta '"expiry":"2027-10-17",' '"max_minor":"3",' 2
 v2 v2_unknown_field txn_v2_0008 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 2 '"seats":"5",'
 v2 v1_with_max_minor txn_v2_0009 paddle '"expiry":"2027-10-17",' '"max_minor":"3",' 1
 v2 v2_bad_expiry txn_v2_0010 paddle '"expiry":"2027-13-01",' '"max_minor":"3",' 2
+# Shape-valid but impossible: 2027 is not a leap year, and 2100 is a century
+# year not divisible by 400. A decider that checks only day <= 31 accepts both.
+v2 v2_impossible_expiry txn_v2_0012 paddle '"expiry":"2027-02-29",' '"max_minor":"3",' 2
+v2 v2_century_expiry txn_v2_0013 paddle '"expiry":"2100-02-29",' '"max_minor":"3",' 2
 # The paid RotShield grant: its own product, a different minor ceiling (1.2)
 # so a decider that hardcodes validate's ceiling fails.
 v2 v2_rotshield_valid txn_v2_0011 paddle '"expiry":"2027-10-17",' '"max_minor":"2",' 2 '' mecha-rotshield
 
 sign() { "$SIGIL" sign "$1.payload.json" --key "$2" --passphrase-file "$3" --out "$4.sigil" || { echo "FATAL: signing $4" >&2; exit 1; }; }
-for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor v2_bad_expiry v2_rotshield_valid; do
+for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor v2_bad_expiry v2_impossible_expiry v2_century_expiry v2_rotshield_valid; do
 	sign "$n" "$V1/test_paid.key" "$ppp" "$n"
 done
 sign v2_beta_class "$V1/test_beta.key" "$ppb" v2_beta_class
@@ -76,6 +80,8 @@ VECS=(
 "$(vec v2_unknown_field.sigil v2_unknown_field.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'unknown fields fail the schema')")"
 "$(vec v1_with_max_minor.sigil v1_with_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is a v2 field')")"
 "$(vec v2_bad_expiry.sigil v2_bad_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'expiry must be a real date')")"
+"$(vec v2_impossible_expiry.sigil v2_impossible_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed '2027-02-29 does not exist')")"
+"$(vec v2_century_expiry.sigil v2_century_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed '2100 is not a leap year')")"
 "$(vec v2_rotshield_valid.sigil v2_rotshield_valid.payload.json test-paid \
 	"$(e 2026-10-17 $RS 1 0 authorized)" \
 	"$(e 2026-10-17 $RS 1 2 authorized 'the licensed minor itself')" \
