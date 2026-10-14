@@ -701,14 +701,34 @@ done:
 
 /* ── pubkey ─────────────────────────────────────────────────────────────── */
 
-static void emit_byte_array(const char *decl, const unsigned char *pk, size_t n,
-                            const char *open, const char *close) {
-	printf("%s%s", decl, open);
+/* Appends formatted text at out[*len], never past cap. Returns 0 once the text
+ * would not fit, leaving *len at cap so later appends write nothing. */
+static int buf_append(char *out, size_t cap, size_t *len, const char *fmt, ...) {
+	if (*len >= cap) return 0;
+	va_list ap;
+	va_start(ap, fmt);
+	const int w = vsnprintf(out + *len, cap - *len, fmt, ap);
+	va_end(ap);
+	if (w < 0 || (size_t)w >= cap - *len) { *len = cap; return 0; }
+	*len += (size_t)w;
+	return 1;
+}
+
+/* Renders the key as a C or Zig array declaration into out, so every pubkey
+ * format reaches --out through the same write_all path. Returns the length,
+ * or 0 if out is too small. */
+static size_t emit_byte_array(char *out, size_t cap, const char *decl,
+                              const unsigned char *pk, size_t n,
+                              const char *open, const char *close) {
+	size_t len = 0;
+	int ok = buf_append(out, cap, &len, "%s%s", decl, open);
 	for (size_t i = 0; i < n; i++) {
-		if (i % 8 == 0) printf("\n    ");
-		printf("0x%02x,%s", pk[i], (i % 8 == 7 || i + 1 == n) ? "" : " ");
+		if (i % 8 == 0) ok &= buf_append(out, cap, &len, "\n    ");
+		ok &= buf_append(out, cap, &len, "0x%02x,%s", pk[i],
+			(i % 8 == 7 || i + 1 == n) ? "" : " ");
 	}
-	printf("\n%s\n", close);
+	ok &= buf_append(out, cap, &len, "\n%s\n", close);
+	return ok ? len : 0;
 }
 
 static int cmd_pubkey(int argc, char *argv[]) {
@@ -761,25 +781,28 @@ static int cmd_pubkey(int argc, char *argv[]) {
 		if (r != SIGIL_OK) { fprintf(stderr, "sigil: %s\n", sigil_strerror(r)); return EX_IOERR; }
 		return write_all(o.out ? o.out : "-", text, len, 0);
 	}
-	if (!strcmp(fmt, "hex")) {
-		for (size_t i = 0; i < n; i++) printf("%02x", pk[i]);
-		printf("\n");
-		return EX_OK;
-	}
 	if (!strcmp(fmt, "raw")) {
 		return write_all(o.out ? o.out : "-", pk, n, 0);
 	}
-	if (!strcmp(fmt, "c")) {
-		emit_byte_array("static const unsigned char SIGIL_PUBLIC_KEY[32] = ", pk, n, "{", "};");
-		return EX_OK;
+	char rendered[512];
+	size_t len = 0;
+	if (!strcmp(fmt, "hex")) {
+		int ok = 1;
+		for (size_t i = 0; i < n; i++) ok &= buf_append(rendered, sizeof rendered, &len, "%02x", pk[i]);
+		ok &= buf_append(rendered, sizeof rendered, &len, "\n");
+		if (!ok) len = 0;
+	} else if (!strcmp(fmt, "c")) {
+		len = emit_byte_array(rendered, sizeof rendered,
+			"static const unsigned char SIGIL_PUBLIC_KEY[32] = ", pk, n, "{", "};");
+	} else if (!strcmp(fmt, "zig")) {
+		len = emit_byte_array(rendered, sizeof rendered,
+			"pub const sigil_public_key: [32]u8 = .", pk, n, "{", "};");
+	} else {
+		die_usage("unknown --format (want text, hex, raw, c or zig)", fmt);
+		return EX_USAGE;
 	}
-	if (!strcmp(fmt, "zig")) {
-		emit_byte_array("pub const sigil_public_key: [32]u8 = .", pk, n, "{", "};");
-		return EX_OK;
-	}
-
-	die_usage("unknown --format (want text, hex, raw, c or zig)", fmt);
-	return EX_USAGE;
+	if (len == 0) { fprintf(stderr, "sigil: public key rendering overflowed\n"); return EX_IOERR; }
+	return write_all(o.out ? o.out : "-", rendered, len, 0);
 }
 
 /* ── hot-bundle ─────────────────────────────────────────────────────────── */

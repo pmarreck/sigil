@@ -148,6 +148,21 @@ else fail "the keyfile declares its format version" "$(head -c 120 "$KEY")"; fi
 if grep -q '^sigil-pubkey-v1 ' "$PUB"; then pass "the public key file carries its prefix"
 else fail "the public key file carries its prefix" "$(head -c 120 "$PUB")"; fi
 
+# `pubkey --out` honors every format: the file holds exactly the bytes the same
+# format prints to stdout, and nothing reaches stdout. The README's embedding
+# workflow writes the c and zig formats to a file this way.
+for fmt in text hex raw c zig; do
+	"$SIGIL" pubkey --pubkey "$PUB" --format "$fmt" > "$WORK/pub-stdout.$fmt" 2>/dev/null
+	"$SIGIL" pubkey --pubkey "$PUB" --format "$fmt" --out "$WORK/pub out.$fmt" > "$WORK/pub-leak.$fmt" 2>/dev/null
+	if [[ -s "$WORK/pub-stdout.$fmt" ]] && cmp -s "$WORK/pub-stdout.$fmt" "$WORK/pub out.$fmt" && [[ ! -s "$WORK/pub-leak.$fmt" ]]; then
+		pass "pubkey --format $fmt --out writes the file and nothing to stdout"
+	else
+		# shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+		fail "pubkey --format $fmt --out writes the file and nothing to stdout" \
+			"stdout run $(wc -c < "$WORK/pub-stdout.$fmt") bytes, file $(wc -c < "$WORK/pub out.$fmt" 2>/dev/null || echo missing), leaked $(wc -c < "$WORK/pub-leak.$fmt") bytes"
+	fi
+done
+
 # A secret key readable by every account on the box is not encrypted at rest in
 # any useful sense — it just means the attacker needs the passphrase and nothing
 # else. The mode must come from the open(2) call, not from whatever umask the

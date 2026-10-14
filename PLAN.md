@@ -31,7 +31,6 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [ ] Ceremony (SLIPPED from Oct 2-5): Peter picks a slot by Oct 9 (asked 2026-10-06 with inventory + checklist, runbook §0a/§0b, a4991ec); commerce asked whether the production Worker exists. Was: preflight green on the ceremony host with Peter; ceremony scheduled (Peter's action; sigil verifies outputs afterwards).
 - [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
 - [ ] Peter: GUI demos before the ceremony - refusal-only (1) or a labeled test-trust demo build (2)? Emailed 2026-10-06 17:40 EDT; validate_gui told no production keys or real licenses exist.
-- [x] Restore check signs examples/restore_check/payload.json (no license or certificate shape; policy refuses it as malformed under every role); live put without --env, restore check its own env. — 2026-10-06 10:45 EDT
 - [x] Commerce e4473d7: Worker accepts sigil hot-bundle open PEM verbatim (e2e with real keygen, sign, native verify; it had been bare-base64 only, a day-of-ceremony failure averted); restore_check payload embedded with a signing control; separate restore-check Worker. — 2026-10-06 10:50 EDT
 - [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
 - [x] macOS static libraries Apple-consumable: build.zig re-archives the exact Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic) so members are 8-byte aligned and readable; tests/integration/ macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT — 2026-10-06 18:30 EDT
@@ -82,7 +81,8 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 
 ### High, still open
 
-- [ ] `--json` implemented only by `verify`; `pubkey --out` silently ignored for hex/c/zig (the README's own embedding workflow).
+- [ ] `--json` implemented only by `verify`.
+- [x] `pubkey --out` honored for every format (hex, c and zig had printed to stdout); five-format test, stdout bytes unchanged against the pre-fix build (done 2026-10-14 16:05 EDT).
 
 ### Feature: envelope normalization (Peter, 2026-07-28)
 
