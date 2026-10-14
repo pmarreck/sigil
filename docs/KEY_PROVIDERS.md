@@ -3,7 +3,7 @@
 ## Fixed v1 behavior
 
 The provider port does not build or alter the signed bytes — it signs exactly
-what it is handed. Since 2026-08-11 (`PLAN.md` §A, decided and implemented),
+what it is handed. Since 2026-08-11 (`docs/plan_context/decisions_and_background.md` §A, decided and implemented),
 what `sign.seal` hands the provider is the **signing transcript**: the fixed
 `sigil.transcript.v1` header binding the algorithm and payload length, followed
 by the payload bytes verbatim (see `src/transcript.zig`). The transcript is
@@ -63,7 +63,7 @@ the presence of a PIV interface is not proof that Ed25519 signing is available.
 
 ## Still gated on Peter or hardware-backed review
 
-- Versioned and algorithm-tagged signing transcripts (`PLAN.md` §A).
+- Versioned and algorithm-tagged signing transcripts (`docs/plan_context/decisions_and_background.md` §A).
 - The wrong-passphrase CLI exit-code contract (`PLAN.md` §C).
 - PKCS#11, PIV, Secure Enclave, or other hardware drivers with physical-device
   tests.
