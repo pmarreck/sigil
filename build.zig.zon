@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .printable_binary = .{
-            .url = "https://github.com/pmarreck/printable-binary/archive/3f697d53f447144e9ba1b73c4217b382f32b4d62.tar.gz",
-            .hash = "printable_binary-1.0.0-SdPiyhUVGgBTC3HbDM1G40As8Rv-pXtMfx5nIzmSRF6f",
+            .url = "https://github.com/pmarreck/printable-binary/archive/cdefa95e4590fa016967e0e6ccb3b96c19c44c7e.tar.gz",
+            .hash = "printable_binary-1.0.0-SdPiyixvGwCWgMa8XG4IRqFzMBFv0ox1vyLbvS12plCB",
         },
     },
     .paths = .{

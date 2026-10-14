@@ -14,7 +14,7 @@
     # The printable-binary CLI at the commit whose character map sigil's
     # envelopes use (build.zig.zon pin). Test oracle only: decodes the
     # renewal vectors' embedded envelopes (contract section 14.3).
-    printable-binary.url = "github:pmarreck/printable-binary/3f697d53f447144e9ba1b73c4217b382f32b4d62";
+    printable-binary.url = "github:pmarreck/printable-binary/cdefa95e4590fa016967e0e6ccb3b96c19c44c7e";
   };
 
   outputs = { self, nixpkgs, flake-utils, zig-overlay, printable-binary }:
@@ -42,8 +42,8 @@
         # built it before the pin moved, and fails only on a clean machine.
         # That happened: printable-binary moved to 3f697d5 while this stayed
         # at the old tree (found on a fresh Mac, 2026-10-06).
-        zigDepsHash = "sha256-bazuso8k9Sq8pNtPadUPYIe98ol13ZF/qfe7h476wF0=";
-        zigDepsZonSha256 = "103a633ba09facda1f19b4d6c6e176d6f60a5026aa651f6064cea66a013facd4";
+        zigDepsHash = "sha256-Li9rgNf+CIx9xHVNdMxKPr0+L7eBWS5/wcJo71f0+Y4=";
+        zigDepsZonSha256 = "7dbed0212c18f8fdfe76ec94a1e578808dc4041e0f31817309c6efe61d1daa49";
         zigDepsGuard =
           let actual = builtins.hashFile "sha256" ./build.zig.zon; in
           if actual == zigDepsZonSha256 then true
