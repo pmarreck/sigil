@@ -31,10 +31,12 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [ ] Ceremony (SLIPPED from Oct 2-5): Peter picks a slot by Oct 9 (asked 2026-10-06 with inventory + checklist, runbook §0a/§0b, a4991ec); commerce asked whether the production Worker exists. Was: preflight green on the ceremony host with Peter; ceremony scheduled (Peter's action; sigil verifies outputs afterwards).
 - [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
 - [ ] Peter: GUI demos before the ceremony - refusal-only (1) or a labeled test-trust demo build (2)? Emailed 2026-10-06 17:40 EDT; validate_gui told no production keys or real licenses exist.
-- [x] Commerce e4473d7: Worker accepts sigil hot-bundle open PEM verbatim (e2e with real keygen, sign, native verify; it had been bare-base64 only, a day-of-ceremony failure averted); restore_check payload embedded with a signing control; separate restore-check Worker. — 2026-10-06 10:50 EDT
 - [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
 - [x] macOS static libraries Apple-consumable: build.zig re-archives the exact Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic) so members are 8-byte aligned and readable; tests/integration/ macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT — 2026-10-06 18:30 EDT
-- [ ] Then: the trial class and roles in mecha_policy. A Windows 11 TPM run of PCP_EKPUB is still owed by an app team before tpm is relied on.
+- [x] Owner trial and purchase workflow recorded as contract 14.5 (rev 2.1 draft), owners coordinated, 3 conflicts queued for the owner (done 2026-10-14 17:45 EDT).
+- [ ] Owner answers: walking-brief sigil-purchase-refund-month, sigil-three-os-limit, sigil-trial-scan-limit; then revise 14.5 and 15.1 and send commerce vectors.
+- [ ] Signed one-month trial vectors (examples/trial_vectors) under test per-product trial roles, hand-written expects, before mecha_policy changes.
+- [ ] Trial class and roles in mecha_policy (one month per contract 14.5), driven by the trial vectors above. A Windows 11 TPM run of PCP_EKPUB is still owed by an app team before tpm is relied on.
 - [x] Payload v2 + mecha_policy ABI 2: sigil examples/license_vectors_v2 (13 vectors, hand-written expects, incl. v2_bad_expiry from a surviving mutant); mecha_policy cfdfb9d (decide takes app_minor, v2 schema gate, CLI --app-minor required, 0.2.0, 9/9 mutants killed). Consumers notified. — 2026-10-06 14:00 EDT
 - [ ] After the ceremony: verify registry row + identity-check outputs; relay the production `.pub` to validate and commerce; then the production-trust positive control per KEY_CEREMONY_V1 section 4.
 

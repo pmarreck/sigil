@@ -675,6 +675,96 @@ carrying files. "Go online" then means "any machine, once".
 - Rebind quota: superseded 2026-10-02 by section 15.1 (2 devices per
   entitlement, $10 add-on seats, server-side counting). Rebind itself
   stays an email-link operation without the owner signing (email 171).
+
+### 14.5 Trial and purchase workflow (BDFN 2026-10-14, rev 2.1 DRAFT)
+
+The BDFN (Benevolent Dictator For Now) stated the expected end-to-end
+workflow on 2026-10-14. It applies to both applications. Requirements as
+recorded here; the exact owner wording is kept privately.
+
+- Trial: after download the user may start a one-month trial. Starting it
+  fingerprints the machine and sends a license request to the licensing
+  API, which issues a signed one-month `trial` grant for that machine and
+  OS, plus an installation certificate as in every phase (section 15).
+  This supersedes the 7-day trial `expiry` in section 14.2. The trial
+  unlocks all application functionality for the month.
+- Warning: the app warns from one week before the trial's signed
+  `expiry` (client behavior on the section 14.1 UTC day-inclusive rule, no
+  payload change).
+- Purchase: a purchase issues a concrete grant. It enables the application
+  for one year before an online refresh is required (the section 14.4
+  refresh operation). A trial without a purchase stays a trial (plastic)
+  and is never refreshable (section 14.4, `not_refreshable`).
+- Operating systems: one purchase covers up to three different operating
+  systems under the same identity.
+- Fingerprint boundary (BDFN, same day): hardware fields and algorithms
+  are not chosen here and nothing in issuance, trial or lifecycle waits on
+  them. The boundary stays versioned and configurable: the certificate
+  binds the per-product `machine` hash under its domain tag
+  (`mecha-install-v1`); optional observations travel as tagged hint hashes
+  (`mecha-hint-v1`), and the server's counting policy reads them without
+  any change to a signed format (section 15.1). The section 15.1 hint
+  kinds and normalization are the current candidate, not a frozen
+  requirement; a new fingerprint method is a new domain tag version, and
+  apps compute every fingerprint value only through mecha_policy.
+- Unchanged: signed licenses and installation certificates stay mandatory
+  for every phase, verify-before-parse, the no-kill-switch rule (section
+  14.2a), free yearly refresh within a major (section 14 question 2) and
+  indefinite verify-only degraded mode (section 14.2). This workflow sets
+  no new renewal fee and authorizes no production key or deployment.
+
+Provenance of the remaining points (2026-10-14). Only items marked owner
+ruling carry owner authority; the others are sigil defaults or readings,
+proposed and open to the owner's correction.
+
+- Trial needs no email (owner ruling, section 14.2a, 2026-10-01).
+- Concrete `expiry` anchors on the mint date (owner ruling, section 14.2,
+  2026-10-01, stated for migration after the plastic month). Applying it
+  to a year issued at purchase is a sigil default, pending open question 1.
+- "Plastic" names the trial grant: sigil's reading of the owner's "a
+  purchase gives a concrete instead of a plastic license". Not a ruling;
+  the paid one-month grant of section 14.2 stays as built until open
+  question 1 is answered.
+- One trial per device and product: a sigil ruling (section 15.1,
+  2026-10-02, "unless the owner says otherwise"), not an owner ruling.
+- Trial grant format: `payment_provider` "trial", per-product trial role
+  and certificate (owner ruling, section 14.2); `expiry` = issue date + 1
+  calendar month (owner, 2026-10-14) with the end-of-month clamp and UTC
+  day-inclusive rule of section 14 (sigil default, as for every grant).
+- OS binding: undecided. The owner's wording is three different operating
+  systems, earlier one license per machine and OS. A certificate binds one
+  machine, but nothing signed states its OS, so the per-OS invariant is
+  not yet enforceable. Two designs, chosen after open question 2: a
+  signed OS family in the installation certificate (a certificate payload
+  version change with its own vectors), or an unsigned OS observation
+  counted only by the server (deterrence only, like the hints). Whichever
+  is chosen gets a documented boundary and a test.
+
+Open, each changing issuance or policy (recorded, not decided here):
+
+1. Purchase and the refund month. Section 14.2 issues a one-month plastic
+   grant at purchase and the year only after the refund window closes,
+   so a refunded offline buyer cannot keep a year. If a purchase now
+   issues the year at once, a refund or chargeback inside the month is
+   enforced only at the app's next online check.
+2. Seats. The owner's wording is up to three DIFFERENT operating systems
+   per purchase (one per OS). Section 15.1 has two devices in any OS mix
+   plus $10 add-on seats and displacement. Open: whether the new rule
+   replaces 15.1's cap, seats and displacement, and what a second machine
+   on an already-covered OS gets. Alternatives such as three devices of
+   any OS are proposals, not restatements.
+3. The trial's 250 GB scanning limit (sections 14.2 and 14.2a): "all
+   functionality for the month" may remove it.
+4. "Same identity": the trial is email-free and keyed by machine (owner
+   ruling, section 14.2a), while a purchase is keyed by its payment
+   record. The trial-to-purchase link, if any, is not specified. Commerce
+   proposes a design; if it needs a policy choice, commerce keeps it as
+   its own owner question.
+
+Questions 1 to 3 are queued for the owner (walking-brief ids
+sigil-purchase-refund-month, sigil-three-os-limit, sigil-trial-scan-limit).
+Until they are answered, commerce keeps issuance as built.
+
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
 A license says who may use a product; an installation certificate says
