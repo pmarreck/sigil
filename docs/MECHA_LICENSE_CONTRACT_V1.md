@@ -719,13 +719,12 @@ proposed and open to the owner's correction.
 
 - Trial needs no email (owner ruling, section 14.2a, 2026-10-01).
 - Concrete `expiry` anchors on the mint date (owner ruling, section 14.2,
-  2026-10-01, stated for migration after the plastic month). Moot for paid
-  grants since 2026-10-20: a purchase issues the forever grant, which has
-  no `expiry` (section 16).
+  2026-10-01, stated for migration after the plastic month). Moot for
+  concrete grants since 2026-10-20: they have no `expiry` (section 16).
 - "Plastic" names the trial grant: sigil's reading of the owner's "a
-  purchase gives a concrete instead of a plastic license", confirmed by
-  the owner 2026-10-20 ("the one-month trial (plastic) license still
-  expires"). The paid one-month grant of section 14.2 is retired.
+  purchase gives a concrete instead of a plastic license". Superseded
+  2026-10-20 14:45 EDT (owner): plastic is the purchased, refundable
+  second month, and the trial is month 1 (section 16, license timeline).
 - One trial per device and product: a sigil ruling (section 15.1,
   2026-10-02, "unless the owner says otherwise"), not an owner ruling.
 - Trial grant format: `payment_provider` "trial", per-product trial role
@@ -738,11 +737,11 @@ proposed and open to the owner's correction.
 
 Open, each changing issuance or policy (recorded, not decided here):
 
-1. ANSWERED 2026-10-20 14:12 EDT (owner, via mecha-commerce): the trial
-   month (plastic) still expires, a purchase issues the forever grant
-   (section 16) at once, and the policy allows no refunds after purchase.
-   Statutory refunds (for example the EU and UK 14-day withdrawal right,
-   which Paddle honors) may still occur and are enforced only online.
+1. ANSWERED 2026-10-20 14:45 EDT (owner, via mecha-commerce), superseding
+   the 14:12 answer: trial month, then a purchased refundable plastic
+   month with an `expiry`, then the forever concrete grant swapped in
+   online (section 16, license timeline). The refundable month covers the
+   EU and UK 14-day withdrawal right.
    Original: Section 14.2 issues a one-month plastic
    grant at purchase and the year only after the refund window closes,
    so a refunded offline buyer cannot keep a year. If a purchase now
@@ -1121,9 +1120,16 @@ consumer moves until vectors exist):
 - Installation certificates for a v3 grant carry no `expiry`, replacing
   section 15's one calendar year for an undated license (certificate
   payload v2). Without this, the certificate would end use after a year.
-- Revocation: a refund or chargeback revokes through the confirmation
-  endpoint only. An offline machine with a perpetual grant is never
-  reached; see open item 1.
+- Revocation is payment-scoped (commerce proposal, sigil ruling
+  2026-10-20): a refund or chargeback of one payment revokes the grants
+  minted on that payment, reported per grant (`license_sha256`) by the
+  confirmation endpoint at the next online check. Signed ceilings are
+  never rewritten. The superseding order is computed over the
+  entitlement's non-revoked grants, so a revoked upgrade leaves the
+  previous grant current: an app told `revoked` calls refresh, which
+  returns that grant and its certificate as `current`. "The ceiling never
+  lowers" therefore holds for minting, and revocation is the only path
+  that withdraws a grant.
 - Beta: beta grants expire as before; Pro-for-beta is issued later as a
   `comp` grant with `features` `"pro"`.
 - Superseding order (commerce proposal, adopted 2026-10-20): grants of one
@@ -1132,12 +1138,12 @@ consumer moves until vectors exist):
   grant only if strictly greater; a tie keeps the stored grant. The order is
   monotone, so an out-of-order or repeated write never lowers what a
   customer holds.
-- Update entitlement inputs (server only, commerce-owned): the purchase
-  mint date, which starts one included year (mint date + 1 calendar year,
-  the section 14 clamp), and Paddle subscription events
+- Update entitlement inputs (server only, commerce-owned): the end of the
+  included updates (owner 2026-10-20 14:45 EDT: 12 months from the start
+  of the trial; the exact anchor is open item 4), and Paddle subscription events
   (`subscription.created`, `.updated`, `.canceled`, `.past_due`, with
   `next_billed_at` and any scheduled change), which give a paid-through
-  date. Updates are covered through the later of the included year's end
+  date. Updates are covered through the later of the included updates' end
   and paid-through + 30 days, UTC day-inclusive: day 30 of grace is
   covered, day 31 is `updates_lapsed`. A refund or chargeback ends coverage
   at once. Vectors pin a clock-injected decision table: active, grace day 1
@@ -1146,20 +1152,44 @@ consumer moves until vectors exist):
   unsigned `updates_until` (YYYY-MM-DD) for display only ("updates ended on
   X"). An app never uses it for admission, which depends only on the
   verified grant and certificate.
-- Stated limit, pending open item 2: with no certificate `expiry`,
-  displacement and refund revocation reach a device only when it next goes
-  online. The monthly phone-home never fails admission, so a device that
-  activates and then stays offline keeps running beyond the seat rule.
+- Accepted limit (owner 2026-10-20 14:45 EDT): with no certificate
+  `expiry`, displacement and revocation reach a device only when it next
+  goes online. A machine that activates and never goes online again keeps
+  occupying its seat and may run its version forever, without updates.
 
 Open:
 
-1. ANSWERED 2026-10-20 14:12 EDT (owner): no refunds after purchase by
-   policy; statutory refunds are enforced only online (section 14.5 item 1).
-2. Seats ANSWERED 2026-10-20 (three seats, any OS mix, $10 extra seats;
-   section 14.5 item 2). Still open: whether offline devices stay outside seat
-   and refund enforcement (walking-brief sigil-offline-forever-enforcement).
-3. Owner items tracked by mecha-commerce: lifetime for the first N sales,
-   a self-serve seat cap or small-business tier.
+1. ANSWERED 2026-10-20 14:45 EDT (owner): the timeline below; the
+   refundable plastic month covers the EU and UK 14-day withdrawal right.
+2. ANSWERED 2026-10-20: three seats, any OS mix, $10 extra seats
+   (section 14.5 item 2); sharing seats is allowed; self-serve up to 10
+   seats per license, more by contacting the owner; offline machines per
+   the accepted limit above.
+3. Owner items tracked by mecha-commerce: lifetime for the first N sales;
+   commerce's proposed anti-gaming rules (reinstatement price, seat-reset
+   limits).
+4. Timeline anchors (commerce checking with the owner): whether the
+   plastic month starts at purchase when someone buys on day 5 of the
+   trial, and whether the 12 months of updates still count from the start
+   of the trial.
+
+License timeline (owner 2026-10-20 14:45 EDT, superseding the 14:12
+answer of no refunds after purchase):
+
+- Month 1: the free `trial` grant (section 14.5). It expires unless a
+  purchase is made.
+- Month 2: plastic, a purchased one-month grant with an `expiry`,
+  refundable within the month. If not refunded, the app swaps it online
+  for the concrete grant without asking; the app warns an offline user
+  during the week before the cutover.
+- From month 3: concrete, the payload v3 grant with no `expiry`, forever
+  for that version on that machine, with updates until 12 months after
+  the trial began.
+- A chargeback on a subscription renewal ends the update subscription;
+  the installed version keeps running, unsupported and without updates,
+  and reactivation costs the reinstatement fee.
+- A new major grant is minted only after the paying transaction's refund
+  window has closed.
 
 Answered 2026-10-20 14:12 EDT (owner, via mecha-commerce): subscribers get
 major versions free, so refresh while updates are covered may raise
