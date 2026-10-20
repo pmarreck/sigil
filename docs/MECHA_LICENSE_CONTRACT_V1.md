@@ -1082,8 +1082,9 @@ Owner decisions, recorded from mecha-commerce docs/plan_context/pricing_2026-10-
 
 - A purchased version keeps working forever. Versions that are no longer
   current still run but are unsupported.
-- A purchase includes one year of updates. After that, one 9.99 USD per
-  year subscription covers updates for both products and for Pro. A
+- A purchase includes one year of updates. After that, one yearly
+  subscription (9.99 USD stated; provisionally 14.99 pending the beta price
+  survey, commerce's to set) covers updates for both products and for Pro. A
   lapsed subscription has a 30-day grace period; reinstatement includes
   catch-up to the current versions.
 - One-time fees are per product and per product's Pro tier. A new major
@@ -1139,8 +1140,8 @@ consumer moves until vectors exist):
   monotone, so an out-of-order or repeated write never lowers what a
   customer holds.
 - Update entitlement inputs (server only, commerce-owned): the end of the
-  included updates (owner 2026-10-20 14:45 EDT: 12 months from the start
-  of the trial; the exact anchor is open item 4), and Paddle subscription events
+  included updates (owner 2026-10-20 15:01 EDT: the purchase date + 12
+  calendar months, with the section 14 clamp), and Paddle subscription events
   (`subscription.created`, `.updated`, `.canceled`, `.past_due`, with
   `next_billed_at` and any scheduled change), which give a paid-through
   date, and confirmed false-positive reward months (owner 2026-10-20 14:56
@@ -1172,9 +1173,9 @@ Open:
    fields: reinstatement costs 9.99 per missed year plus the current year,
    at least 29.99 and at most the current price of the products owned;
    self-serve seat resets are limited to 2 per license per year.
-4. Timeline anchor: a purchase during the trial starts the plastic month
-   at purchase (owner 2026-10-20 14:56 EDT). Still open: whether the 12
-   months of updates count from the trial start or the purchase date.
+4. ANSWERED: a purchase during the trial starts the plastic month at
+   purchase (owner 2026-10-20 14:56 EDT), and the 12 included months of
+   updates count from the purchase date (15:01 EDT).
 
 License timeline (owner 2026-10-20 14:45 EDT, superseding the 14:12
 answer of no refunds after purchase):
@@ -1187,7 +1188,7 @@ answer of no refunds after purchase):
   during the week before the cutover.
 - From month 3: concrete, the payload v3 grant with no `expiry`, forever
   for that version on that machine, with updates until 12 months after
-  the trial began.
+  the purchase (owner 2026-10-20 15:01 EDT).
 - A chargeback on a subscription renewal ends the update subscription;
   the installed version keeps running, unsupported and without updates,
   and reactivation costs the reinstatement fee.
