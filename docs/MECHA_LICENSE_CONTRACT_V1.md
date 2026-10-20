@@ -1143,8 +1143,10 @@ consumer moves until vectors exist):
   of the trial; the exact anchor is open item 4), and Paddle subscription events
   (`subscription.created`, `.updated`, `.canceled`, `.past_due`, with
   `next_billed_at` and any scheduled change), which give a paid-through
-  date. Updates are covered through the later of the included updates' end
-  and paid-through + 30 days, UTC day-inclusive: day 30 of grace is
+  date, and confirmed false-positive reward months (owner 2026-10-20 14:56
+  EDT: at most 3 per customer per year, each extending that customer's
+  coverage end by one month). Updates are covered through the later of the
+  included updates' end and paid-through + 30 days, plus reward months, UTC day-inclusive: day 30 of grace is
   covered, day 31 is `updates_lapsed`. A refund or chargeback ends coverage
   at once. Vectors pin a clock-injected decision table: active, grace day 1
   and day 30, lapsed day 31, reinstated, refunded.
@@ -1165,13 +1167,14 @@ Open:
    (section 14.5 item 2); sharing seats is allowed; self-serve up to 10
    seats per license, more by contacting the owner; offline machines per
    the accepted limit above.
-3. Owner items tracked by mecha-commerce: lifetime for the first N sales;
-   commerce's proposed anti-gaming rules (reinstatement price, seat-reset
-   limits).
-4. Timeline anchors (commerce checking with the owner): whether the
-   plastic month starts at purchase when someone buys on day 5 of the
-   trial, and whether the 12 months of updates still count from the start
-   of the trial.
+3. Owner items tracked by mecha-commerce: lifetime for the first N sales.
+   Approved 2026-10-20 14:56 EDT as commerce ledger rules, not payload
+   fields: reinstatement costs 9.99 per missed year plus the current year,
+   at least 29.99 and at most the current price of the products owned;
+   self-serve seat resets are limited to 2 per license per year.
+4. Timeline anchor: a purchase during the trial starts the plastic month
+   at purchase (owner 2026-10-20 14:56 EDT). Still open: whether the 12
+   months of updates count from the trial start or the purchase date.
 
 License timeline (owner 2026-10-20 14:45 EDT, superseding the 14:12
 answer of no refunds after purchase):

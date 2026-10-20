@@ -36,7 +36,7 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [x] Owner trial and purchase workflow recorded as contract 14.5 (rev 2.1 draft), owners coordinated, 3 conflicts queued for the owner (done 2026-10-14 17:45 EDT).
 - [x] Forever-per-version licensing recorded as contract 16 (rev 3.0 draft): payload v3 without expiry, update entitlement as ledger state, Pro as features "pro", certificate v2 without expiry; refund question revised to r3 (done 2026-10-20 13:55 EDT).
 - [ ] Payload v3 and certificate v2 vectors (perpetual paid grant, pro features, undated certificate, superseding order, update-entitlement decision table) under test roles, then mecha_policy ABI 3; commerce agreed 2026-10-20 13:35 EDT, apps pending.
-- [ ] Owner answers still open: walking-brief sigil-trial-scan-limit; timeline anchors (contract 16 open item 4, commerce asking). Refund, seat and offline questions answered 2026-10-20 14:45 EDT.
+- [ ] Owner answers still open: walking-brief sigil-trial-scan-limit; the update-year anchor (contract 16 open item 4, commerce asking). Refund, seat and offline questions answered 2026-10-20 14:45 EDT.
 - [ ] Signed one-month trial vectors (examples/trial_vectors) under test per-product trial roles, hand-written expects, before mecha_policy changes.
 - [ ] Trial class and roles in mecha_policy (one month per contract 14.5), driven by the trial vectors above. A Windows 11 TPM run of PCP_EKPUB is still owed by an app team before tpm is relied on.
 - [ ] After the ceremony: verify registry row + identity-check outputs; relay the production `.pub` to validate and commerce; then the production-trust positive control per KEY_CEREMONY_V1 section 4.
