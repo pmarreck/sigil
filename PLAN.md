@@ -34,10 +34,11 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
 - [x] macOS static libraries Apple-consumable: build.zig re-archives the exact Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic) so members are 8-byte aligned and readable; tests/integration/ macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT — 2026-10-06 18:30 EDT
 - [x] Owner trial and purchase workflow recorded as contract 14.5 (rev 2.1 draft), owners coordinated, 3 conflicts queued for the owner (done 2026-10-14 17:45 EDT).
+- [x] Forever-per-version licensing recorded as contract 16 (rev 3.0 draft): payload v3 without expiry, update entitlement as ledger state, Pro as features "pro", certificate v2 without expiry; refund question revised to r3 (done 2026-10-20 13:55 EDT).
+- [ ] Payload v3 and certificate v2 vectors (perpetual paid grant, pro features, undated certificate, superseding order, update-entitlement decision table) under test roles, then mecha_policy ABI 3; commerce agreed 2026-10-20 13:35 EDT, apps pending.
 - [ ] Owner answers: walking-brief sigil-purchase-refund-month, sigil-three-os-limit, sigil-trial-scan-limit; then revise 14.5 and 15.1 and send commerce vectors.
 - [ ] Signed one-month trial vectors (examples/trial_vectors) under test per-product trial roles, hand-written expects, before mecha_policy changes.
 - [ ] Trial class and roles in mecha_policy (one month per contract 14.5), driven by the trial vectors above. A Windows 11 TPM run of PCP_EKPUB is still owed by an app team before tpm is relied on.
-- [x] Payload v2 + mecha_policy ABI 2: sigil examples/license_vectors_v2 (13 vectors, hand-written expects, incl. v2_bad_expiry from a surviving mutant); mecha_policy cfdfb9d (decide takes app_minor, v2 schema gate, CLI --app-minor required, 0.2.0, 9/9 mutants killed). Consumers notified. — 2026-10-06 14:00 EDT
 - [ ] After the ceremony: verify registry row + identity-check outputs; relay the production `.pub` to validate and commerce; then the production-trust positive control per KEY_CEREMONY_V1 section 4.
 
 ### Founding Beta license path (defined 2026-08-26; dates corrected same night)

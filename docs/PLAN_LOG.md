@@ -113,3 +113,7 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 - [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] Paper cold copies switched to uppercase hex (walking brief I2), basenc + xxd oracles, rehearsal green; samples emailed to Peter for visual approval. — 2026-10-06 10:45 EDT
 - [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] Restore check signs examples/restore_check/payload.json (no license or certificate shape; policy refuses it as malformed under every role); live put without --env, restore check its own env. — 2026-10-06 10:45 EDT
 - [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] Commerce e4473d7: Worker accepts sigil hot-bundle open PEM verbatim (e2e with real keygen, sign, native verify; it had been bare-base64 only, a day-of-ceremony failure averted); restore_check payload embedded with a signing control; separate restore-check Worker. — 2026-10-06 10:50 EDT
+
+## Retired 2026-10-20
+
+- [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] Payload v2 + mecha_policy ABI 2: sigil examples/license_vectors_v2 (13 vectors, hand-written expects, incl. v2_bad_expiry from a surviving mutant); mecha_policy cfdfb9d (decide takes app_minor, v2 schema gate, CLI --app-minor required, 0.2.0, 9/9 mutants killed). Consumers notified. — 2026-10-06 14:00 EDT

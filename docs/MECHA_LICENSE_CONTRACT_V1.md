@@ -1067,3 +1067,89 @@ Usage counter (lifetime bytes scanned):
   refuses a new trial certificate to a device cluster whose reported total
   has reached 250 GB, which closes the "delete settings and re-trial"
   loop whenever the device goes online.
+
+## 16. Forever-per-version licensing (rev 3.0 DRAFT, BDFN decision 2026-10-20)
+
+Owner decisions, recorded from mecha-commerce docs/plan_context/pricing_2026-10-20.md:
+
+- A purchased version keeps working forever. Versions that are no longer
+  current still run but are unsupported.
+- A purchase includes one year of updates. After that, one 9.99 USD per
+  year subscription covers updates for both products and for Pro. A
+  lapsed subscription has a 30-day grace period; reinstatement includes
+  catch-up to the current versions.
+- One-time fees are per product and per product's Pro tier. A new major
+  version and the Pro tier each carry a one-time upgrade fee.
+- Beta users get every feature, then Pro free.
+- The three-operating-system rule (section 14.5) applies to lifetime and
+  Pro licenses too.
+
+Superseded for paid use: the one-year use limit of sections 14 and 14.5,
+section 14 question 2's free yearly renewal as a condition of use, and the
+concrete-expired degraded mode of section 14.2 for paid grants (it still
+applies to trial and beta grants, which keep their `expiry`). Refresh no
+longer gates use; it only raises the version ceiling.
+
+sigil defaults implementing these (proposed, open to correction; no
+consumer moves until vectors exist):
+
+- Paid grant payload v3: the v2 fields with `expiry` ABSENT. Use is
+  bounded only by the version ceiling: (app_major, app_minor) <=
+  (max_major, max_minor) (section 14, question 1, ceiling). A new version
+  number, not an optional v2 `expiry`, so an existing ABI 2 decider keeps
+  refusing an undated v2 grant as malformed instead of reading it as
+  perpetual.
+- The update entitlement (first year, subscription, grace) is server
+  state in the commerce ledger, like seats, and appears in no signed
+  payload. While it is active, refresh (section 14.4) mints a grant with
+  a raised `max_minor`, or `max_major` after a paid major upgrade; the
+  ceiling never lowers. Outside it, refresh answers `updates_lapsed` and
+  mints nothing, and the existing grant keeps working.
+- Pro: `features` = `"pro"` (section 2 already reserves Pro as a
+  different `features` value on the same product). Buying Pro mints a
+  superseding grant with `"pro"`; the app gates Pro functions on the
+  verified `features`, never on unsigned state.
+- Installation certificates for a v3 grant carry no `expiry`, replacing
+  section 15's one calendar year for an undated license (certificate
+  payload v2). Without this, the certificate would end use after a year.
+- Revocation: a refund or chargeback revokes through the confirmation
+  endpoint only. An offline machine with a perpetual grant is never
+  reached; see open item 1.
+- Beta: beta grants expire as before; Pro-for-beta is issued later as a
+  `comp` grant with `features` `"pro"`.
+- Superseding order (commerce proposal, adopted 2026-10-20): grants of one
+  entitlement are totally ordered by `max_major`, then `max_minor`, then
+  `features` rank (`"pro"` above `"full"`). A candidate replaces the stored
+  grant only if strictly greater; a tie keeps the stored grant. The order is
+  monotone, so an out-of-order or repeated write never lowers what a
+  customer holds.
+- Update entitlement inputs (server only, commerce-owned): the purchase
+  mint date, which starts one included year (mint date + 1 calendar year,
+  the section 14 clamp), and Paddle subscription events
+  (`subscription.created`, `.updated`, `.canceled`, `.past_due`, with
+  `next_billed_at` and any scheduled change), which give a paid-through
+  date. Updates are covered through the later of the included year's end
+  and paid-through + 30 days, UTC day-inclusive: day 30 of grace is
+  covered, day 31 is `updates_lapsed`. A refund or chargeback ends coverage
+  at once. Vectors pin a clock-injected decision table: active, grace day 1
+  and day 30, lapsed day 31, reinstated, refunded.
+- `updates_lapsed` response (commerce proposal, adopted): it carries an
+  unsigned `updates_until` (YYYY-MM-DD) for display only ("updates ended on
+  X"). An app never uses it for admission, which depends only on the
+  verified grant and certificate.
+- Stated limit, pending open item 2: with no certificate `expiry`,
+  displacement and refund revocation reach a device only when it next goes
+  online. The monthly phone-home never fails admission, so a device that
+  activates and then stays offline keeps running beyond the seat rule.
+
+Open:
+
+1. Refund window for a perpetual grant (walking-brief
+   sigil-purchase-refund-month, revised): the refund is enforceable only
+   online.
+2. Seat details under the three-OS rule (walking-brief
+   sigil-three-os-limit), and whether offline devices stay outside seat
+   and refund enforcement (walking-brief sigil-offline-forever-enforcement).
+3. Owner items tracked by mecha-commerce: free majors for subscribers,
+   "lifetime, automatically Pro" and its multiple, in-app-only purchase
+   carrying the machine fingerprint.
