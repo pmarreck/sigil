@@ -117,3 +117,4 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 ## Retired 2026-10-20
 
 - [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] Payload v2 + mecha_policy ABI 2: sigil examples/license_vectors_v2 (13 vectors, hand-written expects, incl. v2_bad_expiry from a surviving mutant); mecha_policy cfdfb9d (decide takes app_minor, v2 schema gate, CLI --app-minor required, 0.2.0, 9/9 mutants killed). Consumers notified. — 2026-10-06 14:00 EDT
+- [x] [LEAD: all-build core licensing contract (Peter directive 2026-09-17 12:27 EDT)] macOS static libraries Apple-consumable: build.zig re-archives the exact Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic) so members are 8-byte aligned and readable; tests/integration/ macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT — 2026-10-06 18:30 EDT

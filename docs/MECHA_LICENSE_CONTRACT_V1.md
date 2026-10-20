@@ -521,7 +521,7 @@ Open questions for Peter (each changes the payload or the policy):
   certificate like every phase. A role-and-class addition to mecha_policy,
   additive; built once trial issuance (who may obtain one, how often) is
   settled.
-- Trial meter: the 250 GB counter lives in the app's settings, bound to the
+- Trial meter SUPERSEDED 2026-10-20 15:47 EDT (owner, walking brief: no scanning limit during the one-month trial; section 14.5 item 3). Original: the 250 GB counter lives in the app's settings, bound to the
   machine hash and protected by a keyed MAC whose key is embedded and
   obfuscated in the app. That key is NOT a sigil trust role: it is never in
   the key registry, never accepted by any server, never authorizes anything
@@ -544,7 +544,7 @@ Open questions for Peter (each changes the payload or the policy):
   by (product, machine hash) only, so issuing one stores no personal data.
   This is consistent with the 2026-09-15 no-registration evaluation
   decision that question 5 below noted.
-- The trial keeps the 250 GB scanning limit as a signed countdown (the
+- SUPERSEDED 2026-10-20 15:47 EDT (owner, walking brief: no scanning limit during the one-month trial; section 14.5 item 3). Original: The trial keeps the 250 GB scanning limit as a signed countdown (the
   trial-meter bullet above). This answers section 14 question 4: the
   limit belongs to the `trial` class only.
 - RESOLVED 2026-10-02 by section 15.1 (server-side clustering of hashed
@@ -759,17 +759,20 @@ Open, each changing issuance or policy (recorded, not decided here):
    replaces 15.1's cap, seats and displacement, and what a second machine
    on an already-covered OS gets. Alternatives such as three devices of
    any OS are proposals, not restatements.
-3. The trial's 250 GB scanning limit (sections 14.2 and 14.2a): "all
-   functionality for the month" may remove it.
+3. ANSWERED 2026-10-20 15:47 EDT (owner, walking brief): no scanning
+   limit during the one-month trial. The trial meter, its embedded MAC key
+   and the server-side 250 GB trial refusal are retired; one trial per
+   device (section 15.1 clustering) stays. Original: the trial's 250 GB
+   scanning limit (sections 14.2 and 14.2a) and "all functionality for the
+   month".
 4. "Same identity": the trial is email-free and keyed by machine (owner
    ruling, section 14.2a), while a purchase is keyed by its payment
    record. The trial-to-purchase link, if any, is not specified. Commerce
    proposes a design; if it needs a policy choice, commerce keeps it as
    its own owner question.
 
-Questions 1 and 2 are answered (2026-10-20); question 3 stays queued
-(walking-brief sigil-trial-scan-limit). Commerce keeps issuance as built
-until the section 16 vectors exist.
+Questions 1 to 3 are answered (2026-10-20). Commerce keeps issuance as
+built until the section 16 vectors exist.
 
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
@@ -1070,7 +1073,7 @@ Usage counter (lifetime bytes scanned):
   authorizes nothing. No signed checkpoint role is added: it would be a
   new online key for a display feature. If Peter later wants a tamper
   resistant counter, that is a new role and a new ceremony item.
-- Trial limit (section 14.2 reopened and settled): the local MAC'd meter
+- Trial limit SUPERSEDED 2026-10-20 15:47 EDT (owner, walking brief: no scanning limit during the one-month trial; section 14.5 item 3). Original: (section 14.2 reopened and settled): the local MAC'd meter
   stays the offline admission input for 250 GB. The server additionally
   refuses a new trial certificate to a device cluster whose reported total
   has reached 250 GB, which closes the "delete settings and re-trial"

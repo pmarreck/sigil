@@ -32,11 +32,10 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [ ] Peter: approve the hex paper samples (emailed 2026-10-06).
 - [ ] Peter: GUI demos before the ceremony - refusal-only (1) or a labeled test-trust demo build (2)? Emailed 2026-10-06 17:40 EDT; validate_gui told no production keys or real licenses exist.
 - [ ] Production Worker waits on Peter (commerce onboarding checklist F2).
-- [x] macOS static libraries Apple-consumable: build.zig re-archives the exact Zig member bytes (zig ar p, then zig ar --format=darwin, deterministic) so members are 8-byte aligned and readable; tests/integration/ macos_archive.sh guards both Mac archs. — 2026-10-06 18:35 EDT — 2026-10-06 18:30 EDT
 - [x] Owner trial and purchase workflow recorded as contract 14.5 (rev 2.1 draft), owners coordinated, 3 conflicts queued for the owner (done 2026-10-14 17:45 EDT).
 - [x] Forever-per-version licensing recorded as contract 16 (rev 3.0 draft): payload v3 without expiry, update entitlement as ledger state, Pro as features "pro", certificate v2 without expiry; refund question revised to r3 (done 2026-10-20 13:55 EDT).
 - [ ] Payload v3 and certificate v2 vectors (perpetual paid grant, pro features, undated certificate, superseding order, update-entitlement decision table) under test roles, then mecha_policy ABI 3; commerce agreed 2026-10-20 13:35 EDT, apps pending.
-- [ ] Owner answer still open: walking-brief sigil-trial-scan-limit. Refund, seat, offline and timeline questions answered 2026-10-20 (14:45 to 15:01 EDT).
+- [x] Owner answers consumed: refund, seat, offline and timeline (commerce chat 14:45 to 15:01 EDT) and no trial scan limit (walking brief 15:47 EDT) (done 2026-10-20 15:55 EDT).
 - [ ] Signed one-month trial vectors (examples/trial_vectors) under test per-product trial roles, hand-written expects, before mecha_policy changes.
 - [ ] Trial class and roles in mecha_policy (one month per contract 14.5), driven by the trial vectors above. A Windows 11 TPM run of PCP_EKPUB is still owed by an app team before tpm is relied on.
 - [ ] After the ceremony: verify registry row + identity-check outputs; relay the production `.pub` to validate and commerce; then the production-trust positive control per KEY_CEREMONY_V1 section 4.
