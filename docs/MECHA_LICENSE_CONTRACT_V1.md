@@ -695,8 +695,8 @@ recorded here; the exact owner wording is kept privately.
   for one year before an online refresh is required (the section 14.4
   refresh operation). A trial without a purchase stays a trial (plastic)
   and is never refreshable (section 14.4, `not_refreshable`).
-- Operating systems: one purchase covers up to three different operating
-  systems under the same identity.
+- Operating systems: superseded 2026-10-20 14:12 EDT (owner): three seats
+  per license, machines of any OS mix; see open item 2 below.
 - Fingerprint boundary (BDFN, same day): hardware fields and algorithms
   are not chosen here and nothing in issuance, trial or lifecycle waits on
   them. The boundary stays versioned and configurable: the certificate
@@ -719,35 +719,42 @@ proposed and open to the owner's correction.
 
 - Trial needs no email (owner ruling, section 14.2a, 2026-10-01).
 - Concrete `expiry` anchors on the mint date (owner ruling, section 14.2,
-  2026-10-01, stated for migration after the plastic month). Applying it
-  to a year issued at purchase is a sigil default, pending open question 1.
+  2026-10-01, stated for migration after the plastic month). Moot for paid
+  grants since 2026-10-20: a purchase issues the forever grant, which has
+  no `expiry` (section 16).
 - "Plastic" names the trial grant: sigil's reading of the owner's "a
-  purchase gives a concrete instead of a plastic license". Not a ruling;
-  the paid one-month grant of section 14.2 stays as built until open
-  question 1 is answered.
+  purchase gives a concrete instead of a plastic license", confirmed by
+  the owner 2026-10-20 ("the one-month trial (plastic) license still
+  expires"). The paid one-month grant of section 14.2 is retired.
 - One trial per device and product: a sigil ruling (section 15.1,
   2026-10-02, "unless the owner says otherwise"), not an owner ruling.
 - Trial grant format: `payment_provider` "trial", per-product trial role
   and certificate (owner ruling, section 14.2); `expiry` = issue date + 1
   calendar month (owner, 2026-10-14) with the end-of-month clamp and UTC
   day-inclusive rule of section 14 (sigil default, as for every grant).
-- OS binding: undecided. The owner's wording is three different operating
-  systems, earlier one license per machine and OS. A certificate binds one
-  machine, but nothing signed states its OS, so the per-OS invariant is
-  not yet enforceable. Two designs, chosen after open question 2: a
-  signed OS family in the installation certificate (a certificate payload
-  version change with its own vectors), or an unsigned OS observation
-  counted only by the server (deterrence only, like the hints). Whichever
-  is chosen gets a documented boundary and a test.
+- OS binding: not needed. Seats count machines of any OS mix (open item 2,
+  answered), so no per-OS invariant exists and no OS field is added to any
+  signed or unsigned format.
 
 Open, each changing issuance or policy (recorded, not decided here):
 
-1. Purchase and the refund month. Section 14.2 issues a one-month plastic
+1. ANSWERED 2026-10-20 14:12 EDT (owner, via mecha-commerce): the trial
+   month (plastic) still expires, a purchase issues the forever grant
+   (section 16) at once, and the policy allows no refunds after purchase.
+   Statutory refunds (for example the EU and UK 14-day withdrawal right,
+   which Paddle honors) may still occur and are enforced only online.
+   Original: Section 14.2 issues a one-month plastic
    grant at purchase and the year only after the refund window closes,
    so a refunded offline buyer cannot keep a year. If a purchase now
    issues the year at once, a refund or chargeback inside the month is
    enforced only at the app's next online check.
-2. Seats. The owner's wording is up to three DIFFERENT operating systems
+2. ANSWERED 2026-10-20 14:12 EDT (owner, via mecha-commerce): three seats
+   per license on machines of any OS mix, Steam style; extra seats stay
+   $10 each and permanently raise the license's seat count; seat reset and
+   re-registration are required. This replaces section 15.1's cap of 2.
+   Open with the owner: a self-serve cap with "contact us" above it, or a
+   small-business tier. Original: The owner's wording is up to three
+   DIFFERENT operating systems
    per purchase (one per OS). Section 15.1 has two devices in any OS mix
    plus $10 add-on seats and displacement. Open: whether the new rule
    replaces 15.1's cap, seats and displacement, and what a second machine
@@ -761,9 +768,9 @@ Open, each changing issuance or policy (recorded, not decided here):
    proposes a design; if it needs a policy choice, commerce keeps it as
    its own owner question.
 
-Questions 1 to 3 are queued for the owner (walking-brief ids
-sigil-purchase-refund-month, sigil-three-os-limit, sigil-trial-scan-limit).
-Until they are answered, commerce keeps issuance as built.
+Questions 1 and 2 are answered (2026-10-20); question 3 stays queued
+(walking-brief sigil-trial-scan-limit). Commerce keeps issuance as built
+until the section 16 vectors exist.
 
 ## 15. Installation certificates (IN FORCE for every phase including the October 15 beta, Peter 2026-10-01 15:41 EDT; paid-phase details still rev 2.0 draft)
 
@@ -862,8 +869,10 @@ Open questions for Peter, in addition to section 14's four:
 
 ### 15.1 Device cap and server-side device policy (Peter 2026-10-02 11:42 EDT via commerce; sigil ruling 2026-10-02)
 
-- Cap: each paid entitlement allows 2 devices (seat ownership moved to
-  customer and product by section 15.2), any mix of operating
+- Cap SUPERSEDED 2026-10-20 (owner, section 14.5 item 2): three seats per
+  license on machines of any OS mix, $10 extra seats raising the count
+  permanently. Original: each paid entitlement allows 2 devices (seat
+  ownership moved to customer and product by section 15.2), any mix of operating
   systems; each additional device is a $10 add-on seat. This replaces
   "no replacement quota" in section 15 and the rebind-quota bullet in
   section 14.3. Seats live in the commerce ledger and nowhere in a signed
@@ -1144,12 +1153,18 @@ consumer moves until vectors exist):
 
 Open:
 
-1. Refund window for a perpetual grant (walking-brief
-   sigil-purchase-refund-month, revised): the refund is enforceable only
-   online.
-2. Seat details under the three-OS rule (walking-brief
-   sigil-three-os-limit), and whether offline devices stay outside seat
+1. ANSWERED 2026-10-20 14:12 EDT (owner): no refunds after purchase by
+   policy; statutory refunds are enforced only online (section 14.5 item 1).
+2. Seats ANSWERED 2026-10-20 (three seats, any OS mix, $10 extra seats;
+   section 14.5 item 2). Still open: whether offline devices stay outside seat
    and refund enforcement (walking-brief sigil-offline-forever-enforcement).
-3. Owner items tracked by mecha-commerce: free majors for subscribers,
-   "lifetime, automatically Pro" and its multiple, in-app-only purchase
-   carrying the machine fingerprint.
+3. Owner items tracked by mecha-commerce: lifetime for the first N sales,
+   a self-serve seat cap or small-business tier.
+
+Answered 2026-10-20 14:12 EDT (owner, via mecha-commerce): subscribers get
+major versions free, so refresh while updates are covered may raise
+`max_major` (the superseding order already allows it); one build, with the
+verified `features` choosing Standard or Pro; unsupported versions get no
+security updates; purchase is a link from the app, and the fingerprint is
+sent at activation when the app imports the license. Pricing so that
+lapsing and reinstating never costs less than upgrading is commerce's.
