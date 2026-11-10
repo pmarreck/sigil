@@ -62,12 +62,32 @@ for prod in mecha-validate mecha-rotshield; do
 	[[ $ok == 1 ]] && pass "$prod: authorized evals name the payload's product" || fail "$prod: an authorized eval names another product"
 	unset seen_at seen_minor seen_major
 done
+# Regeneration runs in disposable scratch: the committed vectors are inputs
+# and are never rewritten (it used to run the generator in place, rewriting
+# them on every ./test). The scratch tree is laid out like the repository, so
+# the generator finds the v1 test keys where it expects them.
 before=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json | sha256sum)
 v1before=$(cd "$V1" && sha256sum ./*.sigil manifest.json | sha256sum)
-bash "$V/generate" >/dev/null 2>&1
+regen="$WORK/regen/examples/license_vectors_v2"
+if mkdir -p "$regen" "$WORK/regen/examples/license_vectors" \
+	&& cp "$V/generate" "$regen/" \
+	&& cp "$V1/test_paid.key" "$V1/test_beta.key" "$WORK/regen/examples/license_vectors/" \
+	&& SIGIL_BIN="$SIGIL" bash "$regen/generate" >"$WORK/regen.log" 2>&1; then
+	(cd "$V" && ls ./*.sigil ./*.payload.json manifest.json) >"$WORK/committed.list"
+	(cd "$regen" && ls ./*.sigil ./*.payload.json manifest.json) >"$WORK/regenerated.list"
+	differ=""
+	cmp -s "$WORK/committed.list" "$WORK/regenerated.list" || differ="different file sets;"
+	while IFS= read -r f; do
+		cmp -s "$V/$f" "$regen/$f" || differ="$differ $f"
+	done <"$WORK/committed.list"
+	[[ -z "$differ" ]] && pass "regeneration in scratch is byte-identical to the committed vectors" \
+		|| fail "regeneration in scratch is byte-identical to the committed vectors" "$differ"
+else
+	fail "regenerate the vectors in scratch" "$(tail -3 "$WORK/regen.log" 2>/dev/null)"
+fi
 after=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json | sha256sum)
 v1after=$(cd "$V1" && sha256sum ./*.sigil manifest.json | sha256sum)
-[[ "$before" == "$after" ]] && pass "regeneration is byte-identical" || fail "regeneration is byte-identical"
+[[ "$before" == "$after" ]] && pass "the committed v2 vectors are untouched" || fail "the committed v2 vectors changed"
 [[ "$v1before" == "$v1after" ]] && pass "the frozen v1 set is untouched" || fail "the frozen v1 set changed"
 echo "$PASS passed, $FAIL failed"
 exit "$FAIL"

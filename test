@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Master test runner for sigil.
 # Runs Zig unit tests + CLI integration tests.
-# Exit code = total number of failures across all suites.
+# Exit code = total number of failures across all suites, capped at 255.
 #
 # Per Mecha conventions: never use `set -euo pipefail` in test scripts.
 # `set -e` silently aborts when a command-under-test returns non-zero, which
@@ -29,18 +29,31 @@ now() {
 seconds_between() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.2f", b - a }'; }
 TIMINGS=()
 BUILD_SECONDS="skipped"
+RUN_STARTED=$(now)
 
-run_suite() {
-	local name="$1"
-	local cmd="$2"
+# Scratch for suite results, removed on exit. Only this directory.
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sigil-test-run-XXXXXX")" || { echo "FATAL: no scratch directory"; exit 1; }
+trap 'rm -rf -- "$RUN_DIR"' EXIT
+
+# exec_suite PREFIX CMD: run CMD, saving its output, status and duration
+# under PREFIX. Safe to run in the background; it touches no counters.
+exec_suite() {
+	local prefix="$1" cmd="$2" started ended
+	started=$(now)
+	eval "$cmd" >"$prefix.out" 2>&1
+	echo "$?" >"$prefix.rc"
+	ended=$(now)
+	seconds_between "$started" "$ended" >"$prefix.time"
+}
+
+# report_suite NAME PREFIX: count and print a suite exec_suite finished.
+report_suite() {
+	local name="$1" prefix="$2" output rc took
 	echo ""
 	echo "━━━ $name ━━━"
-	local output started ended took
-	started=$(now)
-	output=$(eval "$cmd" 2>&1)
-	local rc=$?
-	ended=$(now)
-	took=$(seconds_between "$started" "$ended")
+	output=$(<"$prefix.out")
+	rc=$(<"$prefix.rc")
+	took=$(<"$prefix.time")
 	TIMINGS+=("$took	$name")
 	local pass fail
 	# Recognize multiple summary formats:
@@ -63,6 +76,11 @@ run_suite() {
 	TOTAL_FAIL=$((TOTAL_FAIL + fail))
 	echo "$output" | tail -12
 	echo "  (${took}s)"
+}
+
+run_suite() {
+	exec_suite "$RUN_DIR/current" "$2"
+	report_suite "$1" "$RUN_DIR/current"
 }
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -167,29 +185,47 @@ done
 # The same suites again on every other pair. A suite drives the binary when
 # it reads SIGIL_BIN; that is discovered here rather than listed, so a new
 # suite joins every pair. A missing pair fails, never skips.
+#
+# The three passes run concurrently: each suite works in its own scratch
+# directory, and no suite writes into the repository (license_vectors_v2.sh
+# regenerates in scratch). Results are reported afterwards in a fixed order.
+PAIR_SUITES=()
+for t in "$SCRIPT_DIR/tests/cli/test_cli" "$SCRIPT_DIR"/tests/integration/*.sh; do
+	if [[ -f "$t" ]] && grep -q 'SIGIL_BIN' "$t"; then PAIR_SUITES+=("$t"); fi
+done
+pair_pass() {
+	local p="$1" n
+	for n in "${!PAIR_SUITES[@]}"; do
+		exec_suite "$RUN_DIR/pair-$p-$n" "SIGIL_BIN='${PAIR_BINS[p]}' $NIXDEV bash '${PAIR_SUITES[n]}'"
+	done
+}
+for p in "${!PAIR_BINS[@]}"; do pair_pass "$p" & done
+wait
 for p in "${!PAIR_BINS[@]}"; do
-	label=${PAIR_LABELS[p]}
-	bin=${PAIR_BINS[p]}
-	run_suite "$label: the binary was built" "test -x '$bin' && echo '1 passed'"
-	for t in "$SCRIPT_DIR/tests/cli/test_cli" "$SCRIPT_DIR"/tests/integration/*.sh; do
-		if [[ -f "$t" ]] && grep -q 'SIGIL_BIN' "$t"; then
-			run_suite "$label: ${t##*/}" "SIGIL_BIN='$bin' $NIXDEV bash '$t'"
-		fi
+	run_suite "${PAIR_LABELS[p]}: the binary was built" "test -x '${PAIR_BINS[p]}' && echo '1 passed'"
+	for n in "${!PAIR_SUITES[@]}"; do
+		report_suite "${PAIR_LABELS[p]}: ${PAIR_SUITES[n]##*/}" "$RUN_DIR/pair-$p-$n"
 	done
 done
 
-# Timing report: the build, the suites' total and the costliest suites.
-printf '%s\n' "${TIMINGS[@]}" >"${TMPDIR:-/tmp}/sigil-test-timings.$$"
-suite_seconds=$(awk -F'\t' '{ t += $1 } END { printf "%.1f", t }' "${TMPDIR:-/tmp}/sigil-test-timings.$$")
+# Timing report. Some suites run concurrently, so the sum of suite times is
+# worker time, not waiting time; the wall time of execution (everything but
+# the build) is reported on its own.
+RUN_ENDED=$(now)
+printf '%s\n' "${TIMINGS[@]}" >"$RUN_DIR/timings"
+suite_seconds=$(awk -F'\t' '{ t += $1 } END { printf "%.1f", t }' "$RUN_DIR/timings")
+run_seconds=$(seconds_between "$RUN_STARTED" "$RUN_ENDED")
+execution_seconds=$(awk -v r="$run_seconds" -v b="${BUILD_SECONDS%s}" 'BEGIN { if (b == "skipped") b = 0; printf "%.1f", r - b }')
 echo ""
-echo "Timing ($CLOCK clock): build $BUILD_SECONDS, suites ${suite_seconds}s over ${#TIMINGS[@]} suites. Costliest:"
-sort -t$'\t' -k1,1 -rn "${TMPDIR:-/tmp}/sigil-test-timings.$$" >"${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
-awk -F'\t' 'NR <= 10 { printf "  %8ss  %s\n", $1, $2 }' "${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
-rm -f -- "${TMPDIR:-/tmp}/sigil-test-timings.$$" "${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
+echo "Timing ($CLOCK clock): build $BUILD_SECONDS; execution ${execution_seconds}s wall;"
+echo "suite time ${suite_seconds}s summed over ${#TIMINGS[@]} suites (pair passes overlap). Costliest:"
+sort -t$'\t' -k1,1 -rn "$RUN_DIR/timings" >"$RUN_DIR/timings.sorted"
+awk -F'\t' 'NR <= 10 { printf "  %8ss  %s\n", $1, $2 }' "$RUN_DIR/timings.sorted"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║  TOTAL: $TOTAL_PASS passed, $TOTAL_FAIL failed"
 echo "╚══════════════════════════════════════════════════════════════╝"
 
-exit $TOTAL_FAIL
+# Capped: an exit status is taken modulo 256, so 256 failures would read as success.
+exit $(( TOTAL_FAIL > 255 ? 255 : TOTAL_FAIL ))
