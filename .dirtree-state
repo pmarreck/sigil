@@ -35,6 +35,7 @@ annotate=[
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
 	rust = Rust port workspace: sigil (verify core), sigil-ffi (C ABI staticlib)
+	rust/mecha-policy = Rust port of mecha_policy: license and install-cert admission, machine and hint hashes
 	rust/sigil-vectors = Generates the signature edge-case corpus with hand-written verdicts
 	rust/sigil/src/glyphs.rs = Generated printable-binary glyph table, checked against the pinned character_map.txt
 	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
@@ -52,6 +53,7 @@ annotate=[
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
 	tests/differential = Zig-vs-Rust differential: one C driver linked against each archive, outputs compared
+	tests/differential/policy = mecha_policy differential: Zig vs Rust, plus manifest expectations, grids, sweeps and fuzz
 	tests/integration/hint_vectors.sh = Hint vectors: byte-identical regeneration, coreutils recompute, input/hint equivalence classes
 	tests/integration/install_cert_vectors.sh = Verifies install-cert vectors under their key only, license hashes against real envelopes, machine hashes via coreutils
 	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards

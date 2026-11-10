@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# Differential test for mecha_policy: the Zig library at the pinned commit
+# and the Rust port must answer identically, and both must match the
+# hand-written expectations in the vector manifests.
+#
+# One C driver (policy_driver.c) is linked against each implementation's
+# libmecha_policy.a with a stock C compiler. A missing implementation is a
+# failure, never a skip.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ZIG_OUT="${MECHA_POLICY_ZIG_OUT:-$REPO_ROOT/.nix-out/mecha-policy-zig}"
+RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
+CC="${CC:-cc}"
+FUZZ_CASES="${SIGIL_DIFF_FUZZ_CASES:-1500}"
+
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+	if [[ $# -gt 1 ]]; then head -20 <<<"$2" | sed 's/^/       /' >&2; fi
+}
+finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/mecha-policy-differential-XXXXXX")" || exit 1
+trap 'rm -rf -- "$work"' EXIT
+header="$ZIG_OUT/include/mecha_policy.h"
+
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	lib="$out/lib/libmecha_policy.a"
+	if [[ ! -f "$lib" || ! -f "$header" ]]; then
+		fail "$impl implementation provides lib/libmecha_policy.a and the header" "missing: $lib or $header"
+		finish
+	fi
+	# The pinned Zig archive references roundq (std.json's number parser pulls
+	# in 128-bit float support), which a stock C toolchain supplies only
+	# through libquadmath. Zig-built consumers get it from Zig's runtime. This
+	# is a known defect of that archive (sigil PLAN), not of the harness.
+	extra=()
+	[[ "$impl" == zig ]] && extra=(-lquadmath)
+	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$(dirname "$header")" \
+		"$SCRIPT_DIR/policy_driver.c" "$lib" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+		pass "$impl archive links the driver, which calls every declared function"
+	else
+		fail "$impl archive links the driver, which calls every declared function" "$build_log"
+		finish
+	fi
+done
+
+# The Rust package ships a copy of the header; it must be the pinned one.
+if cmp -s "$header" "$RUST_OUT/include/mecha_policy.h"; then
+	pass "the Rust package ships the pinned mecha_policy.h unchanged"
+else
+	fail "the Rust package ships the pinned mecha_policy.h unchanged"
+fi
+
+# ── Export inventory, parsed from the header ────────────────────────────────
+if ! grep -oE '\bmecha_policy_[a-z0-9_]+[[:space:]]*\(' "$header" >"$work/declared"; then
+	fail "parse the declared functions from mecha_policy.h"
+	finish
+fi
+sed -i 's/[[:space:]]*($//' "$work/declared"
+sort -u -o "$work/declared" "$work/declared"
+declared=$(<"$work/declared")
+declared_count=$(wc -l <"$work/declared")
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	nm -g --defined-only "$out/lib/libmecha_policy.a" >"$work/nm-$impl" 2>/dev/null
+	awk '$2 == "T" { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
+	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
+	missing=$(comm -23 "$work/declared" "$work/exported-$impl")
+	if [[ -z "$missing" ]]; then
+		pass "$impl archive exports all $declared_count declared functions"
+	else
+		fail "$impl archive exports every declared function" "missing: $missing"
+	fi
+done
+uncalled=""
+for fn in $declared; do
+	grep -qE "\\b${fn}[[:space:]]*\\(" "$SCRIPT_DIR/policy_driver.c" || uncalled="$uncalled $fn"
+done
+if [[ -z "$uncalled" ]]; then
+	pass "the driver calls every declared function"
+else
+	fail "the driver calls every declared function" "never called:$uncalled"
+fi
+
+# same MIN_LINES ARGS...: both drivers succeed, produce enough output and
+# agree byte for byte. Reason in $DETAIL on failure; records nothing.
+DETAIL=""
+same() {
+	local min_lines="$1" impl rc lines
+	shift
+	for impl in zig rust; do
+		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl"
+		rc=$?
+		if [[ $rc -ne 0 ]]; then
+			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl")"
+			return 1
+		fi
+	done
+	lines=$(wc -l <"$work/out-zig")
+	if [[ $lines -lt $min_lines ]]; then
+		DETAIL="only $lines output lines; expected at least $min_lines"
+		return 1
+	fi
+	DETAIL=$(diff "$work/out-zig" "$work/out-rust") || return 1
+	DETAIL=""
+}
+compare() {
+	local label="$1"
+	shift
+	if same "$@"; then pass "$label"; else fail "$label" "$DETAIL"; return 1; fi
+}
+
+# oracle LABEL EXPECTED: the last comparison's output matches the expected
+# column, one row per line.
+oracle() {
+	local label="$1" expected="$2" got diff_out
+	got="$work/oracle-got"
+	"${@:3}" <"$work/out-zig" >"$got"
+	if diff_out=$(diff "$expected" "$got"); then
+		pass "$label"
+	else
+		fail "$label" "$diff_out"
+	fi
+}
+
+compare "ABI version, package version and every reason name agree" 257 meta
+
+cd "$REPO_ROOT" || exit 1
+
+# ── Manifest rows with hand-written expectations ────────────────────────────
+for manifest in examples/license_vectors/manifest.json examples/license_vectors_v2/manifest.json; do
+	dir=${manifest%/manifest.json}
+	jq -r --arg dir "$dir" '.vectors[]
+		| select(.signed_by_role == "test-beta" or .signed_by_role == "test-paid")
+		| . as $v | .policy_evals[]?
+		| [ "\($dir)/\($v.payload)", (if $v.signed_by_role == "test-beta" then "0" else "1" end),
+			.product, (.app_major | tostring), ((.app_minor // 0) | tostring), .now_utc_date, "-", "-", .expect ]
+		| @tsv' "$manifest"
+done >"$work/decide.rows"
+cut -f1-8 "$work/decide.rows" >"$work/decide.tsv"
+cut -f9 "$work/decide.rows" >"$work/decide.expected"
+rows=$(wc -l <"$work/decide.tsv")
+if compare "decide agrees on all $rows manifest evaluations" 50 decide-tsv "$work/decide.tsv"; then
+	oracle "both match the manifests' expected license decisions" "$work/decide.expected" cut -d' ' -f2
+fi
+
+manifest=examples/install_cert_vectors/manifest.json
+jq -r '. as $m | .vectors[] | . as $v | .evals[]?
+	| [ "examples/install_cert_vectors/\($v.payload)", .product, $m.licenses[.license], $m.machines[.machine],
+		.now, (.hwm // "-"), .expect ]
+	| @tsv' "$manifest" >"$work/install.rows"
+cut -f1-6 "$work/install.rows" >"$work/install.tsv"
+cut -f7 "$work/install.rows" >"$work/install.expected"
+rows=$(wc -l <"$work/install.tsv")
+if compare "install decide agrees on all $rows manifest evaluations" 20 install-tsv "$work/install.tsv"; then
+	oracle "both match the manifest's expected certificate decisions" "$work/install.expected" cut -d' ' -f2
+fi
+
+# jq: ASCII text to lowercase hex.
+hexify='def hex: explode | map(("0123456789abcdef"[(./16|floor):(./16|floor)+1]) + ("0123456789abcdef"[(.%16):(.%16)+1])) | join("");'
+jq -r "$hexify"' .machine_hash_kats[] | [.product, (.raw_id | hex)] | @tsv' "$manifest" >"$work/machine.tsv"
+jq -r '.machine_hash_kats[] | "\(.machine) nul=1"' "$manifest" >"$work/machine.expected"
+if compare "machine hash agrees on the manifest's known answers" 4 machine-tsv "$work/machine.tsv"; then
+	oracle "both match the manifest's machine-hash known answers" "$work/machine.expected" cat
+fi
+
+manifest=examples/hint_vectors/manifest.json
+jq -r "$hexify"' (.kats[], .rejects[]) | [(.product | hex), .kind, .raw_hex] | @tsv' "$manifest" >"$work/hint.tsv"
+jq -r '(.kats[] | "64 \(.hint)"), (.rejects[] | "-2 ")' "$manifest" >"$work/hint.expected"
+if compare "hint hash agrees on the manifest's known answers and rejects" 20 hint-tsv "$work/hint.tsv"; then
+	oracle "both match the manifest's hint known answers and rejects" "$work/hint.expected" cat
+fi
+
+# ── Grids, sweeps and fuzz ──────────────────────────────────────────────────
+fd -t f --glob '*.payload.json' examples/license_vectors examples/license_vectors_v2 >"$work/licenses"
+fd -t f --glob '*.payload.json' examples/install_cert_vectors >"$work/certs"
+sort -o "$work/licenses" "$work/licenses"
+sort -o "$work/certs" "$work/certs"
+cat "$work/licenses" "$work/certs" >"$work/all-payloads"
+payloads=$(wc -l <"$work/all-payloads")
+compare "decide agrees over a parameter grid on all $payloads payloads" $((payloads * 37)) decide-grid "$work/all-payloads"
+
+jq -r '.licenses[], .machines[]' examples/install_cert_vectors/manifest.json >"$work/hashes"
+printf '%s\n' "0000000000000000000000000000000000000000000000000000000000000000" \
+	"F8247856A3DC5E8AE25B40249E5E35917918074C0CB4AB04627C37CDE404DA01" "f8247856" >>"$work/hashes"
+compare "install decide agrees over a parameter grid on every certificate" 100 install-grid "$work/certs" "$work/hashes"
+compare "machine and hint hashing agree over normalization edges and the hint ABI contract" 200 hash-sweep
+# 1 + 6 + 36 + 216 + 1296 strings: every version-field value up to four
+# characters over the alphabet that reaches signs, separators and padding.
+if same 1555 numeric-sweep; then
+	authorized=$(grep -c ' 0' "$work/out-zig")
+	if [[ $authorized -ge 50 ]]; then
+		pass "decide agrees on every version-field string up to four characters ($authorized admit something)"
+	else
+		fail "the version-field sweep reaches authorized outcomes" "only $authorized lines"
+	fi
+else
+	fail "decide agrees on every version-field string up to four characters" "$DETAIL"
+fi
+
+license=$(jq -r '.licenses.beta_valid' examples/install_cert_vectors/manifest.json)
+machine=$(jq -r '.machines.A' examples/install_cert_vectors/manifest.json)
+seed=1
+fuzz_failures=""
+: >"$work/fuzz-codes"
+while IFS= read -r payload; do
+	mode=decide
+	grep -qx "$payload" "$work/certs" && mode=install
+	if same "$FUZZ_CASES" fuzz "$mode" "$seed" "$FUZZ_CASES" "$payload" "$license" "$machine"; then
+		awk -v m="$mode" '{ for (i = 2; i <= NF; i++) print m ":" $i }' "$work/out-zig" >>"$work/fuzz-codes"
+	else
+		fuzz_failures="$fuzz_failures
+seed=$seed $payload: $DETAIL"
+	fi
+	seed=$((seed + 1))
+done <"$work/all-payloads"
+sort -u -o "$work/fuzz-codes" "$work/fuzz-codes"
+reached=$(tr '\n' ' ' <"$work/fuzz-codes")
+decide_codes=$(grep -c '^decide:' "$work/fuzz-codes")
+install_codes=$(grep -c '^install:' "$work/fuzz-codes")
+if [[ -z "$fuzz_failures" && $decide_codes -ge 6 && $install_codes -ge 4 ]]; then
+	pass "fuzz: $((payloads * FUZZ_CASES)) mutated payloads agree (reached: $reached)"
+else
+	fail "fuzz: mutated payloads agree and reach enough outcomes" \
+		"differing:${fuzz_failures:- none}; reached: $reached"
+fi
+
+finish

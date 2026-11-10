@@ -15,9 +15,13 @@
     # envelopes use (build.zig.zon pin). Test oracle only: decodes the
     # renewal vectors' embedded envelopes (contract section 14.3).
     printable-binary.url = "github:pmarreck/printable-binary/cdefa95e4590fa016967e0e6ccb3b96c19c44c7e";
+    # The Zig mecha_policy at the commit the licensing contract pins: the
+    # oracle the Rust mecha-policy crate is held to by tests/differential,
+    # and the source of the mecha_policy.h header both implement.
+    mecha-policy.url = "github:pmarreck/mecha_policy/0f4a8b06755b7c4e10965ded38db70926c58d143";
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay, printable-binary }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, printable-binary, mecha-policy }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -151,9 +155,22 @@
             mkdir -p $out/lib $out/include
             cp "$archive" $out/lib/libsigil.a
             cp include/sigil.h $out/include/sigil.h
+            policy=$(find . -path '*/release/libmecha_policy_ffi.a' | head -1)
+            [ -n "$policy" ] || { echo "no libmecha_policy_ffi.a was built" >&2; exit 1; }
+            cp "$policy" $out/lib/libmecha_policy.a
+            cp ${mecha-policy}/include/mecha_policy.h $out/include/mecha_policy.h
             runHook postInstall
           '';
         };
+
+        # The pinned Zig mecha_policy as a product tree (archive and header),
+        # for the policy differential. Its own package installs only the
+        # archive; the header comes from the same pinned source.
+        packages.mecha-policy-zig = pkgs.runCommandLocal "mecha-policy-zig" { } ''
+          mkdir -p $out/lib $out/include
+          ln -s ${mecha-policy.packages.${system}.default}/lib/libmecha_policy.a $out/lib/libmecha_policy.a
+          ln -s ${mecha-policy}/include/mecha_policy.h $out/include/mecha_policy.h
+        '';
 
         # NOTE: don't key on ${system} here — flake-utils.eachDefaultSystem
         # already wraps the returned attrs in ${system}. Writing
@@ -231,6 +248,7 @@
             # The Rust implementation is handed to the suite by path, already
             # built: a sandboxed check cannot run a nested nix build.
             SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
+            MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;

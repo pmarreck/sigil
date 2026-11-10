@@ -109,6 +109,9 @@ fi
 if [[ -f "$SCRIPT_DIR/tests/differential/run" ]]; then
 	run_suite "Differential (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/run'"
 fi
+if [[ -f "$SCRIPT_DIR/tests/differential/policy" ]]; then
+	run_suite "Differential mecha_policy (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/policy'"
+fi
 
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"

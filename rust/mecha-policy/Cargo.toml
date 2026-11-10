@@ -1,0 +1,17 @@
+[package]
+name = "mecha-policy"
+description = "The shared Mecha entitlement policy: license and installation-certificate admission."
+version = "0.2.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "mecha_policy"
+
+[dependencies]
+sha2 = "0.10"
+
+[lints]
+workspace = true

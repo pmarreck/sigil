@@ -1,0 +1,18 @@
+[package]
+name = "mecha-policy-ffi"
+description = "C ABI for the Rust mecha_policy, exporting mecha_policy.h."
+version = "0.2.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "mecha_policy_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+mecha-policy = { path = "../mecha-policy" }
+
+[lints]
+workspace = true

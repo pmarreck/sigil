@@ -108,6 +108,15 @@ signature edge-case corpus (hand-written verdicts), every envelope in
 NULL contracts, and a seeded mutation fuzz. Two planted mutants (cofactorless
 verification; dropping the decoder's lead-byte aliasing) were each caught.
 
+Step 2 is implemented: `rust/mecha-policy` and `rust/mecha-policy-ffi` export
+all eight functions of `mecha_policy.h`. `tests/differential/policy` holds
+them to the Zig library pinned as the flake input `mecha-policy` and to every
+hand-written expectation in the vector manifests. The payload schema uses a
+small exact JSON parser instead of serde, because serde_json accepts a JSON
+array as a struct and Zig's `std.json` does not; v1 `max_major` reproduces
+Zig's permissive `parseInt` (signs and `_` separators), checked by an
+exhaustive sweep of every version-field string up to four characters.
+
 ## Signature acceptance must match exactly
 
 `src/verify.zig` uses Zig's cofactored Ed25519 verifier and additionally

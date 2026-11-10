@@ -95,6 +95,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "mecha-policy"
+version = "0.2.1"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "mecha-policy-ffi"
+version = "0.2.1"
+dependencies = [
+ "mecha-policy",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
