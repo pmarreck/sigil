@@ -12,14 +12,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOTAL_FAIL=0
 TOTAL_PASS=0
 
+# Per-suite timing, so the cost of the run is attributable. Monotonic seconds
+# from /proc/uptime (CLOCK_BOOTTIME) where it exists; wall time otherwise, and
+# the report says which. The build is timed separately from the suites.
+CLOCK=monotonic
+[[ -r /proc/uptime ]] || CLOCK=wall
+now() {
+	local up _
+	if [[ "$CLOCK" == monotonic ]]; then
+		read -r up _ </proc/uptime
+		printf '%s' "$up"
+	else
+		printf '%s' "$EPOCHREALTIME"
+	fi
+}
+seconds_between() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.2f", b - a }'; }
+TIMINGS=()
+BUILD_SECONDS="skipped"
+
 run_suite() {
 	local name="$1"
 	local cmd="$2"
 	echo ""
 	echo "━━━ $name ━━━"
-	local output
+	local output started ended took
+	started=$(now)
 	output=$(eval "$cmd" 2>&1)
 	local rc=$?
+	ended=$(now)
+	took=$(seconds_between "$started" "$ended")
+	TIMINGS+=("$took	$name")
 	local pass fail
 	# Recognize multiple summary formats:
 	#   - shell-style "N passed" / "N failed"
@@ -40,6 +62,7 @@ run_suite() {
 	TOTAL_PASS=$((TOTAL_PASS + pass))
 	TOTAL_FAIL=$((TOTAL_FAIL + fail))
 	echo "$output" | tail -12
+	echo "  (${took}s)"
 }
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -80,8 +103,11 @@ if [[ "${SIGIL_SKIP_BUILD:-0}" == "1" ]]; then
 		exit 1
 	fi
 else
+	build_started=$(now)
 	build_log=$("$SCRIPT_DIR/build" 2>&1)
 	build_rc=$?
+	build_ended=$(now)
+	BUILD_SECONDS="$(seconds_between "$build_started" "$build_ended")s"
 	echo "$build_log" | tail -3
 	if [[ $build_rc -ne 0 ]]; then
 		echo "FATAL: build failed"
@@ -159,6 +185,15 @@ for p in "${!PAIR_BINS[@]}"; do
 		fi
 	done
 done
+
+# Timing report: the build, the suites' total and the costliest suites.
+printf '%s\n' "${TIMINGS[@]}" >"${TMPDIR:-/tmp}/sigil-test-timings.$$"
+suite_seconds=$(awk -F'\t' '{ t += $1 } END { printf "%.1f", t }' "${TMPDIR:-/tmp}/sigil-test-timings.$$")
+echo ""
+echo "Timing ($CLOCK clock): build $BUILD_SECONDS, suites ${suite_seconds}s over ${#TIMINGS[@]} suites. Costliest:"
+sort -t$'\t' -k1,1 -rn "${TMPDIR:-/tmp}/sigil-test-timings.$$" >"${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
+awk -F'\t' 'NR <= 10 { printf "  %8ss  %s\n", $1, $2 }' "${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
+rm -f -- "${TMPDIR:-/tmp}/sigil-test-timings.$$" "${TMPDIR:-/tmp}/sigil-test-timings.$$.sorted"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
