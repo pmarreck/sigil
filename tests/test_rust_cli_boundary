@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# The Rust CLI (rust/sigil-cli) may reach an implementation only through the
+# C ABI. Without this check, a later change could import a core crate and
+# call a function directly: the ABI would go unexercised, and the need for a
+# new exported function would never surface.
+#
+# - sigil-cli is its own Cargo workspace and declares no dependency on a
+#   sigil crate, neither by path nor by name. Read from cargo's own view of
+#   the manifest (cargo metadata), not by pattern-matching TOML.
+# - src/abi.rs declares exactly the functions the two headers declare, as
+#   scripts/c-header-functions reads them.
+# - Planted manifests and a planted abi.rs prove each check can fail.
+#
+# The Nix packages add a physical barrier: they build the crate from its own
+# directory and the two headers alone, so a core crate is not even present.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLI="$REPO_ROOT/rust/sigil-cli"
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+	if [[ $# -gt 1 ]]; then head -20 <<<"$2" | sed 's/^/       /' >&2; fi
+}
+finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-cli-boundary-XXXXXX")" || exit 1
+trap 'rm -rf -- "$work"' EXIT
+# cargo metadata --no-deps reads manifests only; give it a private home so it
+# neither needs nor touches the user's.
+export CARGO_HOME="$work/cargo-home"
+
+for tool in cargo jq; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		fail "$tool is available"
+		finish
+	fi
+done
+
+# The names of every crate in the core workspace.
+if ! cargo metadata --no-deps --offline --format-version 1 --manifest-path "$REPO_ROOT/rust/Cargo.toml" \
+	>"$work/core.json" 2>"$work/err"; then
+	fail "read the core workspace" "$(<"$work/err")"
+	finish
+fi
+jq -r '.packages[].name' "$work/core.json" >"$work/core-names"
+sort -u -o "$work/core-names" "$work/core-names"
+if ! grep -qx 'sigil-sign' "$work/core-names" || grep -qx 'sigil-cli' "$work/core-names"; then
+	fail "the core workspace lists the core crates and not the CLI" "$(<"$work/core-names")"
+	finish
+fi
+
+# violations CRATE_DIR: print why the crate there could bypass the ABI;
+# print nothing when it cannot.
+violations() {
+	local dir="$1" root
+	if ! cargo metadata --no-deps --offline --format-version 1 --manifest-path "$dir/Cargo.toml" \
+		>"$work/cli.json" 2>"$work/err"; then
+		echo "cargo metadata failed: $(<"$work/err")"
+		return
+	fi
+	root=$(jq -r '.workspace_root' "$work/cli.json")
+	[[ "$root" == "$dir" ]] || echo "not its own workspace (root: $root)"
+	jq -r '.packages[] | select(.name == "sigil-cli") | .dependencies[] | [.name, (.path // "-")] | @tsv' \
+		"$work/cli.json" >"$work/deps"
+	while IFS=$'\t' read -r name path; do
+		[[ "$path" == "-" ]] || echo "path dependency: $name ($path)"
+		grep -qx "$name" "$work/core-names" && echo "depends on core crate: $name"
+	done <"$work/deps"
+}
+
+found=$(violations "$CLI")
+if [[ -z "$found" ]]; then
+	pass "sigil-cli is its own workspace and depends on no sigil crate"
+else
+	fail "sigil-cli is its own workspace and depends on no sigil crate" "$found"
+fi
+
+# Planted manifests: each must be caught.
+plant() {
+	local name="$1" extra="$2" dir="$work/$1"
+	mkdir -p "$dir/src"
+	cp "$CLI/Cargo.toml" "$CLI/build.rs" "$dir/" || return 1
+	cp "$CLI/src/main.rs" "$CLI/src/abi.rs" "$dir/src/" || return 1
+	# Under [dependencies]: appended at the end it would land in whatever
+	# table comes last and never be read as a dependency.
+	awk -v extra="$extra" '{ print } /^\[dependencies\]$/ { print extra }' "$CLI/Cargo.toml" >"$dir/Cargo.toml"
+	grep -qxF "$extra" "$dir/Cargo.toml" || return 1
+	printf '%s' "$dir"
+}
+for spec in \
+	"by-path|sigil-sign = { path = \"$REPO_ROOT/rust/sigil-sign\" }" \
+	"by-name|mecha-policy = \"0.1.0\"" \
+	"other-path|helper = { path = \"$REPO_ROOT/rust/sigil\" }"; do
+	name=${spec%%|*}
+	if ! dir=$(plant "$name" "${spec#*|}"); then
+		fail "plant the $name manifest"
+		continue
+	fi
+	found=$(violations "$dir")
+	# Caught for the right reason: a cargo failure would also print something.
+	if [[ "$found" == *"dependency"* || "$found" == *"core crate"* ]] && [[ "$found" != *"cargo metadata failed"* ]]; then
+		pass "a planted dependency ($name) is caught: ${found//$'\n'/; }"
+	else
+		fail "a planted dependency ($name) is caught" "$found"
+	fi
+done
+
+# ── The declarations match the headers ──────────────────────────────────────
+# declared_in ABI_FILE: the extern functions it declares, before its tests.
+declared_in() {
+	sed '/#\[cfg(test)\]/,$d' "$1" >"$work/decls"
+	grep -oE 'pub fn [a-z_][a-z0-9_]*\(' "$work/decls" >"$work/fns"
+	sed -E 's/^pub fn //; s/\($//' "$work/fns" >"$work/names"
+	sort -u "$work/names"
+}
+if ! bash "$REPO_ROOT/scripts/c-header-functions" "$REPO_ROOT/include/sigil.h" >"$work/headers" \
+	|| ! bash "$REPO_ROOT/scripts/c-header-functions" "$REPO_ROOT/include/sigil_sign.h" >>"$work/headers"; then
+	fail "parse the headers"
+	finish
+fi
+sort -u -o "$work/headers" "$work/headers"
+declared_in "$CLI/src/abi.rs" >"$work/abi"
+if abi_diff=$(diff "$work/headers" "$work/abi"); then
+	count=$(wc -l <"$work/abi")
+	pass "src/abi.rs declares exactly the $count functions of sigil.h and sigil_sign.h"
+else
+	fail "src/abi.rs declares exactly the headers' functions" "$abi_diff"
+fi
+sed '/pub fn sigil_seal(/,/) -> c_int;/d' "$CLI/src/abi.rs" >"$work/abi-missing.rs"
+declared_in "$work/abi-missing.rs" >"$work/abi-planted"
+if ! diff -q "$work/headers" "$work/abi-planted" >/dev/null; then
+	pass "a planted abi.rs missing sigil_seal is caught"
+else
+	fail "a planted abi.rs missing sigil_seal is caught"
+fi
+
+finish

@@ -1,0 +1,38 @@
+# The Rust sigil CLI: a pure consumer of the C ABI in include/sigil.h and
+# include/sigil_sign.h, the Rust counterpart of cli/main.c.
+#
+# It is deliberately its own workspace and depends on no sigil crate, so it
+# reaches an implementation only through the exported functions. Its Nix
+# packages build it from this directory and the two headers alone, once
+# against the Zig archives and once against the Rust ones;
+# tests/test_rust_cli_boundary fails if a dependency on a core crate appears.
+[workspace]
+
+[package]
+name = "sigil-cli"
+description = "The sigil command-line interface in Rust, over the C ABI only."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "sigil"
+path = "src/main.rs"
+
+[dependencies]
+libc = "=0.2.191"
+zeroize = { version = "=1.9.1", default-features = false, features = ["alloc"] }
+
+[lints.rust]
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[profile.release]
+lto = true
+codegen-units = 1

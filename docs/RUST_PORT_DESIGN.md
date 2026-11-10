@@ -1,7 +1,8 @@
 # Rust port of sigil: design
 
-Status: in progress, 2026-11-10. Steps 0 to 3 are implemented; see
-"Status" and "Order of work". Items marked "owner
+Status: in progress, 2026-11-10. Steps 0 to 3b are implemented; step 4
+(canonical selection and publication) remains. See "Status" and "Order of
+work". Items marked "owner
 ruling" were decided by SCS (Senior Construct Swarmlord, the project owner).
 Everything not yet implemented is a proposal and can change before code lands.
 
@@ -166,6 +167,35 @@ functions (`tests/differential/check-exports`, one parser in
 `scripts/c-header-functions` for packaging and tests), and each pair of
 archives links and runs in one binary. Against raw, unprelinked archives both
 checks fail.
+
+Step 3b is implemented: `rust/sigil-cli`, a port of `cli/main.c`, declares
+the fifteen functions of the two headers itself (`src/abi.rs`) and depends on
+no sigil crate. It is its own Cargo workspace, and its Nix packages
+(`sigil-rust-cli-on-zig`, `sigil-rust-cli-on-rust`) build it from its own
+directory and the two headers alone, so no core crate is even present. Three
+controls keep it that way:
+
+- `tests/test_rust_cli_boundary` reads cargo's view of the manifest and fails
+  on any path dependency or any dependency named like a core crate; planted
+  manifests of each kind are caught.
+- The same check, and a unit test in the crate, hold `src/abi.rs` to the
+  headers: the same functions, the same arity, every constant's value.
+- The Rust CLI links and passes against the Zig archives, where no Rust core
+  exists to call.
+
+All four frontend and library pairs (C or Rust CLI on the Zig or Rust
+libraries) pass `tests/cli/test_cli` and every binary-driven integration
+suite. `tests/integration/cross_impl.sh` runs in each pair's pass against the
+other three: keys, envelopes, PEM and paper made by one are read identically
+by the others, and a table of 63 invocations (help, usage errors, every
+refusal, each `pubkey` format, success notes, prompted passphrases) gives
+byte-identical stdout, stderr and exit codes. A Rust CLI with one message
+changed by one character fails that table on exactly the two invocations that
+print it.
+
+The Rust CLI writes to descriptors 1 and 2 directly and restores the default
+SIGPIPE disposition, because Rust's `Stdout` reports a closed descriptor as
+success and Rust ignores SIGPIPE, where the C CLI fails or dies.
 
 ## Signature acceptance must match exactly
 

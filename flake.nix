@@ -102,6 +102,34 @@
           fi
           ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin "unset NIX_CFLAGS_COMPILE NIX_LDFLAGS"}
         '';
+
+        # The Rust CLI (rust/sigil-cli) built on one implementation's
+        # archives. Its source is that crate and the two public headers
+        # alone: no core crate exists in the build, so the only way into an
+        # implementation is the C ABI. `libs` supplies lib/libsigil.a and
+        # lib/libsigil_sign.a; `extraLibs` names the system libraries those
+        # archives need beyond the Rust runtime.
+        rustCli = name: libs: extraLibs: pkgs.rustPlatform.buildRustPackage {
+          pname = "${pname}-${name}";
+          inherit version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./rust/sigil-cli
+              ./include/sigil.h
+              ./include/sigil_sign.h
+            ];
+          };
+          cargoRoot = "rust/sigil-cli";
+          buildAndTestSubdir = "rust/sigil-cli";
+          cargoLock.lockFile = ./rust/sigil-cli/Cargo.lock;
+          SIGIL_LIB_DIR = "${libs}/lib";
+          SIGIL_LIB_EXTRA = extraLibs;
+          nativeBuildInputs = [ pkgs.clippy ];
+          preBuild = ''
+            (cd rust/sigil-cli && cargo clippy --offline --all-targets -- -D warnings)
+          '';
+        };
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit pname version;
@@ -196,6 +224,12 @@
           '';
         };
 
+        # The Rust CLI on each library. The Zig signing archive still reaches
+        # 128-bit float helpers through std.json; a stock toolchain supplies
+        # roundq only in libquadmath (sigil PLAN).
+        packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig" self.packages.${system}.default "quadmath";
+        packages.sigil-rust-cli-on-rust = rustCli "rust-cli-on-rust" self.packages.${system}.sigil-rust "";
+
         # The pinned Zig mecha_policy as a product tree (archive and header),
         # for the policy differential. Its own package installs only the
         # archive; the header comes from the same pinned source.
@@ -282,8 +316,10 @@
             # built: a sandboxed check cannot run a nested nix build.
             SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
             SIGIL_C_ON_RUST_OUT = self.packages.${system}.sigil-c-on-rust;
+            SIGIL_RUST_ON_ZIG_OUT = self.packages.${system}.sigil-rust-cli-on-zig;
+            SIGIL_RUST_ON_RUST_OUT = self.packages.${system}.sigil-rust-cli-on-rust;
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pbCli ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -297,7 +333,10 @@
                   patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
                 done
               ''}
-              SIGIL_SKIP_BUILD=1 timeout 900 bash ./test
+              # Four frontend and library pairs each run the CLI and integration
+              # suites, so the whole run is several minutes; the limit only
+              # catches a hang.
+              SIGIL_SKIP_BUILD=1 timeout 1800 bash ./test
             '';
             installPhase = ''
               mkdir -p $out

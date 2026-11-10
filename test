@@ -111,12 +111,30 @@ run_suite "Differential (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/run
 run_suite "Differential mecha_policy (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/policy'"
 run_suite "Differential signing (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/sign'"
 
+# The Rust CLI may reach an implementation only through the C ABI.
+run_suite "Rust CLI boundary" "$NIXDEV bash '$SCRIPT_DIR/tests/test_rust_cli_boundary'"
+
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
-# The second frontend and library pair. Each pass names the other pair as
-# SIGIL_PEER_BIN, which tests/integration/cross_impl.sh round-trips against.
-C_ON_RUST_BIN="${SIGIL_C_ON_RUST_OUT:-$SCRIPT_DIR/.nix-out/c-on-rust}/bin/sigil"
-export SIGIL_PEER_BIN="$C_ON_RUST_BIN"
+# The other frontend and library pairs: the C or Rust CLI on the Zig or Rust
+# libraries. Each pass names every other pair in SIGIL_PEER_BINS, which
+# tests/integration/cross_impl.sh round-trips and transcribes against.
+PAIR_LABELS=("C CLI on Rust" "Rust CLI on Zig" "Rust CLI on Rust")
+PAIR_BINS=(
+	"${SIGIL_C_ON_RUST_OUT:-$SCRIPT_DIR/.nix-out/c-on-rust}/bin/sigil"
+	"${SIGIL_RUST_ON_ZIG_OUT:-$SCRIPT_DIR/.nix-out/rust-cli-on-zig}/bin/sigil"
+	"${SIGIL_RUST_ON_RUST_OUT:-$SCRIPT_DIR/.nix-out/rust-cli-on-rust}/bin/sigil"
+)
+# peers_of BIN: every other pair's binary, colon-separated.
+peers_of() {
+	local b list=""
+	for b in "$SIGIL_BIN" "${PAIR_BINS[@]}"; do
+		[[ "$b" == "$1" ]] || list="${list:+$list:}$b"
+	done
+	printf '%s' "$list"
+}
+SIGIL_PEER_BINS=$(peers_of "$SIGIL_BIN")
+export SIGIL_PEER_BINS
 run_suite "CLI Surface" "$NIXDEV bash '$SCRIPT_DIR/tests/cli/test_cli'"
 
 # Integration tests — add as they're written.
@@ -125,15 +143,19 @@ for t in "$SCRIPT_DIR"/tests/integration/*.sh; do
 	run_suite "Integration: ${t##*/}" "$NIXDEV bash '$t'"
 done
 
-# The same suites again on the second frontend and library pair: the C CLI
-# built on the Rust libraries. A suite drives the binary when it reads
-# SIGIL_BIN; that is discovered here rather than listed, so a new suite joins
-# every pair. The binary must exist: a missing pair fails, never skips.
-run_suite "C CLI on Rust: the binary was built" "test -x '$C_ON_RUST_BIN' && echo '1 passed'"
-for t in "$SCRIPT_DIR/tests/cli/test_cli" "$SCRIPT_DIR"/tests/integration/*.sh; do
-	if [[ -f "$t" ]] && grep -q 'SIGIL_BIN' "$t"; then
-		run_suite "C CLI on Rust: ${t##*/}" "SIGIL_BIN='$C_ON_RUST_BIN' SIGIL_PEER_BIN='$SIGIL_BIN' $NIXDEV bash '$t'"
-	fi
+# The same suites again on every other pair. A suite drives the binary when
+# it reads SIGIL_BIN; that is discovered here rather than listed, so a new
+# suite joins every pair. A missing pair fails, never skips.
+for p in "${!PAIR_BINS[@]}"; do
+	label=${PAIR_LABELS[p]}
+	bin=${PAIR_BINS[p]}
+	peers=$(peers_of "$bin")
+	run_suite "$label: the binary was built" "test -x '$bin' && echo '1 passed'"
+	for t in "$SCRIPT_DIR/tests/cli/test_cli" "$SCRIPT_DIR"/tests/integration/*.sh; do
+		if [[ -f "$t" ]] && grep -q 'SIGIL_BIN' "$t"; then
+			run_suite "$label: ${t##*/}" "SIGIL_BIN='$bin' SIGIL_PEER_BINS='$peers' $NIXDEV bash '$t'"
+		fi
+	done
 done
 
 echo ""
