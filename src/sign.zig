@@ -234,15 +234,32 @@ fn parseCanonical(comptime T: type, digits: []const u8) ?T {
     return std.fmt.parseInt(T, digits, 10) catch null;
 }
 
+/// A text field as sigil writes it: a JSON string, escapes decoded.
+/// std.json's generic `[]const u8` would also take a JSON array of byte
+/// values, which sigil never writes and which reaches std.json's integer
+/// parsing and its 128-bit float helpers.
+const JsonString = struct {
+    value: []const u8,
+
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {
+        const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+        return switch (token) {
+            .string => |s| .{ .value = s },
+            .allocated_string => |s| .{ .value = s },
+            else => error.UnexpectedToken,
+        };
+    }
+};
+
 const KeyfileWire = struct {
-    sigil: []const u8,
-    kdf: []const u8,
+    sigil: JsonString,
+    kdf: JsonString,
     t: CanonicalInt(u32),
     m: CanonicalInt(u32),
     p: CanonicalInt(u24),
-    salt: []const u8,
-    nonce: []const u8,
-    ciphertext: []const u8,
+    salt: JsonString,
+    nonce: JsonString,
+    ciphertext: JsonString,
 };
 
 /// Encrypt `plaintext` under `passphrase` into the one-line JSON shape that
@@ -322,9 +339,9 @@ fn openBlob(
     var salt: [salt_len]u8 = undefined;
     var nonce: [nonce_len]u8 = undefined;
     var blob: [plaintext_len + tag_len]u8 = undefined;
-    try decodeExact(allocator, w.salt, &salt);
-    try decodeExact(allocator, w.nonce, &nonce);
-    try decodeExact(allocator, w.ciphertext, &blob);
+    try decodeExact(allocator, w.salt.value, &salt);
+    try decodeExact(allocator, w.nonce.value, &nonce);
+    try decodeExact(allocator, w.ciphertext.value, &blob);
 
     const params: KdfParams = .{ .t = w.t.value, .m = w.m.value, .p = w.p.value };
     var key: [XChaCha20Poly1305.key_length]u8 = undefined;
@@ -453,8 +470,8 @@ fn parseSealed(
     };
     errdefer parsed.deinit();
 
-    if (!std.mem.eql(u8, parsed.value.sigil, version)) return wrong_format;
-    if (!std.mem.eql(u8, parsed.value.kdf, kdf_name)) return KeyfileError.UnsupportedKeyfileVersion;
+    if (!std.mem.eql(u8, parsed.value.sigil.value, version)) return wrong_format;
+    if (!std.mem.eql(u8, parsed.value.kdf.value, kdf_name)) return KeyfileError.UnsupportedKeyfileVersion;
     return parsed;
 }
 
@@ -955,6 +972,46 @@ test "KDF parameters must be canonical JSON integers" {
     }
 
     // Control: the canonical spelling still opens.
+    const seed = try unwrapKey(a, file, "pass");
+    try testing.expectEqualSlices(u8, &test_seed, &seed);
+}
+
+test "keyfile text fields must be JSON strings" {
+    // sigil writes every text field as a JSON string. std.json also took a
+    // JSON array of byte values for a []const u8 field, so a keyfile whose
+    // salt was spelled [194,185,...] opened here while the Rust port refused
+    // it (found by tests/differential/sign). Refused as malformed. Dropping
+    // that path also drops std.json's generic integer parsing and its 128-bit
+    // float helpers (roundq), which made a stock-toolchain link of
+    // libsigil_sign.a need libquadmath.
+    const a = testing.allocator;
+    const file = try wrapKey(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+    for ([_][]const u8{ "sigil", "kdf", "salt", "nonce", "ciphertext" }) |field| {
+        var key_buf: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&key_buf, "\"{s}\":\"", .{field});
+        const start = (std.mem.indexOf(u8, file, key) orelse return error.TestUnexpectedResult) + key.len;
+        const end = start + (std.mem.indexOfScalar(u8, file[start..], '"') orelse return error.TestUnexpectedResult);
+        // The field's own bytes, as a JSON array of numbers.
+        var array_buf: [4096]u8 = undefined;
+        var len: usize = 0;
+        array_buf[len] = '[';
+        len += 1;
+        for (file[start..end], 0..) |byte, i| {
+            const sep: []const u8 = if (i == 0) "" else ",";
+            len += (try std.fmt.bufPrint(array_buf[len..], "{s}{d}", .{ sep, byte })).len;
+        }
+        array_buf[len] = ']';
+        len += 1;
+        const variant = try std.mem.concat(a, u8, &.{ file[0 .. start - 1], array_buf[0..len], file[end + 1 ..] });
+        defer a.free(variant);
+        if (unwrapKey(a, variant, "pass")) |_| {
+            std.debug.print("the {s} field spelled as a byte array was accepted\n", .{field});
+            return error.TestUnexpectedResult;
+        } else |e| try testing.expectEqual(error.MalformedKeyfile, e);
+    }
+
+    // Control: the string spelling still opens.
     const seed = try unwrapKey(a, file, "pass");
     try testing.expectEqualSlices(u8, &test_seed, &seed);
 }

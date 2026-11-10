@@ -224,10 +224,9 @@
           '';
         };
 
-        # The Rust CLI on each library. The Zig signing archive still reaches
-        # 128-bit float helpers through std.json; a stock toolchain supplies
-        # roundq only in libquadmath (sigil PLAN).
-        packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig" self.packages.${system}.default "quadmath";
+        # The Rust CLI on each library. Neither needs a system library beyond
+        # what the Rust runtime links.
+        packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig" self.packages.${system}.default "";
         packages.sigil-rust-cli-on-rust = rustCli "rust-cli-on-rust" self.packages.${system}.sigil-rust "";
 
         # The pinned Zig mecha_policy as a product tree (archive and header),

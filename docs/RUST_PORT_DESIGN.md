@@ -142,6 +142,14 @@ oracles neither produced:
   `qpdf --check`;
 - a seeded mutation fuzz over keyfiles and bundles.
 
+The variant table later caught a real divergence. Zig's `std.json` accepted a
+JSON array of byte values for a text field, so a keyfile whose salt was
+spelled as an array of its own UTF-8 bytes opened in Zig and was refused by
+Rust. sigil only ever writes strings, so Zig now accepts only strings, as
+Rust does. Dropping that path also removed the 128-bit float helpers
+(`roundq`) that made `libsigil_sign.a` need `-lquadmath` under a stock
+toolchain.
+
 Planted mutants: reporting the wrong class for a keyfile opened as a bundle,
 and dropping the lane-count bound, were both caught. Removing the leading-zero
 check is an equivalent mutant, because the JSON lexer already refuses `01`.

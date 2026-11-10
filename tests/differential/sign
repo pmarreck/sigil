@@ -44,14 +44,13 @@ for impl in zig rust; do
 		fail "$impl implementation provides lib/libsigil_sign.a" "missing: $lib"
 		finish
 	fi
-	# The Zig archive references roundq and the 128-bit float helpers
-	# (std.json's number parser), which a stock C toolchain supplies through
-	# libquadmath. The Rust archive needs the platform thread and loader
-	# libraries for its standard library.
-	extra=()
-	[[ "$impl" == zig ]] && extra=(-lquadmath)
+	# Both archives link with the stock toolchain alone; no libquadmath. The
+	# Zig one needed it until its keyfile parser stopped reaching std.json's
+	# 128-bit float helpers, so this link is also that regression check. The
+	# Rust archive needs the platform thread and loader libraries for its
+	# standard library.
 	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
-		"$SCRIPT_DIR/sign_driver.c" "$lib" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+		"$SCRIPT_DIR/sign_driver.c" "$lib" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
 		pass "$impl archive links the driver, which calls every declared function"
 	else
 		fail "$impl archive links the driver, which calls every declared function" "$build_log"
@@ -109,10 +108,8 @@ int main(void) { return printf("%s %s\n", sigil_version(), sigil_sign_strerror(0
 EOF
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	extra=()
-	[[ "$impl" == zig ]] && extra=(-lquadmath)
 	if coexist_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" "$work/coexist.c" \
-		"$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" "${extra[@]}" -lpthread -ldl -lm \
+		"$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" -lpthread -ldl -lm \
 		-o "$work/coexist-$impl" 2>&1) && "$work/coexist-$impl" >/dev/null; then
 		pass "$impl libsigil.a and libsigil_sign.a link into one binary and run"
 	else
@@ -339,6 +336,14 @@ jqv ciphertext_short '.ciphertext |= .[:-1] | tojson'
 jqv ciphertext_swapped '.ciphertext |= (.[1:2] + .[0:1] + .[2:]) | tojson'
 jqv salt_ascii_alias '.salt |= ("0" + .[1:]) | tojson'
 jqv nested_sigil '.sigil = {"a":1} | tojson'
+# A text field spelled as a JSON array of its own UTF-8 bytes. Zig's std.json
+# once took that for a []const u8 and opened the keyfile; Rust refused it.
+for field in sigil salt ciphertext; do
+	jq -j --arg f "$field" '.[$f]' <<<"$base" >"$work/field-text"
+	od -An -tu1 -v "$work/field-text" >"$work/field-od"
+	bytes=$(xargs <"$work/field-od")
+	jqv "${field}_byte_array" "$(printf '.%s = [%s] | tojson' "$field" "${bytes// /,}")"
+done
 variant empty ""
 variant empty_object "{}"
 variant array "[]"
@@ -407,6 +412,9 @@ if compare "public-key derivation agrees on all $variants keyfile variants" "$va
 		json_string -20
 		not_json -20
 		kdf_lower -21
+		sigil_byte_array -20
+		salt_byte_array -20
+		ciphertext_byte_array -20
 	EOF
 	expect "both match the hand-written keyfile verdicts" "$work/expect"
 	awk '{ print $2 }' "$work/out-zig" >"$work/codes"
