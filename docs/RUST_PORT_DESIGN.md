@@ -33,6 +33,12 @@ rather than producing a report:
   (`rust/sigil-cli`) follows the same rule: it declares the functions of the
   two headers as `extern "C"` and never depends on the Rust core crates, so
   the ABI is dogfooded on the Rust side too.
+- **The bypass is made unbuildable, not just forbidden.** A later change
+  that reaches past the ABI into a core function would leave the ABI
+  unexercised and hide the need for a new exported function. Two controls
+  stop that. The Rust CLI must also link and pass against the Zig archive,
+  where no Rust core exists to call. And a harness check reads the workspace
+  dependency graph and fails if `sigil-cli` depends on any core crate.
 - **A two-by-two matrix.** Each frontend links each library, giving four
   `sigil` binaries: C on Zig, C on Rust, Rust on Zig and Rust on Rust.
   `tests/cli/test_cli` and every integration suite run unchanged against all
