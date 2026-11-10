@@ -10,12 +10,15 @@
 
 pub mod envelope;
 mod glyphs;
-mod printable;
+pub mod printable;
 mod status;
 pub mod transcript;
 pub mod verify;
 
-pub use envelope::{Error, public_key_from_text, public_key_to_text, verify_envelope};
+pub use envelope::{
+	Error, public_key_from_text, public_key_to_text, verify_envelope, write_envelope,
+};
+pub use printable::{decode_lenient, encode as printable_encode};
 pub use status::Status;
 pub use verify::{PUBLIC_KEY_LEN, SIGNATURE_LEN, VerifyError, verify};
 

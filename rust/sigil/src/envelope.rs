@@ -156,6 +156,18 @@ pub fn verify_envelope(
 	Ok(payload)
 }
 
+/// Package an already-signed payload as an envelope. Holds no key material
+/// and cannot sign. The encoded values are spliced in without escaping:
+/// printable-binary never emits `"`, `\` or a control character.
+pub fn write_envelope(payload: &[u8], signature: &[u8; SIGNATURE_LEN]) -> Vec<u8> {
+	let mut out = b"{\"data\":\"".to_vec();
+	out.extend_from_slice(&printable::encode(payload));
+	out.extend_from_slice(b"\",\"sigtype\":\"Ed25519\",\"sig\":\"");
+	out.extend_from_slice(&printable::encode(signature));
+	out.extend_from_slice(b"\"}");
+	out
+}
+
 /// Render a public key as a one-line `.pub` file body.
 pub fn public_key_to_text(public_key: &[u8; PUBLIC_KEY_LEN]) -> Vec<u8> {
 	let mut out = PUBKEY_PREFIX.to_vec();

@@ -80,6 +80,37 @@ pub fn decode_strict(text: &[u8]) -> Option<Vec<u8>> {
 	Some(out)
 }
 
+/// Decode printable-binary text leniently, as the Zig package's `decode` does
+/// without validation: a sequence that is not a glyph, or is cut short by the
+/// end of input, is copied through unchanged. A two-byte sequence is looked
+/// up without checking that its second byte is a continuation byte. Used only
+/// for keyfile fields, whose lengths are checked afterwards.
+pub fn decode_lenient(text: &[u8]) -> Vec<u8> {
+	let t = tables();
+	let mut out = Vec::with_capacity(text.len());
+	let mut i = 0;
+	while i < text.len() {
+		let len = sequence_len(text[i]).min(text.len() - i);
+		let seq = &text[i..i + len];
+		let byte = if len == sequence_len(text[i]) {
+			match *seq {
+				[b0] => t.one[usize::from(b0)],
+				[b0, b1] => t.two[usize::from(b0 & 0x1f)][usize::from(b1 & 0x3f)],
+				[b0, b1, b2] => t.three.get(&[b0, b1 & 0x3f, b2 & 0x3f]).copied(),
+				_ => None,
+			}
+		} else {
+			None
+		};
+		match byte {
+			Some(b) => out.push(b),
+			None => out.extend_from_slice(seq),
+		}
+		i += len;
+	}
+	out
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -115,6 +146,22 @@ mod tests {
 		assert_eq!(decode_strict(&encode(&all)), Some(all));
 		let distinct: std::collections::HashSet<&[u8]> = GLYPHS.iter().copied().collect();
 		assert_eq!(distinct.len(), 256);
+	}
+
+	#[test]
+	fn lenient_decode_passes_non_glyphs_through() {
+		assert_eq!(decode_lenient(b" "), b" ".to_vec());
+		assert_eq!(
+			decode_lenient(b"\xe2"),
+			b"\xe2".to_vec(),
+			"truncated sequence copied"
+		);
+		assert_eq!(
+			decode_lenient(b"\xf0\x9f\x98\x80"),
+			b"\xf0\x9f\x98\x80".to_vec()
+		);
+		let all: Vec<u8> = (0u8..=255).collect();
+		assert_eq!(decode_lenient(&encode(&all)), all);
 	}
 
 	#[test]

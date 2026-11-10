@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["sigil", "sigil-ffi", "sigil-vectors", "mecha-policy", "mecha-policy-ffi"]
+members = ["sigil", "sigil-ffi", "sigil-vectors", "sigil-sign", "mecha-policy", "mecha-policy-ffi"]
 
 [workspace.package]
 version = "0.1.0"
