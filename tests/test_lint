@@ -59,6 +59,7 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/tests/test_harness_guards" \
 		"$REPO_ROOT/tests/test_lint" \
 		"$REPO_ROOT/tests/test_rust_cli_boundary" \
+		"$REPO_ROOT/tests/test_no_signing_symbols_rust" \
 		"$REPO_ROOT/tests/cli/test_cli" \
 		"$REPO_ROOT/tests/differential/run" \
 		"$REPO_ROOT/tests/differential/policy" \

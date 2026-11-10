@@ -97,6 +97,8 @@ run_suite "Zig Unit Tests" "$NIXDEV zig build test --summary all 2>&1"
 if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then
 	run_suite "Symbol Separation" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
 fi
+# The same invariant for the Rust verify library. Required: no skip.
+run_suite "Symbol Separation (Rust)" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols_rust'"
 
 # The customer's link path: stock cc against libsigil.a, exercising the
 # sigil_verify primitive that the C CLI never calls.
