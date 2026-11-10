@@ -137,6 +137,9 @@
           cargoRoot = "rust";
           buildAndTestSubdir = "rust";
           cargoLock.lockFile = ./rust/Cargo.lock;
+          # The pinned printable-binary alphabet, read by the Rust glyph-table
+          # test so the committed table cannot drift from the Zig side's map.
+          SIGIL_PB_CHARACTER_MAP = "${printable-binary}/character_map.txt";
           nativeBuildInputs = [ pkgs.clippy ];
           preBuild = ''
             (cd rust && cargo clippy --offline --workspace --all-targets -- -D warnings)
@@ -228,7 +231,7 @@
             # The Rust implementation is handed to the suite by path, already
             # built: a sandboxed check cannot run a nested nix build.
             SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pbCli ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
             dontFixup = true;
@@ -297,6 +300,7 @@
         };
 
         devShells.default = pkgs.mkShell {
+          SIGIL_PB_CHARACTER_MAP = "${printable-binary}/character_map.txt";
           nativeBuildInputs = [
             zigPkg
             # Rust toolchain for the port under rust/, from the pinned nixpkgs.

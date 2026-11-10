@@ -1,0 +1,15 @@
+[package]
+name = "sigil-vectors"
+description = "Generates sigil's signature edge-case corpus. Development tool; never shipped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+curve25519-dalek = "4.1"
+sha2 = "0.10"
+
+[lints]
+workspace = true

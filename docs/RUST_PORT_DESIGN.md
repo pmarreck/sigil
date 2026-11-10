@@ -66,9 +66,11 @@ rust/
   `libsigil_sign.a` today. A symbol scan over the built `sigil-ffi` archive,
   the Rust counterpart of `tests/test_no_signing_symbols`, enforces it.
 - The core crates forbid `unsafe`. Only the three `-ffi` crates contain it.
-  Every exported function takes pointer plus length where the header does,
-  never unwinds across the boundary (panics are caught and mapped to the
-  internal-error code), and zeroizes secrets on every exit path.
+  Every exported function takes pointer plus length where the header does
+  and zeroizes secrets on every exit path. The core is written not to panic
+  on any input, which the differential fuzz exercises; were it to, an
+  `extern "C"` function aborts rather than unwinding into the caller. The
+  header has no internal-error code to map a panic to.
 - Rust consumers depend on the `sigil` and `mecha-policy` crates through a
   Cargo Git dependency pinned to a commit. C, Zig and other consumers link the
   static archives with the existing headers.
@@ -95,6 +97,16 @@ makes most outputs comparable byte for byte.
 Envelope tolerance (whitespace, field order, printable-binary alternates)
 must match exactly, including what is rejected. `envelope.zig` is the largest
 source of subtle divergence and gets the most fuzz time.
+
+## Status (2026-11-10)
+
+Step 1 is implemented: `rust/sigil` (transcript, verify, printable-binary,
+envelope, public-key text) and `rust/sigil-ffi` export all eight functions of
+`include/sigil.h`. `tests/differential/run` holds them to Zig on the
+signature edge-case corpus (hand-written verdicts), every envelope in
+`examples/` under every key, keys covering all byte values, the buffer and
+NULL contracts, and a seeded mutation fuzz. Two planted mutants (cofactorless
+verification; dropping the decoder's lead-byte aliasing) were each caught.
 
 ## Signature acceptance must match exactly
 

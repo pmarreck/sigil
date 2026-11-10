@@ -31,9 +31,12 @@ annotate=[
 	examples/renewal_vectors/request_activate_usage.json = Renewal request with optional usage {epoch, scanned_bytes} (contract 15.2); equals request_activate minus usage
 	examples/restore_check/payload.json = Isolated-restore payload signed by real production keys; no license/cert shape so it authorizes nothing
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
+	examples/verify_edge_vectors = Signature edge cases for sigil_verify: small/mixed-order keys and R, non-canonical encodings, S >= L
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
 	rust = Rust port workspace: sigil (verify core), sigil-ffi (C ABI staticlib)
+	rust/sigil-vectors = Generates the signature edge-case corpus with hand-written verdicts
+	rust/sigil/src/glyphs.rs = Generated printable-binary glyph table, checked against the pinned character_map.txt
 	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
 	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
 	src/ffi_sign.zig = Signing C ABI in a SEPARATE libsigil_sign.a. Only place randomness lives. No secret ever crosses the boundary.

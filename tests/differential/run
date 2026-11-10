@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Differential test: the Zig and Rust implementations must answer identically.
 #
-# The same C driver is linked once against each implementation's libsigil.a
-# with a stock C compiler, and the two outputs are compared byte for byte.
+# One C driver (driver.c) is linked once against each implementation's
+# libsigil.a with a stock C compiler. Each comparison runs the same command
+# through both drivers and diffs the output byte for byte. The driver calls
+# every function the header declares, so an implementation missing an export
+# fails at link time, and the export inventory below checks the same thing
+# from the archives' symbol tables.
+#
 # A missing implementation is a failure, never a skip: a differential control
-# with one side absent proves nothing.
+# with one side absent proves nothing. Each comparison also checks that its
+# output is not trivially empty, since two empty files are equal.
 #
 # Per Mecha conventions: `set -u` only.
 set -u
@@ -14,16 +20,23 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ZIG_OUT="${SIGIL_ZIG_OUT:-$REPO_ROOT/zig-out}"
 RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
 CC="${CC:-cc}"
+FUZZ_CASES="${SIGIL_DIFF_FUZZ_CASES:-400}"
 
 PASS=0
 FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
-fail() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1" >&2; [[ $# -gt 1 ]] && printf '       %s\n' "$2" >&2; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+	if [[ $# -gt 1 ]]; then head -20 <<<"$2" | sed 's/^/       /' >&2; fi
+}
 finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-differential-XXXXXX")" || exit 1
 trap 'rm -rf -- "$work"' EXIT
 
+# ── Build one driver per implementation ─────────────────────────────────────
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
 	lib="$out/lib/libsigil.a"
@@ -32,40 +45,156 @@ for impl in zig rust; do
 		finish
 	fi
 	# The Rust archive carries the Rust standard library, which needs the
-	# platform's thread and dynamic-loading libraries on some toolchains.
-	# Naming them is harmless for the Zig archive.
-	build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
-		"$SCRIPT_DIR/driver.c" "$lib" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1)
-	build_rc=$?
-	if [[ $build_rc -ne 0 ]]; then
-		fail "$impl archive links the driver with a stock C compiler" "$build_log"
+	# platform's thread and dynamic-loading libraries. Naming them is harmless
+	# for the Zig archive.
+	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+		"$SCRIPT_DIR/driver.c" "$lib" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+		pass "$impl archive links the driver, which calls every declared function"
+	else
+		fail "$impl archive links the driver, which calls every declared function" "$build_log"
 		finish
 	fi
-	pass "$impl archive links the driver with a stock C compiler"
 done
 
-"$work/driver-zig" meta >"$work/meta-zig" 2>"$work/meta-zig.err"
-zig_rc=$?
-"$work/driver-rust" meta >"$work/meta-rust" 2>"$work/meta-rust.err"
-rust_rc=$?
-if [[ $zig_rc -eq 0 && $rust_rc -eq 0 ]]; then
-	pass "both drivers report metadata"
+# ── Export inventory ────────────────────────────────────────────────────────
+# Parsed from the header rather than a hand-kept list, so a newly declared
+# function is covered the moment it is declared.
+if ! grep -oE '\bsigil_[a-z0-9_]+[[:space:]]*\(' "$REPO_ROOT/include/sigil.h" >"$work/declared"; then
+	fail "parse the declared functions from include/sigil.h" "no declarations found"
+	finish
+fi
+sed -i 's/[[:space:]]*($//' "$work/declared"
+sort -u -o "$work/declared" "$work/declared"
+declared=$(<"$work/declared")
+declared_count=$(wc -l <<<"$declared")
+if [[ $declared_count -ge 8 ]]; then
+	pass "header declares $declared_count functions"
 else
-	fail "both drivers report metadata" "zig rc=$zig_rc rust rc=$rust_rc"
+	fail "header declares the expected surface" "parsed: $declared"
+fi
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	nm -g --defined-only "$out/lib/libsigil.a" >"$work/nm-$impl" 2>/dev/null
+	awk '$2 == "T" { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
+	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
+	exported=$(<"$work/exported-$impl")
+	missing=$(comm -23 <(echo "$declared") <(echo "$exported"))
+	if [[ -z "$missing" ]]; then
+		pass "$impl archive exports every declared function"
+	else
+		fail "$impl archive exports every declared function" "missing: $missing"
+	fi
+done
+uncalled=""
+for fn in $declared; do
+	grep -qE "\\b${fn}[[:space:]]*\\(" "$SCRIPT_DIR/driver.c" || uncalled="$uncalled $fn"
+done
+if [[ -z "$uncalled" ]]; then
+	pass "the driver calls every declared function"
+else
+	fail "the driver calls every declared function" "never called:$uncalled"
 fi
 
-# Guard against a vacuous comparison: two empty files are equal.
-lines=$(wc -l <"$work/meta-zig")
-if [[ "$lines" -ge 52 ]]; then
-	pass "metadata record covers version, lengths and every error code"
-else
-	fail "metadata record covers version, lengths and every error code" "only $lines lines"
+# ── Comparisons ─────────────────────────────────────────────────────────────
+# same MIN_LINES ARGS...: run both drivers, require success, a non-trivial
+# output and byte-identical results. Returns non-zero with the reason in
+# $DETAIL; records nothing, so callers decide what counts as one check.
+DETAIL=""
+same() {
+	local min_lines="$1"
+	shift
+	local impl rc lines
+	for impl in zig rust; do
+		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl"
+		rc=$?
+		if [[ $rc -ne 0 ]]; then
+			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl")"
+			return 1
+		fi
+	done
+	lines=$(wc -l <"$work/out-zig")
+	if [[ $lines -lt $min_lines ]]; then
+		DETAIL="only $lines output lines; expected at least $min_lines"
+		return 1
+	fi
+	if ! DETAIL=$(diff "$work/out-zig" "$work/out-rust"); then
+		return 1
+	fi
+	DETAIL=""
+}
+
+# compare LABEL MIN_LINES ARGS...: one recorded check.
+compare() {
+	local label="$1"
+	shift
+	if same "$@"; then
+		pass "$label"
+	else
+		fail "$label" "$DETAIL"
+		return 1
+	fi
+}
+
+compare "version, lengths and every error string are identical" 52 meta
+compare "NULL handling of sigil_verify is identical" 5 verify-null
+
+# The signature edge-case corpus also has a hand-written verdict per case,
+# which both implementations must match: agreement alone would not catch a
+# mistake they share.
+cases="$REPO_ROOT/examples/verify_edge_vectors/cases.tsv"
+if compare "sigil_verify agrees on every signature edge case" 30 verify-cases "$cases"; then
+	awk -F'\t' '!/^#/ { print $1 "\t" $2 }' "$cases" >"$work/expected"
+	case_count=$(wc -l <"$work/expected")
+	if diff_out=$(diff "$work/expected" "$work/out-zig"); then
+		pass "both match the hand-written verdict on all $case_count edge cases"
+	else
+		fail "both match the hand-written verdict on every edge case" "$diff_out"
+	fi
 fi
 
-if diff_out=$(diff "$work/meta-zig" "$work/meta-rust"); then
-	pass "version, lengths and all error strings are identical"
+compare "public-key text and its buffer contract agree on keys covering every byte" 58 pubkey-sweep
+
+# Every envelope in the repository under every public key, then seeded
+# mutations of each. The driver loops internally, so each comparison is two
+# processes regardless of corpus size. Paths are relative so the two outputs
+# cannot differ by where the checkout lives.
+cd "$REPO_ROOT" || exit 1
+if ! fd -t f -e sigil . examples >"$work/envelopes" || ! fd -t f -e pub . examples >"$work/keys"; then
+	fail "list the envelope and key corpus" "fd failed"
+	finish
+fi
+sort -o "$work/envelopes" "$work/envelopes"
+sort -o "$work/keys" "$work/keys"
+env_count=$(wc -l <"$work/envelopes")
+key_count=$(wc -l <"$work/keys")
+pairs=$((env_count * key_count))
+if same $((pairs * 7)) envelope-all "$work/envelopes" "$work/keys"; then
+	verified=$(awk '/^==/ { getline; if ($1 == "0") n++ } END { print n + 0 }' "$work/out-zig")
+	if [[ $env_count -ge 10 && $verified -ge 5 ]]; then
+		pass "sigil_verify_envelope agrees on all $pairs envelope and key pairs ($verified verify)"
+	else
+		fail "sigil_verify_envelope corpus is large enough to mean something" \
+			"envelopes=$env_count keys=$key_count verified=$verified"
+	fi
 else
-	fail "version, lengths and all error strings are identical" "$diff_out"
+	fail "sigil_verify_envelope agrees on every envelope and key pair" "$DETAIL"
+fi
+
+# Seeded mutation fuzz: the mutations come from the shared driver, so both
+# implementations see identical inputs. Each envelope is fuzzed under each key
+# so that mutations of a valid envelope reach the signature check.
+if same $((pairs * FUZZ_CASES)) fuzz-all "$FUZZ_CASES" "$work/envelopes" "$work/keys"; then
+	awk '/^e[0-9]/ { print $2 }' "$work/out-zig" >"$work/codes"
+	sort -u -o "$work/codes" "$work/codes"
+	distinct=$(tr '\n' ' ' <"$work/codes")
+	distinct_count=$(wc -l <"$work/codes")
+	if [[ $distinct_count -ge 7 ]]; then
+		pass "fuzz: $((pairs * FUZZ_CASES)) mutated envelopes and key texts agree (result codes reached: $distinct)"
+	else
+		fail "fuzz reaches enough distinct outcomes to mean something" "result codes reached: $distinct"
+	fi
+else
+	fail "fuzz: mutated envelopes and key texts agree" "$DETAIL"
 fi
 
 finish

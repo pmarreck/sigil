@@ -7,5 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+curve25519-dalek = "4.1"
+sha2 = "0.10"
+
 [lints]
 workspace = true
