@@ -105,10 +105,21 @@ if [[ -f "$SCRIPT_DIR/tests/test_harness_guards" ]]; then
 fi
 
 # Masked-return-value gate for Bash and C. Zig rejects this class at compile
-# time; these two languages make it opt-in, so this is the opt-in.
+# time; these two languages make it opt-in, so this is the opt-in. It reads
+# sources only, so it runs alongside the build and is reported after it.
+LINT_PID=""
 if [[ -f "$SCRIPT_DIR/tests/test_lint" ]]; then
-	run_suite "Lint (masked returns)" "$NIXDEV bash '$SCRIPT_DIR/tests/test_lint'"
+	exec_suite "$RUN_DIR/lint" "$NIXDEV bash '$SCRIPT_DIR/tests/test_lint'" &
+	LINT_PID=$!
 fi
+# report_lint: wait for the lint and report it; also called before a FATAL
+# exit, so the background job never outlives this script's scratch.
+report_lint() {
+	[[ -n "$LINT_PID" ]] || return 0
+	wait "$LINT_PID"
+	report_suite "Lint (masked returns)" "$RUN_DIR/lint"
+	LINT_PID=""
+}
 
 # NOT `./build | tail -3 || fatal` — `||` would bind to the pipeline, whose
 # status is `tail`'s (always 0), so a failed build would slip through and the
@@ -117,6 +128,7 @@ if [[ "${SIGIL_SKIP_BUILD:-0}" == "1" ]]; then
 	# The caller (the CI sandbox) already built and patched zig-out. Trust,
 	# but verify the one thing the suites below cannot run without.
 	if [[ ! -x "$SCRIPT_DIR/zig-out/bin/sigil" ]]; then
+		report_lint
 		echo "FATAL: SIGIL_SKIP_BUILD=1 but zig-out/bin/sigil is missing"
 		exit 1
 	fi
@@ -128,10 +140,12 @@ else
 	BUILD_SECONDS="$(seconds_between "$build_started" "$build_ended")s"
 	echo "$build_log" | tail -3
 	if [[ $build_rc -ne 0 ]]; then
+		report_lint
 		echo "FATAL: build failed"
 		exit 1
 	fi
 fi
+report_lint
 
 # Every suite from here on is independent: each works in its own scratch
 # directory, no suite writes into the repository (license_vectors_v2.sh
