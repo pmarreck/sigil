@@ -205,12 +205,41 @@ pub const KeyfileError = error{
     NotAHotBundle,
 };
 
+/// A KDF parameter as sigil writes it: a JSON number token spelled as a
+/// canonical non-negative integer ("0", or digits without a leading zero)
+/// that fits `T`. std.json's generic integer parsing would also take quoted
+/// strings and integral floats, which sigil never writes and which only add
+/// more spellings of the same keyfile.
+fn CanonicalInt(comptime T: type) type {
+    return struct {
+        value: T,
+
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {
+            const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+            const slice = switch (token) {
+                .number => |n| n,
+                .allocated_number => |n| n,
+                else => return error.UnexpectedToken,
+            };
+            defer if (token == .allocated_number) allocator.free(slice);
+            return .{ .value = parseCanonical(T, slice) orelse return error.InvalidNumber };
+        }
+    };
+}
+
+fn parseCanonical(comptime T: type, digits: []const u8) ?T {
+    if (digits.len == 0) return null;
+    if (digits[0] == '0' and digits.len > 1) return null;
+    for (digits) |c| if (c < '0' or c > '9') return null;
+    return std.fmt.parseInt(T, digits, 10) catch null;
+}
+
 const KeyfileWire = struct {
     sigil: []const u8,
     kdf: []const u8,
-    t: u32,
-    m: u32,
-    p: u24,
+    t: CanonicalInt(u32),
+    m: CanonicalInt(u32),
+    p: CanonicalInt(u24),
     salt: []const u8,
     nonce: []const u8,
     ciphertext: []const u8,
@@ -297,7 +326,7 @@ fn openBlob(
     try decodeExact(allocator, w.nonce, &nonce);
     try decodeExact(allocator, w.ciphertext, &blob);
 
-    const params: KdfParams = .{ .t = w.t, .m = w.m, .p = w.p };
+    const params: KdfParams = .{ .t = w.t.value, .m = w.m.value, .p = w.p.value };
     var key: [XChaCha20Poly1305.key_length]u8 = undefined;
     defer std.crypto.secureZero(u8, &key);
     try deriveKey(allocator, &key, passphrase, &salt, params);
@@ -895,6 +924,37 @@ test "a keyfile claiming a different format version is refused" {
 
     // Control: the unmodified file still opens, so these cannot pass by
     // rejecting everything.
+    const seed = try unwrapKey(a, file, "pass");
+    try testing.expectEqualSlices(u8, &test_seed, &seed);
+}
+
+test "KDF parameters must be canonical JSON integers" {
+    // sigil writes t, m and p as plain JSON integers. std.json's generic
+    // integer parsing also accepted quoted strings ("3", "+3", "1_0") and
+    // integral floats (3.0, 30e-1, 0x1e as a string), none of which sigil
+    // ever wrote. Accepting them only widened the set of byte strings that
+    // open as the same keyfile, and a second implementation would have had to
+    // reproduce 128-bit float rounding to agree. Refused as malformed.
+    const a = testing.allocator;
+    const file = try wrapKey(a, &test_seed, "pass", &test_salt, &test_nonce, cheap);
+    defer a.free(file);
+    const marker = "\"t\":1,";
+    const at = std.mem.indexOf(u8, file, marker) orelse return error.TestUnexpectedResult;
+
+    const refused = [_][]const u8{
+        "\"t\":\"1\",", "\"t\":\"+1\",", "\"t\":1.0,", "\"t\":1e0,", "\"t\":10e-1,", "\"t\":-0,",
+        "\"t\":\"1_0\",", "\"t\":\"0x1e\",", "\"t\":null,", "\"t\":true,",
+    };
+    for (refused) |r| {
+        const variant = try std.mem.concat(a, u8, &.{ file[0..at], r, file[at + marker.len ..] });
+        defer a.free(variant);
+        if (unwrapKey(a, variant, "pass")) |_| {
+            std.debug.print("non-canonical KDF parameter was accepted: {s}\n", .{r});
+            return error.TestUnexpectedResult;
+        } else |e| try testing.expectEqual(error.MalformedKeyfile, e);
+    }
+
+    // Control: the canonical spelling still opens.
     const seed = try unwrapKey(a, file, "pass");
     try testing.expectEqualSlices(u8, &test_seed, &seed);
 }
