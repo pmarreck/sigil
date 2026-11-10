@@ -6,6 +6,7 @@ zig-cache/
 # Nix
 result
 result-*
+.nix-out/
 .direnv/
 
 # Editor files

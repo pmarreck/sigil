@@ -116,5 +116,17 @@ else
 		"never installed:$missing — tests/test_no_signing_symbols cannot run on a fresh clone"
 fi
 
+# ── Control 3: ./build consumes its Nix output in place ─────────────────────
+# Build products are read through a retained out-link. Copying them out of
+# the store hides which build produced the bytes under test, and hosts with a
+# store-copy guard refuse it. Comment lines are excluded from the scan.
+copies=$(grep -nE '^[^#]*\b(install|cp|rsync)\b' "$REPO_ROOT/build")
+if [[ -z "$copies" ]] && grep -q -- '--out-link' "$REPO_ROOT/build"; then
+	pass "./build links its outputs from a retained out-link, never copies them"
+else
+	fail "./build links its outputs from a retained out-link, never copies them" \
+		"copy commands or a missing --out-link: ${copies:-none found}"
+fi
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 exit "$FAIL"

@@ -6,6 +6,39 @@ set -uo pipefail
 
 run() { "$@" || { echo "FAILED: $*" >&2; exit 1; }; }
 
+# The release product is consumed in place. `nix build --out-link` leaves a
+# retained link (also a garbage-collection root) that is replaced only when a
+# build succeeds, and the zig-out entries the suites read are relative
+# symlinks into it. Nothing is copied out of the Nix store.
+NIX_OUT=".nix-out/release"
+
+# Point zig-out/$1 at the same path inside the retained out-link. The new
+# link is created beside the old entry and renamed over it, so a reader never
+# sees a missing file.
+link_output() {
+	local rel="$1" dir
+	[[ -e "$NIX_OUT/$rel" ]] \
+		|| { echo "FAILED: nix build produced no $rel" >&2; exit 1; }
+	dir="zig-out/${rel%/*}"
+	run mkdir -p "$dir"
+	run ln -s "../../$NIX_OUT/$rel" "zig-out/$rel.new.$$"
+	run mv -fT "zig-out/$rel.new.$$" "zig-out/$rel"
+}
+
+# A bare `zig build` installs into zig-out. Remove the release links first so
+# the compiler creates ordinary files and never writes through a link into
+# the read-only store.
+unlink_outputs() {
+	local link links
+	[[ -d zig-out ]] || return 0
+	links=$(find zig-out -maxdepth 2 -type l -print) \
+		|| { echo "FAILED: cannot list zig-out links" >&2; exit 1; }
+	while IFS= read -r link; do
+		[[ -n "$link" ]] || continue
+		run unlink "$link"
+	done <<<"$links"
+}
+
 optimize="ReleaseFast"
 if [[ "${1:-}" == "--debug" ]]; then
 	optimize="Debug"
@@ -17,30 +50,26 @@ fi
 
 if [[ "$optimize" != "ReleaseFast" ]]; then
 	# Non-release builds use zig directly (local dev only).
+	unlink_outputs
 	run nix develop -c zig build "-Doptimize=$optimize" "$@"
 elif command -v nix >/dev/null 2>&1; then
-	run nix build "$@"
-	mkdir -p zig-out/bin zig-out/lib
-	run install -m755 result/bin/sigil zig-out/bin/sigil
-	# Install EVERY archive the flake produces. tests/test_no_signing_symbols
+	run mkdir -p "${NIX_OUT%/*}"
+	run nix build --out-link "$NIX_OUT" "$@"
+	link_output bin/sigil
+	# Link EVERY archive the flake produces. tests/test_no_signing_symbols
 	# inspects zig-out/lib, so an archive missing here is not a cosmetic gap:
 	# the control either cannot run at all on a fresh clone, or it certifies
 	# whatever stale bytes an earlier bare `zig build` happened to leave. Fail
 	# loudly rather than skipping, so the gap cannot go unnoticed again.
 	for lib in libsigil.a libsigil_sign.a; do
-		[[ -e "result/lib/$lib" ]] \
-			|| { echo "FAILED: nix build produced no result/lib/$lib" >&2; exit 1; }
-		run install -m644 "result/lib/$lib" "zig-out/lib/$lib"
+		link_output "lib/$lib"
 	done
 	# The module probe is a TEST FIXTURE, not a deliverable — hence its own
 	# directory. It is the only artifact through which nm can see the
 	# importable Zig module, so a missing one is a blind control, not a
 	# cosmetic gap. Fail loudly rather than skipping.
-	mkdir -p zig-out/test-fixtures
-	[[ -e result/test-fixtures/libsigil_module_probe.a ]] \
-		|| { echo "FAILED: nix build produced no module probe" >&2; exit 1; }
-	run install -m644 result/test-fixtures/libsigil_module_probe.a \
-		zig-out/test-fixtures/libsigil_module_probe.a
+	link_output test-fixtures/libsigil_module_probe.a
 else
+	unlink_outputs
 	run zig build "-Doptimize=$optimize" "$@"
 fi
