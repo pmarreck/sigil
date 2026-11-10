@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
-# Cross-implementation round trips and transcripts through the CLI.
+# Cross-implementation round trips and transcripts through the CLI, over
+# every frontend and library pair at once.
 #
-# SIGIL_BIN is this frontend and library pair; SIGIL_PEER_BINS lists the
-# others, colon-separated. For every peer:
+# SIGIL_PAIR_BINS lists one binary per pair, colon-separated; the first is
+# the reference. ./test exports all four (C or Rust CLI on the Zig or Rust
+# libraries). This suite covers every pair in one run, so it deliberately
+# does not take the single-binary variable the per-pair passes use: ./test
+# runs it once, not once per pair.
 #
-# - What this binary makes, the peer reads identically, and both make the
-#   same bytes from the same key and inputs (keys, envelopes, PEM, paper).
-# - A table of invocations, successes and refusals alike, gives byte-identical
-#   stdout, stderr and exit codes in both. This is what holds the Rust CLI to
-#   the C CLI's messages, not just to its exit codes.
+# - Round trips: each pair generates a key pair, and every other pair must
+#   derive the same public key, seal the same envelope, restore the same
+#   PKCS#8 key and verify the maker's envelope (and refuse it tampered).
+#   That is all twelve maker and reader directions, since a key's bytes come
+#   from its maker.
+# - Transcripts: each pair runs a table of invocations, successes and
+#   refusals alike, and must give the reference pair's stdout, stderr, exit
+#   codes and written files byte for byte. Byte identity is transitive, so
+#   comparing each with the reference covers every pair.
 #
-# ./test runs this once per pair with the other pairs as peers, so every
-# direction runs. A missing peer fails; it never skips. Keys are TEST-ONLY
+# Makers and transcript runs execute concurrently, one job per pair, each in
+# its own directory. A missing pair fails; it never skips. Keys are TEST-ONLY
 # and live in disposable scratch. NOT `set -e`.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SIGIL="${SIGIL_BIN:-$ROOT/zig-out/bin/sigil}"
-PEERS="${SIGIL_PEER_BINS:-$ROOT/.nix-out/c-on-rust/bin/sigil}"
+DEFAULT_PAIRS="$ROOT/zig-out/bin/sigil:$ROOT/.nix-out/c-on-rust/bin/sigil"
+DEFAULT_PAIRS="$DEFAULT_PAIRS:$ROOT/.nix-out/rust-cli-on-zig/bin/sigil:$ROOT/.nix-out/rust-cli-on-rust/bin/sigil"
+PAIRS="${SIGIL_PAIR_BINS:-$DEFAULT_PAIRS}"
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [[ $# -gt 1 ]] && printf '       %s\n' "$2"; return 0; }
@@ -24,99 +33,106 @@ finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/sigil-cross-XXXXXX")" || exit 1
 trap 'rm -rf -- "$WORK"' EXIT
 
-IFS=: read -r -a peers <<<"$PEERS"
+IFS=: read -r -a bins <<<"$PAIRS"
 # The transcripts run inside scratch directories, so every binary is named by
 # an absolute path.
 absolute() { if [[ "$1" == /* ]]; then printf '%s' "$1"; else printf '%s/%s' "$PWD" "$1"; fi; }
-SIGIL=$(absolute "$SIGIL")
-for i in "${!peers[@]}"; do peers[i]=$(absolute "${peers[i]}"); done
-if [[ ! -x "$SIGIL" || ${#peers[@]} -eq 0 ]]; then
-	fail "this binary and at least one peer exist" "SIGIL_BIN=$SIGIL SIGIL_PEER_BINS=$PEERS"
+for i in "${!bins[@]}"; do bins[i]=$(absolute "${bins[i]}"); done
+echo "cross-implementation: ${#bins[@]} pairs, reference ${bins[0]}"
+if [[ ${#bins[@]} -lt 2 ]]; then
+	fail "at least two pairs to compare" "SIGIL_PAIR_BINS=$PAIRS"
 	finish
 fi
-echo "cross-implementation: $SIGIL against ${#peers[@]} peer(s)"
+for i in "${!bins[@]}"; do
+	if [[ ! -x "${bins[i]}" ]]; then
+		fail "pair $i exists" "${bins[i]}"
+		finish
+	fi
+	for ((j = 0; j < i; j++)); do
+		if cmp -s "${bins[i]}" "${bins[j]}"; then
+			fail "pairs $j and $i are different builds" "both are ${bins[i]}"
+			finish
+		fi
+	done
+done
+pass "${#bins[@]} distinct pairs"
 
 printf '%s' 'cross-impl-test-not-for-production' >"$WORK/pw"
 printf '%s' 'not-the-passphrase' >"$WORK/wrong"
 : >"$WORK/empty"
 printf '%s' '{"customer":"cross implementation","v":"1"}' >"$WORK/payload.json"
-if "$SIGIL" keygen --out "$WORK/k.key" --hot-bundle-out "$WORK/k.hot" --passphrase-file "$WORK/pw" -q; then
-	pass "this binary generates a key and its recovery bundle"
-else
-	fail "this binary generates a key and its recovery bundle"
-	finish
-fi
 
-# ── Same bytes, read across the pair ────────────────────────────────────────
-round_trip() {
-	local peer="$1" who bin step this_rc peer_rc expected envelope case this_pem peer_pem
-	for who in this peer; do
-		if [[ "$who" == this ]]; then bin="$SIGIL"; else bin="$peer"; fi
-		"$bin" pubkey --key "$WORK/k.key" --passphrase-file "$WORK/pw" --out "$WORK/$who.pub" -q
-		echo "$?" >"$WORK/$who.pubkey-rc"
-		"$bin" sign "$WORK/payload.json" --key "$WORK/k.key" --passphrase-file "$WORK/pw" --out "$WORK/$who.sigil" -q
-		echo "$?" >"$WORK/$who.sign-rc"
-		"$bin" pubkey --key "$WORK/k.key" --passphrase-file "$WORK/wrong" -q >/dev/null 2>&1
-		echo "$?" >"$WORK/$who.wrong-rc"
-		"$bin" paper --key "$WORK/k.key" --hot-bundle "$WORK/k.hot" --pubkey "$ROOT/examples/license_vectors/test_beta.key.pub" \
-			--label "cross implementation (TEST)" --date 2026-11-10 --out "$WORK/$who.pdf" --force -q
-		echo "$?" >"$WORK/$who.paper-rc"
-	done
-	for step in pubkey sign wrong paper; do
-		this_rc=$(<"$WORK/this.$step-rc")
-		peer_rc=$(<"$WORK/peer.$step-rc")
-		expected=0
-		[[ "$step" == wrong ]] && expected=1
-		if [[ "$this_rc" != "$peer_rc" || "$this_rc" != "$expected" ]]; then
-			fail "$step exits $expected in both" "this=$this_rc peer=$peer_rc"
-			return
-		fi
-	done
-	for artifact in pub sigil pdf; do
-		if [[ ! -s "$WORK/this.$artifact" ]] || ! cmp -s "$WORK/this.$artifact" "$WORK/peer.$artifact"; then
-			fail "both make the same .$artifact from this binary's key"
-			return
-		fi
-	done
+# ── Round trips ─────────────────────────────────────────────────────────────
+# make_and_read I: pair I generates a key pair and its outputs; every other
+# pair reads them. Writes one verdict file per reader: "ok", or why not.
+make_and_read() {
+	local i="$1" maker="${bins[$1]}" dir="$WORK/made-$1" j reader why maker_pem reader_pem rc
+	mkdir -p "$dir"
+	if ! "$maker" keygen --out "$dir/k.key" --hot-bundle-out "$dir/k.hot" --passphrase-file "$WORK/pw" -q \
+		|| ! "$maker" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.pub" -q \
+		|| ! "$maker" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.sigil" -q; then
+		echo "the maker could not generate, derive and seal" >"$dir/maker-failed"
+		return
+	fi
+	sed 's/implementation/implementatioN/' "$dir/maker.sigil" >"$dir/tampered.sigil"
 	# The restored PEM is a private key: keep it in memory, never in a file.
-	this_pem=$("$SIGIL" hot-bundle open "$WORK/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-	this_rc=$?
-	peer_pem=$("$peer" hot-bundle open "$WORK/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-	peer_rc=$?
-	if [[ $this_rc -ne 0 || $peer_rc -ne 0 || "$this_pem" != "-----BEGIN PRIVATE KEY-----"* || "$this_pem" != "$peer_pem" ]]; then
-		fail "the peer restores the same PKCS#8 key from this binary's bundle" "this=$this_rc peer=$peer_rc"
-		return
-	fi
-	sed 's/implementation/implementatioN/' "$WORK/this.sigil" >"$WORK/tampered.sigil"
-	for case in this tampered; do
-		envelope="$WORK/$case.sigil"
-		"$peer" verify "$envelope" --pubkey "$WORK/this.pub" -q >"$WORK/peer-$case.out" 2>/dev/null
-		peer_rc=$?
-		"$SIGIL" verify "$envelope" --pubkey "$WORK/this.pub" -q >"$WORK/this-$case.out" 2>/dev/null
-		this_rc=$?
-		expected=0
-		[[ "$case" == tampered ]] && expected=1
-		if [[ $peer_rc -ne $expected || $this_rc -ne $expected ]]; then
-			fail "the $case envelope verifies with exit $expected in both" "this=$this_rc peer=$peer_rc"
-			return
+	maker_pem=$("$maker" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
+	for j in "${!bins[@]}"; do
+		[[ "$j" == "$i" ]] && continue
+		reader="${bins[$j]}"
+		why=""
+		if ! { "$reader" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.pub" -q \
+			&& cmp -s "$dir/maker.pub" "$dir/reader-$j.pub"; }; then
+			why="$why public key;"
 		fi
+		if ! { "$reader" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.sigil" -q \
+			&& cmp -s "$dir/maker.sigil" "$dir/reader-$j.sigil"; }; then
+			why="$why envelope;"
+		fi
+		reader_pem=$("$reader" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
+		if [[ "$maker_pem" != "-----BEGIN PRIVATE KEY-----"* || "$reader_pem" != "$maker_pem" ]]; then
+			why="$why PEM;"
+		fi
+		if ! { "$reader" verify "$dir/maker.sigil" --pubkey "$dir/maker.pub" -q >"$dir/reader-$j.out" 2>/dev/null \
+			&& cmp -s "$dir/reader-$j.out" "$WORK/payload.json"; }; then
+			why="$why verify;"
+		fi
+		"$reader" verify "$dir/tampered.sigil" --pubkey "$dir/maker.pub" -q >/dev/null 2>&1
+		rc=$?
+		if [[ $rc -ne 1 ]]; then why="$why tampered envelope exit $rc;"; fi
+		echo "${why:-ok}" >"$dir/verdict-$j"
 	done
-	if ! cmp -s "$WORK/peer-this.out" "$WORK/payload.json"; then
-		fail "the peer verifies this binary's envelope to the exact payload"
-		return
-	fi
-	pass "key, public key, envelope, PEM and paper agree across the pair; each verifies the other"
 }
 
-# ── Same transcript: stdout, stderr and exit code ───────────────────────────
-# Each binary runs in its own directory holding the same fixtures under the
-# same relative names, so paths in messages match.
+for i in "${!bins[@]}"; do make_and_read "$i" & done
+wait
+for i in "${!bins[@]}"; do
+	if [[ -f "$WORK/made-$i/maker-failed" ]]; then
+		fail "pair $i generates a key pair, derives its public key and seals" "${bins[i]}"
+		continue
+	fi
+	for j in "${!bins[@]}"; do
+		[[ "$j" == "$i" ]] && continue
+		verdict=$(<"$WORK/made-$i/verdict-$j")
+		if [[ "$verdict" == ok ]]; then
+			pass "a key pair made by pair $i reads identically in pair $j"
+		else
+			fail "a key pair made by pair $i reads identically in pair $j" "differs:$verdict"
+		fi
+	done
+done
+
+# ── Transcripts ─────────────────────────────────────────────────────────────
+# Each pair runs in its own directory holding the reference maker's fixtures
+# under the same relative names, so paths in messages match.
 prepare() {
-	local dir="$1"
+	local dir="$1" made="$WORK/made-0"
 	mkdir -p "$dir" || return 1
-	cp "$WORK/k.key" "$WORK/k.hot" "$WORK/this.pub" "$WORK/this.sigil" "$WORK/tampered.sigil" \
-		"$WORK/payload.json" "$WORK/pw" "$WORK/wrong" "$WORK/empty" "$dir/" || return 1
-	cp "$WORK/k.key" "$dir/existing.key" || return 1
+	cp "$made/k.key" "$made/k.hot" "$made/tampered.sigil" "$WORK/payload.json" "$WORK/pw" "$WORK/wrong" \
+		"$WORK/empty" "$dir/" || return 1
+	cp "$made/maker.pub" "$dir/this.pub" || return 1
+	cp "$made/maker.sigil" "$dir/this.sigil" || return 1
+	cp "$made/k.key" "$dir/existing.key" || return 1
 	printf 'not an envelope' >"$dir/garbage.txt"
 	printf 'not a key' >"$dir/not-a-key.txt"
 	printf 'one\ntwo\n' >"$dir/mismatch.in"
@@ -188,64 +204,55 @@ INVOCATIONS="/dev/null
 mismatch.in keygen --out typed.key
 prompted.in keygen --out prompted.key
 /dev/null keygen --out prompted2.key"
+COUNT=$(wc -l <<<"$INVOCATIONS")
 
-# run_invocation BIN DIR N: run line N of the table in DIR, recording
-# stdout, stderr and the exit code under DIR/.t/N.
-run_invocation() {
-	local bin="$1" dir="$2" n="$3" line input arg
+# run_table BIN DIR: every invocation in DIR, recording stdout, stderr and the
+# exit code under DIR/.t/N.
+run_table() {
+	local bin="$1" dir="$2" n line arg
 	local -a fields=() args=()
-	line=$(sed -n "${n}p" <<<"$INVOCATIONS")
-	read -r -a fields <<<"$line"
-	input="${fields[0]}"
-	for arg in "${fields[@]:1}"; do args+=("${arg//%/ }"); done
 	mkdir -p "$dir/.t"
-	(cd "$dir" && NO_COLOR=1 "$bin" "${args[@]}" <"$input" >".t/$n.out" 2>".t/$n.err"; echo "$?" >".t/$n.rc")
+	for ((n = 1; n <= COUNT; n++)); do
+		line=$(sed -n "${n}p" <<<"$INVOCATIONS")
+		read -r -a fields <<<"$line"
+		args=()
+		for arg in "${fields[@]:1}"; do args+=("${arg//%/ }"); done
+		(cd "$dir" && NO_COLOR=1 "$bin" "${args[@]}" <"${fields[0]}" >".t/$n.out" 2>".t/$n.err"; echo "$?" >".t/$n.rc")
+	done
 }
 
-transcripts() {
-	local peer="$1" tag="$2" count n differ=""
-	count=$(wc -l <<<"$INVOCATIONS")
-	prepare "$WORK/t-this-$tag" || { fail "prepare transcript fixtures"; return; }
-	prepare "$WORK/t-peer-$tag" || { fail "prepare transcript fixtures"; return; }
-	for ((n = 1; n <= count; n++)); do
-		run_invocation "$SIGIL" "$WORK/t-this-$tag" "$n"
-		run_invocation "$peer" "$WORK/t-peer-$tag" "$n"
+for i in "${!bins[@]}"; do
+	if ! prepare "$WORK/t-$i"; then
+		fail "prepare transcript fixtures for pair $i"
+		finish
+	fi
+done
+for i in "${!bins[@]}"; do run_table "${bins[i]}" "$WORK/t-$i" & done
+wait
+for ((i = 1; i < ${#bins[@]}; i++)); do
+	differ=""
+	for ((n = 1; n <= COUNT; n++)); do
 		for part in rc out err; do
-			if ! cmp -s "$WORK/t-this-$tag/.t/$n.$part" "$WORK/t-peer-$tag/.t/$n.$part"; then
+			if ! cmp -s "$WORK/t-0/.t/$n.$part" "$WORK/t-$i/.t/$n.$part"; then
+				line=$(sed -n "${n}p" <<<"$INVOCATIONS")
 				differ="$differ
-  line $n ($part): $(sed -n "${n}p" <<<"$INVOCATIONS")"
+  line $n ($part): $line"
 			fi
 		done
 	done
-	# The files each wrote must match too, except fresh keys, which differ
-	# by design and are compared by round trip above.
+	# Files the table writes must match too, except fresh keys, which differ
+	# by design and are covered by the round trips.
 	for f in payload.out signed.sigil page.pdf; do
-		if ! cmp -s "$WORK/t-this-$tag/$f" "$WORK/t-peer-$tag/$f"; then
+		if ! cmp -s "$WORK/t-0/$f" "$WORK/t-$i/$f"; then
 			differ="$differ
   written file $f"
 		fi
 	done
 	if [[ -z "$differ" ]]; then
-		pass "all $count invocations give byte-identical stdout, stderr and exit codes"
+		pass "pair $i matches the reference on all $COUNT invocations: stdout, stderr, exit codes, files"
 	else
-		fail "all $count invocations give byte-identical stdout, stderr and exit codes" "$differ"
+		fail "pair $i matches the reference on all $COUNT invocations" "$differ"
 	fi
-}
-
-tag=0
-for peer in "${peers[@]}"; do
-	tag=$((tag + 1))
-	echo "peer $tag: $peer"
-	if [[ ! -x "$peer" ]]; then
-		fail "peer $tag exists" "$peer"
-		continue
-	fi
-	if cmp -s "$SIGIL" "$peer"; then
-		fail "peer $tag is a different build" "both are $SIGIL"
-		continue
-	fi
-	round_trip "$peer"
-	transcripts "$peer" "$tag"
 done
 
 finish

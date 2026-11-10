@@ -127,10 +127,18 @@ DETAIL=""
 same() {
 	local min_lines="$1" impl rc lines
 	shift
+	# Both drivers at once: they read the same inputs and write separate
+	# outputs, so running them concurrently halves the wait.
+	local -A pid=()
 	for impl in zig rust; do
-		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl"
+		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl" &
+		pid[$impl]=$!
+	done
+	for impl in zig rust; do
+		wait "${pid[$impl]}"
 		rc=$?
 		if [[ $rc -ne 0 ]]; then
+			wait
 			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl")"
 			return 1
 		fi

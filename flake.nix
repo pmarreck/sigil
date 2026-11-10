@@ -168,7 +168,21 @@
         packages.sigil-rust = pkgs.rustPlatform.buildRustPackage {
           pname = "${pname}-rust";
           inherit version;
-          src = ./.;
+          # Only what the workspace reads: its crates (the CLI is built on
+          # its own), the two headers it exports, the prelink scripts and the
+          # fixtures its tests compare against. An edit elsewhere in the
+          # repository no longer rebuilds the Rust packages.
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              (pkgs.lib.fileset.difference ./rust ./rust/sigil-cli)
+              ./include/sigil.h
+              ./include/sigil_sign.h
+              ./scripts
+              ./examples/verify_edge_vectors
+              ./examples/sign_vectors
+            ];
+          };
           cargoRoot = "rust";
           buildAndTestSubdir = "rust";
           cargoLock.lockFile = ./rust/Cargo.lock;
