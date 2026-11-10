@@ -56,33 +56,26 @@ for impl in zig rust; do
 	fi
 done
 
-# ── Export inventory ────────────────────────────────────────────────────────
-# Parsed from the header rather than a hand-kept list, so a newly declared
-# function is covered the moment it is declared.
-if ! grep -oE '\bsigil_[a-z0-9_]+[[:space:]]*\(' "$REPO_ROOT/include/sigil.h" >"$work/declared"; then
-	fail "parse the declared functions from include/sigil.h" "no declarations found"
+# ── Export inventory, parsed from the header ────────────────────────────────
+# One parser (scripts/c-header-functions) serves the Rust packaging and every
+# suite. Each archive must define exactly the declared functions: none
+# missing, and no extra global that could collide in a shared binary.
+if ! bash "$REPO_ROOT/scripts/c-header-functions" "$REPO_ROOT/include/sigil.h" >"$work/declared"; then
+	fail "parse the declared functions from include/sigil.h"
 	finish
 fi
-sed -i 's/[[:space:]]*($//' "$work/declared"
-sort -u -o "$work/declared" "$work/declared"
 declared=$(<"$work/declared")
-declared_count=$(wc -l <<<"$declared")
-if [[ $declared_count -ge 8 ]]; then
-	pass "header declares $declared_count functions"
-else
-	fail "header declares the expected surface" "parsed: $declared"
+declared_count=$(wc -l <"$work/declared")
+if [[ $declared_count -lt 8 ]]; then
+	fail "parse the declared functions from include/sigil.h" "only $declared_count found"
+	finish
 fi
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	nm -g --defined-only "$out/lib/libsigil.a" >"$work/nm-$impl" 2>/dev/null
-	awk '$2 == "T" { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
-	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
-	exported=$(<"$work/exported-$impl")
-	missing=$(comm -23 <(echo "$declared") <(echo "$exported"))
-	if [[ -z "$missing" ]]; then
-		pass "$impl archive exports every declared function"
+	if inventory=$(bash "$SCRIPT_DIR/check-exports" "$out/lib/libsigil.a" "$REPO_ROOT/include/sigil.h"); then
+		pass "$impl archive exports exactly the $declared_count declared functions"
 	else
-		fail "$impl archive exports every declared function" "missing: $missing"
+		fail "$impl archive exports exactly the declared functions" "$inventory"
 	fi
 done
 uncalled=""

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# prelink-staticlib ARCHIVE HEADER OUT: repackage a Rust staticlib so that
+# the only global symbols it defines are the functions HEADER declares.
+#
+# Every Rust staticlib carries its own copy of the Rust standard library, so
+# two of them (libsigil.a and libsigil_sign.a in the CLI, or libsigil.a and
+# libmecha_policy.a in a product) cannot be linked into one binary: the
+# runtime symbols collide. Prelinking the archive into one relocatable object
+# and localizing everything but the declared C API removes the collision and
+# makes the archive export exactly its header, as the Zig archives do.
+#
+# ELF and GNU binutils only (ld -r, objcopy). Tool names follow the stdenv
+# variables LD, OBJCOPY, NM and AR when they are set.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+if [[ $# -ne 3 || ! -f "$1" || ! -f "$2" ]]; then
+	echo "usage: prelink-staticlib ARCHIVE HEADER OUT" >&2
+	exit 64
+fi
+archive="$1"
+header="$2"
+out="$3"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/prelink-XXXXXX")" || exit 1
+trap 'rm -rf -- "$work"' EXIT
+
+bash "$script_dir/c-header-functions" "$header" >"$work/declared" || exit 1
+"${LD:-ld}" -r --whole-archive "$archive" -o "$work/prelinked.o" || exit 1
+"${OBJCOPY:-objcopy}" --keep-global-symbols="$work/declared" "$work/prelinked.o" || exit 1
+
+# The result must define every declared function globally and nothing else.
+"${NM:-nm}" -g --defined-only "$work/prelinked.o" >"$work/nm" || exit 1
+awk 'NF == 3 { print $3 }' "$work/nm" >"$work/global"
+sort -u -o "$work/global" "$work/global"
+missing=$(comm -23 "$work/declared" "$work/global")
+extra=$(comm -13 "$work/declared" "$work/global")
+if [[ -n "$missing" || -n "$extra" ]]; then
+	echo "prelink-staticlib: $archive does not export exactly $header" >&2
+	[[ -n "$missing" ]] && echo "  declared but not defined: $missing" >&2
+	[[ -n "$extra" ]] && echo "  global but not declared: $extra" >&2
+	exit 1
+fi
+
+mkdir -p "$(dirname "$out")" || exit 1
+"${AR:-ar}" rcsD "$out.new" "$work/prelinked.o" || exit 1
+mv -f "$out.new" "$out"

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# c-header-functions HEADER: print the functions HEADER declares, one per
+# line, sorted. This is the single parser behind every export inventory:
+# the Rust packages keep exactly these symbols global, and the differential
+# suites check both implementations' archives against the same list.
+#
+# A declaration is a line at column 0 whose text before the first "(" is a
+# return type (any C type: int, size_t, int32_t, const char *, void) followed
+# by a lowercase name. Indented lines, comment continuations (" * ..."),
+# macros and typedefs do not match, so a function named in prose is never
+# mistaken for a declaration. Exits nonzero if the header declares nothing,
+# so a broken parse fails loudly instead of yielding an empty inventory.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+if [[ $# -ne 1 || ! -f "$1" ]]; then
+	echo "usage: c-header-functions HEADER" >&2
+	exit 64
+fi
+header="$1"
+lines=$(grep -E '^([A-Za-z_][A-Za-z0-9_]*[ *]+)+[a-z][a-z0-9_]*[[:space:]]*\(' "$header")
+# A function-pointer typedef matches the shape above but declares no function.
+lines=$(grep -vE '^typedef[[:space:]]' <<<"$lines")
+declarations=$(grep -oE '^([A-Za-z_][A-Za-z0-9_]*[ *]+)+[a-z][a-z0-9_]*[[:space:]]*\(' <<<"$lines")
+if [[ -z "$declarations" ]]; then
+	echo "c-header-functions: no function declarations found in $header" >&2
+	exit 1
+fi
+names=$(sed -E 's/[[:space:]]*\($//; s/.*[ *]//' <<<"$declarations")
+sort -u <<<"$names"

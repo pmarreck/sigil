@@ -62,6 +62,9 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/tests/differential/run" \
 		"$REPO_ROOT/tests/differential/policy" \
 		"$REPO_ROOT/tests/differential/sign" \
+		"$REPO_ROOT/tests/differential/check-exports" \
+		"$REPO_ROOT/scripts/c-header-functions" \
+		"$REPO_ROOT/scripts/prelink-staticlib" \
 		"$REPO_ROOT/tests/integration/ceremony_preflight.sh" \
 		"$REPO_ROOT/ceremony-preflight"
 	do

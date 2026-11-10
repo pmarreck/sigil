@@ -14,6 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ZIG_OUT="${MECHA_POLICY_ZIG_OUT:-$REPO_ROOT/.nix-out/mecha-policy-zig}"
 RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
+# The Zig sigil archive, for the check that a product can link both.
+SIGIL_ZIG_OUT="${SIGIL_ZIG_OUT:-$REPO_ROOT/zig-out}"
 CC="${CC:-cc}"
 FUZZ_CASES="${SIGIL_DIFF_FUZZ_CASES:-1500}"
 
@@ -31,6 +33,7 @@ finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
 work="$(mktemp -d "${TMPDIR:-/tmp}/mecha-policy-differential-XXXXXX")" || exit 1
 trap 'rm -rf -- "$work"' EXIT
 header="$ZIG_OUT/include/mecha_policy.h"
+header_dir=$(dirname "$header")
 
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
@@ -45,7 +48,7 @@ for impl in zig rust; do
 	# is a known defect of that archive (sigil PLAN), not of the harness.
 	extra=()
 	[[ "$impl" == zig ]] && extra=(-lquadmath)
-	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$(dirname "$header")" \
+	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$header_dir" \
 		"$SCRIPT_DIR/policy_driver.c" "$lib" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
 		pass "$impl archive links the driver, which calls every declared function"
 	else
@@ -62,24 +65,25 @@ else
 fi
 
 # ── Export inventory, parsed from the header ────────────────────────────────
-if ! grep -oE '\bmecha_policy_[a-z0-9_]+[[:space:]]*\(' "$header" >"$work/declared"; then
-	fail "parse the declared functions from mecha_policy.h"
+# One parser (scripts/c-header-functions) serves the Rust packaging and every
+# suite. Each archive must define exactly the declared functions: none
+# missing, and no extra global that could collide in a shared binary.
+if ! bash "$REPO_ROOT/scripts/c-header-functions" "$header" >"$work/declared"; then
+	fail "parse the declared functions from $header"
 	finish
 fi
-sed -i 's/[[:space:]]*($//' "$work/declared"
-sort -u -o "$work/declared" "$work/declared"
 declared=$(<"$work/declared")
 declared_count=$(wc -l <"$work/declared")
+if [[ $declared_count -lt 8 ]]; then
+	fail "parse the declared functions from $header" "only $declared_count found"
+	finish
+fi
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	nm -g --defined-only "$out/lib/libmecha_policy.a" >"$work/nm-$impl" 2>/dev/null
-	awk '$2 == "T" { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
-	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
-	missing=$(comm -23 "$work/declared" "$work/exported-$impl")
-	if [[ -z "$missing" ]]; then
-		pass "$impl archive exports all $declared_count declared functions"
+	if inventory=$(bash "$SCRIPT_DIR/check-exports" "$out/lib/libmecha_policy.a" "$header"); then
+		pass "$impl archive exports exactly the $declared_count declared functions"
 	else
-		fail "$impl archive exports every declared function" "missing: $missing"
+		fail "$impl archive exports exactly the declared functions" "$inventory"
 	fi
 done
 uncalled=""
@@ -91,6 +95,31 @@ if [[ -z "$uncalled" ]]; then
 else
 	fail "the driver calls every declared function" "never called:$uncalled"
 fi
+
+# ── A product links sigil and mecha_policy together ─────────────────────────
+# Validate and RotShield link libsigil.a and libmecha_policy.a into one
+# binary. The probe calls into both, because a static link pulls only the
+# members it needs: an archive nothing references could never collide.
+cat >"$work/coexist.c" <<'EOF'
+#include <stdio.h>
+#include "sigil.h"
+#include "mecha_policy.h"
+int main(void) { return printf("%s %s\n", sigil_version(), mecha_policy_version()) < 0; }
+EOF
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then
+		policy="$ZIG_OUT/lib/libmecha_policy.a" verify="$SIGIL_ZIG_OUT/lib/libsigil.a" extra=(-lquadmath)
+	else
+		policy="$RUST_OUT/lib/libmecha_policy.a" verify="$RUST_OUT/lib/libsigil.a" extra=()
+	fi
+	if coexist_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" -I "$header_dir" \
+		"$work/coexist.c" "$verify" "$policy" "${extra[@]}" -lpthread -ldl -lm -o "$work/coexist-$impl" 2>&1) \
+		&& "$work/coexist-$impl" >/dev/null; then
+		pass "$impl libsigil.a and libmecha_policy.a link into one binary and run"
+	else
+		fail "$impl libsigil.a and libmecha_policy.a link into one binary and run" "$coexist_log"
+	fi
+done
 
 # same MIN_LINES ARGS...: both drivers succeed, produce enough output and
 # agree byte for byte. Reason in $DETAIL on failure; records nothing.

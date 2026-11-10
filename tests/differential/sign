@@ -66,31 +66,25 @@ else
 fi
 
 # ── Export inventory, parsed from the header ────────────────────────────────
-# Declarations start a line with their return type; comments start with
-# "/*" or " *", so a function named in prose is not mistaken for one.
-if ! grep -oE '^[a-z][a-z ]*[ *]sigil_[a-z0-9_]+\(' "$HEADER" >"$work/decl-lines"; then
-	fail "parse the declared functions from sigil_sign.h"
+# One parser (scripts/c-header-functions) serves the Rust packaging and every
+# suite. Each archive must define exactly the declared functions: none
+# missing, and no extra global that could collide in a shared binary.
+if ! bash "$REPO_ROOT/scripts/c-header-functions" "$HEADER" >"$work/declared"; then
+	fail "parse the declared functions from $HEADER"
 	finish
 fi
-grep -oE 'sigil_[a-z0-9_]+' "$work/decl-lines" >"$work/declared"
-sort -u -o "$work/declared" "$work/declared"
 declared=$(<"$work/declared")
 declared_count=$(wc -l <"$work/declared")
 if [[ $declared_count -lt 7 ]]; then
-	fail "parse the declared functions from sigil_sign.h" "only $declared_count found"
+	fail "parse the declared functions from $HEADER" "only $declared_count found"
 	finish
 fi
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	nm -g --defined-only "$out/lib/libsigil_sign.a" >"$work/nm-$impl" 2>/dev/null
-	awk '$2 == "T" && $3 ~ /^sigil_/ { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
-	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
-	# Exactly the declared set: an extra sigil_ export (verify functions, say)
-	# would collide with libsigil.a in a binary that links both.
-	if inventory=$(diff "$work/declared" "$work/exported-$impl"); then
-		pass "$impl archive exports exactly the $declared_count declared sigil_ functions"
+	if inventory=$(bash "$SCRIPT_DIR/check-exports" "$out/lib/libsigil_sign.a" "$HEADER"); then
+		pass "$impl archive exports exactly the $declared_count declared functions"
 	else
-		fail "$impl archive exports exactly the declared sigil_ functions" "$inventory"
+		fail "$impl archive exports exactly the declared functions" "$inventory"
 	fi
 done
 uncalled=""
@@ -102,6 +96,29 @@ if [[ -z "$uncalled" ]]; then
 else
 	fail "the driver calls every declared function" "never called:$uncalled"
 fi
+
+# ── One implementation's archives share a binary ────────────────────────────
+# The CLI links libsigil.a and libsigil_sign.a together. The probe calls into
+# both, because a static link pulls only the members it needs: an archive
+# nothing references could never collide.
+cat >"$work/coexist.c" <<'EOF'
+#include <stdio.h>
+#include "sigil.h"
+#include "sigil_sign.h"
+int main(void) { return printf("%s %s\n", sigil_version(), sigil_sign_strerror(0)) < 0; }
+EOF
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	extra=()
+	[[ "$impl" == zig ]] && extra=(-lquadmath)
+	if coexist_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" "$work/coexist.c" \
+		"$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" "${extra[@]}" -lpthread -ldl -lm \
+		-o "$work/coexist-$impl" 2>&1) && "$work/coexist-$impl" >/dev/null; then
+		pass "$impl libsigil.a and libsigil_sign.a link into one binary and run"
+	else
+		fail "$impl libsigil.a and libsigil_sign.a link into one binary and run" "$coexist_log"
+	fi
+done
 
 # same MIN_LINES ARGS...: both drivers succeed, produce enough output and
 # agree byte for byte. Reason in $DETAIL on failure; records nothing.

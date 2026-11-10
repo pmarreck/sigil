@@ -28,8 +28,10 @@ static inline size_t sigil_json_escape(char *out, size_t cap, const char *in) {
 	static const char hex[] = "0123456789abcdef";
 	size_t need = 0;
 
+	/* `need < cap - 1` rather than `need + 1 < cap`: the sum could wrap, and
+	 * GCC's -O2 range analysis rightly refuses to prove that it cannot. */
 	#define EMIT(ch) do { \
-		if (need + 1 < cap) out[need] = (ch); \
+		if (cap > 0 && need < cap - 1) out[need] = (ch); \
 		need++; \
 	} while (0)
 

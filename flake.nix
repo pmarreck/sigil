@@ -131,9 +131,12 @@
         packages.sigil-zig = self.packages.${system}.default;
 
         # The Rust implementation, held to the Zig one by tests/differential.
-        # It installs the same tree shape: the C header and an archive named
-        # libsigil.a, so a consumer's link line does not depend on which
-        # implementation it was given. Cargo's unit tests run in checkPhase.
+        # It installs the same tree shape: the C headers and archives named
+        # as Zig names them, so a consumer's link line does not depend on
+        # which implementation it was given. Each archive is prelinked so it
+        # exports exactly its header (scripts/prelink-staticlib): otherwise
+        # every Rust archive carries its own standard library and two of them
+        # cannot share a binary. Cargo's unit tests run in checkPhase.
         packages.sigil-rust = pkgs.rustPlatform.buildRustPackage {
           pname = "${pname}-rust";
           inherit version;
@@ -150,19 +153,45 @@
           '';
           installPhase = ''
             runHook preInstall
-            archive=$(find . -path '*/release/libsigil_ffi.a' | head -1)
-            [ -n "$archive" ] || { echo "no libsigil_ffi.a was built" >&2; exit 1; }
             mkdir -p $out/lib $out/include
-            cp "$archive" $out/lib/libsigil.a
-            cp include/sigil.h $out/include/sigil.h
-            sign=$(find . -path '*/release/libsigil_sign_ffi.a' | head -1)
-            [ -n "$sign" ] || { echo "no libsigil_sign_ffi.a was built" >&2; exit 1; }
-            cp "$sign" $out/lib/libsigil_sign.a
-            cp include/sigil_sign.h $out/include/sigil_sign.h
-            policy=$(find . -path '*/release/libmecha_policy_ffi.a' | head -1)
-            [ -n "$policy" ] || { echo "no libmecha_policy_ffi.a was built" >&2; exit 1; }
-            cp "$policy" $out/lib/libmecha_policy.a
+            cp include/sigil.h include/sigil_sign.h $out/include/
             cp ${mecha-policy}/include/mecha_policy.h $out/include/mecha_policy.h
+            # crate archive -> installed archive, header it must export exactly
+            for spec in sigil_ffi:libsigil.a:sigil.h \
+                        sigil_sign_ffi:libsigil_sign.a:sigil_sign.h \
+                        mecha_policy_ffi:libmecha_policy.a:mecha_policy.h; do
+              IFS=: read -r crate installed header <<<"$spec"
+              archive=$(find . -path "*/release/lib$crate.a" | head -1)
+              [ -n "$archive" ] || { echo "no lib$crate.a was built" >&2; exit 1; }
+              bash scripts/prelink-staticlib "$archive" "$out/include/$header" "$out/lib/$installed"
+            done
+            runHook postInstall
+          '';
+        };
+
+        # The C CLI built on the Rust libraries: the same cli/main.c as the
+        # default package, compiled by the stock C compiler. Its source is
+        # cli/ alone and its headers and archives come only from the
+        # sigil-rust package, so it can reach the Rust implementation through
+        # the C ABI and no other way.
+        packages.sigil-c-on-rust = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-c-on-rust";
+          inherit version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = ./cli;
+          };
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            rust=${self.packages.${system}.sigil-rust}
+            $CC -std=c11 -Wall -Wextra -Werror -O2 -I "$rust/include" -I cli cli/main.c \
+              "$rust/lib/libsigil.a" "$rust/lib/libsigil_sign.a" -lpthread -ldl -lm -o sigil
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 sigil $out/bin/sigil
             runHook postInstall
           '';
         };
@@ -252,6 +281,7 @@
             # The Rust implementation is handed to the suite by path, already
             # built: a sandboxed check cannot run a nested nix build.
             SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
+            SIGIL_C_ON_RUST_OUT = self.packages.${system}.sigil-c-on-rust;
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];

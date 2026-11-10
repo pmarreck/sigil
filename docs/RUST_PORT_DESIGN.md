@@ -1,7 +1,7 @@
 # Rust port of sigil: design
 
-Status: in progress, 2026-11-10. Steps 0 to 2 and the signing library of
-step 3 are implemented; see "Status" and "Order of work". Items marked "owner
+Status: in progress, 2026-11-10. Steps 0 to 3 are implemented; see
+"Status" and "Order of work". Items marked "owner
 ruling" were decided by SCS (Senior Construct Swarmlord, the project owner).
 Everything not yet implemented is a proposal and can change before code lands.
 
@@ -66,6 +66,9 @@ rust/
 - `sigil` depends on no signing code, mirroring `libsigil.a` against
   `libsigil_sign.a` today. A symbol scan over the built `sigil-ffi` archive,
   the Rust counterpart of `tests/test_no_signing_symbols`, enforces it.
+- Each installed Rust archive is prelinked into one object whose only
+  global symbols are its header's functions, so any combination of the
+  archives, and a consumer's own Rust code, can share a binary.
 - The core crates forbid `unsafe`. Only the three `-ffi` crates contain it.
   Every exported function takes pointer plus length where the header does
   and zeroizes secrets on every exit path. The core is written not to panic
@@ -143,8 +146,26 @@ and dropping the lane-count bound, were both caught. Removing the leading-zero
 check is an equivalent mutant, because the JSON lexer already refuses `01`.
 Replacing the PDF writer's Zig-compatible number rounding with Rust's default
 is not observable through these inputs; the `fmt_num` unit table, which the
-package build runs, catches it. Still open in step 3: the C CLI on the Rust
-libraries passing `tests/cli` unchanged.
+package build runs, catches it.
+
+Step 3's gate is met: the C CLI built on the Rust libraries
+(`packages.sigil-c-on-rust`, whose source is `cli/` alone) passes
+`tests/cli/test_cli` and every integration suite that drives the binary,
+unchanged. `./test` runs those suites once per pair and discovers them by
+their use of `SIGIL_BIN`, so a new suite joins every pair.
+
+Getting there exposed a packaging defect: every Rust staticlib carries its own
+copy of the Rust standard library, so two Rust archives could not share a
+binary. That broke the CLI (`libsigil.a` with `libsigil_sign.a`) and would
+have broken every product (`libsigil.a` with `libmecha_policy.a`). The Rust
+package now prelinks each archive and keeps global only the functions its
+header declares (`scripts/prelink-staticlib`), which is the shape the Zig
+archives already have. The differential suites check both properties for both
+implementations: each archive's strong globals are exactly its header's
+functions (`tests/differential/check-exports`, one parser in
+`scripts/c-header-functions` for packaging and tests), and each pair of
+archives links and runs in one binary. Against raw, unprelinked archives both
+checks fail.
 
 ## Signature acceptance must match exactly
 

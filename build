@@ -71,6 +71,9 @@ elif command -v nix >/dev/null 2>&1; then
 	link_output test-fixtures/libsigil_module_probe.a
 	# The Rust implementation, read in place by tests/differential.
 	run nix build .#sigil-rust --out-link .nix-out/rust-release
+	# The C CLI on the Rust libraries, which ./test runs through the CLI and
+	# integration suites as a second frontend and library pair.
+	run nix build .#sigil-c-on-rust --out-link .nix-out/c-on-rust
 	# The pinned Zig mecha_policy, the oracle for tests/differential/policy.
 	run nix build .#mecha-policy-zig --out-link .nix-out/mecha-policy-zig
 else
