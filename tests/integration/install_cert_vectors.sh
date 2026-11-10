@@ -56,13 +56,35 @@ for label in $(jq -r '.machines | keys[]' "$M"); do
 done
 
 # Each positive eval names a certificate whose payload binds exactly that
-# product, license envelope and machine; each product has such a control.
-for prod in mecha-validate mecha-rotshield; do
+# product, license envelope and machine. Each product the contract names (its
+# own line, so a product added there without vectors fails here) has such a
+# control bound to a paid v2 grant, and every positive eval's license is a
+# grant for the eval's own product.
+license_payload() {
+	if [[ -f "$LV/$1.payload.json" ]]; then printf '%s' "$LV/$1.payload.json"
+	else printf '%s' "$ROOT/examples/license_vectors_v2/$1.payload.json"; fi
+}
+if products=$(bash "$ROOT/scripts/contract-products"); then
+	pass "the contract names $(wc -l <<<"$products") products"
+else
+	fail "read the contract's product identifiers"; products=""
+fi
+for prod in $products; do
 	n=$(jq --arg p "$prod" '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p)] | length' "$M")
 	[[ "$n" -ge 1 ]] && pass "$prod has $n positive certificate evals" || fail "$prod has a positive certificate eval"
+	paid=0
+	while IFS= read -r lic; do
+		[[ -z "$lic" ]] && continue
+		shape=$(jq -r '[.v, .payment_provider] | join("/")' "$(license_payload "$lic")" 2>/dev/null)
+		[[ "$shape" == "2/paddle" ]] && paid=1
+	done < <(jq -r --arg p "$prod" '.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p) | .license' "$M" | sort -u)
+	[[ $paid == 1 ]] && pass "$prod: a certificate admits a paid v2 grant" || fail "$prod: a certificate admits a paid v2 grant"
 done
-n=$(jq '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == "mecha-rotshield" and .license == "v2_rotshield_valid")] | length' "$M")
-[[ "$n" -ge 1 ]] && pass "the paid v2 RotShield grant has a matching certificate" || fail "the paid v2 RotShield grant has a matching certificate"
+while IFS='|' read -r prod lic; do
+	[[ -z "$prod" ]] && continue
+	lp=$(jq -r .product "$(license_payload "$lic")" 2>/dev/null)
+	[[ "$lp" == "$prod" ]] && pass "positive $prod eval binds a $prod grant ($lic)" || fail "positive $prod eval binds a $prod grant ($lic)" "license product: $lp"
+done < <(jq -r '.vectors[].evals[] | select(.expect == "install_cert_valid") | [.product, .license] | join("|")' "$M" | sort -u)
 for ((i = 0; i < nv; i++)); do
 	p=$(jq -r ".vectors[$i].payload" "$M")
 	while IFS='|' read -r prod lic mach; do

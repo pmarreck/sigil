@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# contract-products [CONTRACT]: print the license contract's product
+# identifiers, one per line, sorted. The list is the contract's own
+# "Product identifiers" line, so adding a product there makes every vector
+# suite that iterates this output demand that product's vectors, instead of
+# each suite keeping its own list that a new product can quietly miss.
+#
+# Only backquoted identifiers on that one line count. Exits nonzero if the
+# line is missing, appears twice or names nothing, so a reworded contract
+# fails loudly instead of yielding an empty product set.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+contract="${1:-$root/docs/MECHA_LICENSE_CONTRACT_V1.md}"
+if [[ $# -gt 1 || ! -f "$contract" ]]; then
+	echo "usage: contract-products [CONTRACT]" >&2
+	exit 64
+fi
+lines=$(grep -E '^- Product identifiers \(frozen\):' "$contract")
+count=$(grep -c . <<<"$lines")
+if [[ -z "$lines" || "$count" -ne 1 ]]; then
+	echo "contract-products: expected one '- Product identifiers (frozen):' line in $contract, found ${count:-0}" >&2
+	exit 1
+fi
+bt=$'\x60'
+quoted=$(grep -oE "${bt}[a-z][a-z0-9-]*${bt}" <<<"$lines")
+ids=${quoted//"$bt"/}
+if [[ -z "$ids" ]]; then
+	echo "contract-products: the product line in $contract names no identifiers" >&2
+	exit 1
+fi
+sort -u <<<"$ids"

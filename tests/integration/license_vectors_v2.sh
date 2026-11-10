@@ -37,10 +37,16 @@ done
 for f in v2_valid v2_leap; do
 	[[ $(jq -r '.v + "/" + .max_minor' "$V/$f.payload.json") =~ ^2/[0-9]+$ ]] && pass "$f is a v2 payload with max_minor" || fail "$f v2 shape"
 done
-# Each product has a paid v2 grant admitted at its own ceiling and refused
-# one minor and one major above it; authorized evals name the payload's own
-# product.
-for prod in mecha-validate mecha-rotshield; do
+# Each product the contract names has a paid v2 grant admitted at its own
+# ceiling and refused one minor and one major above it; authorized evals name
+# the payload's own product. The product list is the contract's own line, so
+# a product added there without vectors fails here.
+if products=$(bash "$ROOT/scripts/contract-products"); then
+	pass "the contract names $(wc -l <<<"$products") products"
+else
+	fail "read the contract's product identifiers"; products=""
+fi
+for prod in $products; do
 	q='[.vectors[] | select(.signed_by_role == "test-paid" and (.file | startswith("v2_"))) as $v
 		| ($v.payload) as $p | $v.policy_evals[] | select(.product == $prod) | . + {payload: $p}]'
 	rows=$(jq -c --arg prod "$prod" "$q" "$M")

@@ -33,7 +33,8 @@ JSON, flat, string values, exactly the release-plan set. The committed
 canonical example is `examples/demo/payload.json`:
 
 - `v` — payload schema version, `"1"`.
-- `product` — product identifier (`"mecha-validate"`, `"mecha-rotshield"`).
+- `product` — product identifier (`"mecha-validate"`, `"mecha-rotshield"`,
+  `"mecha-beamflix"`).
   A license authorizes exactly one product.
 - `customer_email`, `customer_name_canonical` — issuance identity/display.
 - `features` — capability set (`"full"`; Pro = same SKU, different value).
@@ -217,7 +218,12 @@ the GUI never links a second verifier):
   test triple per entrypoint: admitted-before-expiry completes; the
   checkpoint on or after expiry refuses with the expired reason; nothing
   is admitted after expiry.
-- Product identifiers (frozen): `mecha-validate`, `mecha-rotshield`.
+- Product identifiers (frozen): `mecha-validate`, `mecha-rotshield`, `mecha-beamflix`.
+  BeamFlix's identifier was added 2026-11-10 with BeamFlix's agreement. Its
+  paid grant and certificate vectors follow sections 14 and 15; its trial and
+  operation classes wait on section 16. Keep every identifier on the line
+  above: scripts/contract-products reads it, and the vector suites require
+  vectors for each product it names.
 
 ## 10. Trial grants: static signed vs mutable usage state (OPEN — Peter)
 
@@ -324,7 +330,7 @@ every denial test). The review's independent matrix must derive from the
 accepted contract revision, tracking its revision history — not from an
 obsolete draft value or from whatever limit a binary happens to document;
 the adopted import ceiling is 64 KiB and boundary tests cover below / at /
-above it, with an oversized import preserving the prior grant. Trust domain
+above it, with an import over the ceiling preserving the prior grant. Trust domain
 and signer role are separate axes in every case: state build-domain,
 key-domain, signer-role and grant-class explicitly, and include missing-key
 and wrong-key refusals on the same candidate. Test-trust positives are
@@ -825,10 +831,16 @@ which machine may run it under that license. Execution needs both.
   `install_cert_valid`, `_malformed`, `_wrong_product`, `_other_machine`,
   `_other_license`, `_expired`, `_clock_rollback`; the app adds
   `install_cert_missing` when it holds no certificate,
-  `install_cert_not_authentic` when the certificate fails signature
-  verification under the install-cert role, and
+  `install_cert_not_authentic` when the certificate is not an envelope
+  that sigil verifies under the install-cert role, and
   `install_cert_machine_unavailable` when the raw OS id cannot be read
-  (validate 23001eadd, adopted 2026-10-01). Spec and vectors:
+  (validate 23001eadd, adopted 2026-10-01). Clarified 2026-11-10 (asked by
+  BeamFlix): a stored file that does not parse as an envelope at all is
+  `install_cert_not_authentic` too, not a further code. Nothing in it is
+  trusted before verification, so a corrupt file and a forgery are one
+  reason with one cure (fetch the certificate again online); an app may log
+  sigil's error code for support, never as the reason. `_malformed` is
+  only for a verified certificate whose payload fails the schema. Spec and vectors:
   sigil examples/install_cert_vectors (mecha-install-cert-vectors/1, test
   role `test-install-cert`, passphrase public by design).
 - Audit (commerce 0df5327, accepted): the mint audit row stays four fields

@@ -85,6 +85,14 @@
           "app_major": 1,
           "app_minor": 3,
           "expect": "wrong_product"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "wrong_product",
+          "why": "a validate grant never unlocks BeamFlix"
         }
       ]
     },
@@ -337,6 +345,14 @@
           "app_minor": 0,
           "expect": "wrong_product",
           "why": "a RotShield grant never unlocks validate"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "wrong_product",
+          "why": "a RotShield grant never unlocks BeamFlix"
         }
       ]
     },
@@ -408,6 +424,131 @@
           "app_minor": 99,
           "expect": "authorized",
           "why": "v1 paid grant: no minor ceiling"
+        }
+      ]
+    },
+    {
+      "file": "v2_beamflix_valid.sigil",
+      "payload": "v2_beamflix_valid.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 1,
+          "expect": "authorized",
+          "why": "the licensed minor itself"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 2,
+          "expect": "version_ceiling",
+          "why": "a later minor needs a refresh"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 2,
+          "app_minor": 0,
+          "expect": "version_ceiling",
+          "why": "a later major needs a purchase"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 0,
+          "app_minor": 1,
+          "expect": "authorized",
+          "why": "a 0.1 prerelease is below the 1.1 ceiling"
+        },
+        {
+          "now_utc_date": "2027-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 1,
+          "expect": "authorized",
+          "why": "expiry day is inclusive"
+        },
+        {
+          "now_utc_date": "2027-10-18",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 1,
+          "expect": "expired"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "wrong_product",
+          "why": "a BeamFlix grant never unlocks validate"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-rotshield",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "wrong_product",
+          "why": "a BeamFlix grant never unlocks RotShield"
+        }
+      ]
+    },
+    {
+      "file": "v2_beamflix_valid_under_beta_key.sigil",
+      "payload": "v2_beamflix_valid.payload.json",
+      "signed_by_role": "test-beta",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-10-17",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "class_key_mismatch",
+          "why": "a leaked beta key cannot mint paid BeamFlix grants"
+        }
+      ]
+    },
+    {
+      "file": "v2_beamflix_expired.sigil",
+      "payload": "v2_beamflix_expired.payload.json",
+      "signed_by_role": "test-paid",
+      "sigil_verify": "verified",
+      "policy_evals": [
+        {
+          "now_utc_date": "2026-09-17",
+          "product": "mecha-beamflix",
+          "app_major": 0,
+          "app_minor": 1,
+          "expect": "authorized",
+          "why": "expiry day is inclusive"
+        },
+        {
+          "now_utc_date": "2026-09-18",
+          "product": "mecha-beamflix",
+          "app_major": 0,
+          "app_minor": 1,
+          "expect": "expired",
+          "why": "expired on every clock after 2026-09-17"
+        },
+        {
+          "now_utc_date": "2026-11-10",
+          "product": "mecha-beamflix",
+          "app_major": 0,
+          "app_minor": 1,
+          "expect": "expired"
         }
       ]
     }
