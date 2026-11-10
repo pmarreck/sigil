@@ -133,32 +133,41 @@ else
 	fi
 fi
 
+# Every suite from here on is independent: each works in its own scratch
+# directory, no suite writes into the repository (license_vectors_v2.sh
+# regenerates in scratch), and the binaries are read-only. They are queued in
+# a fixed order, run with at most SIGIL_TEST_JOBS at once (default: the core
+# count, capped at 16), and reported afterwards in queue order.
+QUEUE_NAMES=()
+QUEUE_CMDS=()
+queue() { QUEUE_NAMES+=("$1"); QUEUE_CMDS+=("$2"); }
+
 # Zig unit tests — `--summary all` makes Zig emit "N/N tests passed"
-# which run_suite's grep can pick up.
-run_suite "Zig Unit Tests" "$NIXDEV zig build test --summary all 2>&1"
+# which report_suite's grep can pick up.
+queue "Zig Unit Tests" "$NIXDEV zig build test --summary all 2>&1"
 
 # Architecture invariant: the shipping verifier contains no signing code.
 if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then
-	run_suite "Symbol Separation" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
+	queue "Symbol Separation" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols'"
 fi
 # The same invariant for the Rust verify library. Required: no skip.
-run_suite "Symbol Separation (Rust)" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols_rust'"
+queue "Symbol Separation (Rust)" "$NIXDEV bash '$SCRIPT_DIR/tests/test_no_signing_symbols_rust'"
 
 # The customer's link path: stock cc against libsigil.a, exercising the
 # sigil_verify primitive that the C CLI never calls.
 if [[ -f "$SCRIPT_DIR/tests/test_c_conformance" ]]; then
-	run_suite "C Conformance (stock cc)" "bash '$SCRIPT_DIR/tests/test_c_conformance'"
+	queue "C Conformance (stock cc)" "bash '$SCRIPT_DIR/tests/test_c_conformance'"
 fi
 
 # The Rust implementation must answer exactly as the Zig one does. The same
 # C driver is linked against each archive and the outputs are compared. These
 # suites are required: a missing script fails here rather than skipping.
-run_suite "Differential (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/run'"
-run_suite "Differential mecha_policy (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/policy'"
-run_suite "Differential signing (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/sign'"
+queue "Differential (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/run'"
+queue "Differential mecha_policy (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/policy'"
+queue "Differential signing (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/sign'"
 
 # The Rust CLI may reach an implementation only through the C ABI.
-run_suite "Rust CLI boundary" "$NIXDEV bash '$SCRIPT_DIR/tests/test_rust_cli_boundary'"
+queue "Rust CLI boundary" "$NIXDEV bash '$SCRIPT_DIR/tests/test_rust_cli_boundary'"
 
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
@@ -174,38 +183,42 @@ PAIR_BINS=(
 SIGIL_PAIR_BINS="$SIGIL_BIN"
 for b in "${PAIR_BINS[@]}"; do SIGIL_PAIR_BINS="$SIGIL_PAIR_BINS:$b"; done
 export SIGIL_PAIR_BINS
-run_suite "CLI Surface" "$NIXDEV bash '$SCRIPT_DIR/tests/cli/test_cli'"
+queue "CLI Surface" "$NIXDEV bash '$SCRIPT_DIR/tests/cli/test_cli'"
 
 # Integration tests — add as they're written.
 for t in "$SCRIPT_DIR"/tests/integration/*.sh; do
 	[[ -f "$t" ]] || continue
-	run_suite "Integration: ${t##*/}" "$NIXDEV bash '$t'"
+	queue "Integration: ${t##*/}" "$NIXDEV bash '$t'"
 done
 
 # The same suites again on every other pair. A suite drives the binary when
 # it reads SIGIL_BIN; that is discovered here rather than listed, so a new
 # suite joins every pair. A missing pair fails, never skips.
-#
-# The three passes run concurrently: each suite works in its own scratch
-# directory, and no suite writes into the repository (license_vectors_v2.sh
-# regenerates in scratch). Results are reported afterwards in a fixed order.
 PAIR_SUITES=()
 for t in "$SCRIPT_DIR/tests/cli/test_cli" "$SCRIPT_DIR"/tests/integration/*.sh; do
 	if [[ -f "$t" ]] && grep -q 'SIGIL_BIN' "$t"; then PAIR_SUITES+=("$t"); fi
 done
-pair_pass() {
-	local p="$1" n
-	for n in "${!PAIR_SUITES[@]}"; do
-		exec_suite "$RUN_DIR/pair-$p-$n" "SIGIL_BIN='${PAIR_BINS[p]}' $NIXDEV bash '${PAIR_SUITES[n]}'"
-	done
-}
-for p in "${!PAIR_BINS[@]}"; do pair_pass "$p" & done
-wait
 for p in "${!PAIR_BINS[@]}"; do
-	run_suite "${PAIR_LABELS[p]}: the binary was built" "test -x '${PAIR_BINS[p]}' && echo '1 passed'"
-	for n in "${!PAIR_SUITES[@]}"; do
-		report_suite "${PAIR_LABELS[p]}: ${PAIR_SUITES[n]##*/}" "$RUN_DIR/pair-$p-$n"
+	queue "${PAIR_LABELS[p]}: the binary was built" "test -x '${PAIR_BINS[p]}' && echo '1 passed'"
+	for t in "${PAIR_SUITES[@]}"; do
+		queue "${PAIR_LABELS[p]}: ${t##*/}" "SIGIL_BIN='${PAIR_BINS[p]}' $NIXDEV bash '$t'"
 	done
+done
+
+cores=$(nproc 2>/dev/null || echo 4)
+JOBS="${SIGIL_TEST_JOBS:-$(( cores > 16 ? 16 : cores ))}"
+running=0
+for i in "${!QUEUE_CMDS[@]}"; do
+	if (( running >= JOBS )); then
+		wait -n
+		running=$((running - 1))
+	fi
+	exec_suite "$RUN_DIR/q-$i" "${QUEUE_CMDS[i]}" &
+	running=$((running + 1))
+done
+wait
+for i in "${!QUEUE_NAMES[@]}"; do
+	report_suite "${QUEUE_NAMES[i]}" "$RUN_DIR/q-$i"
 done
 
 # Timing report. Some suites run concurrently, so the sum of suite times is
@@ -218,7 +231,7 @@ run_seconds=$(seconds_between "$RUN_STARTED" "$RUN_ENDED")
 execution_seconds=$(awk -v r="$run_seconds" -v b="${BUILD_SECONDS%s}" 'BEGIN { if (b == "skipped") b = 0; printf "%.1f", r - b }')
 echo ""
 echo "Timing ($CLOCK clock): build $BUILD_SECONDS; execution ${execution_seconds}s wall;"
-echo "suite time ${suite_seconds}s summed over ${#TIMINGS[@]} suites (pair passes overlap). Costliest:"
+echo "suite time ${suite_seconds}s summed over ${#TIMINGS[@]} suites, up to $JOBS at once. Costliest:"
 sort -t$'\t' -k1,1 -rn "$RUN_DIR/timings" >"$RUN_DIR/timings.sorted"
 awk -F'\t' 'NR <= 10 { printf "  %8ss  %s\n", $1, $2 }' "$RUN_DIR/timings.sorted"
 
