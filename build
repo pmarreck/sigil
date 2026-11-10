@@ -54,6 +54,12 @@ if [[ "$optimize" != "ReleaseFast" ]]; then
 	run nix develop -c zig build "-Doptimize=$optimize" "$@"
 elif command -v nix >/dev/null 2>&1; then
 	run mkdir -p "${NIX_OUT%/*}"
+	# Build every package in one invocation first, so Nix runs the
+	# independent ones concurrently (max-jobs); the per-package builds below
+	# then only create their out-links.
+	run nix build --no-link "$@" .#default .#sigil-rust .#sigil-c-on-rust \
+		.#sigil-rust-cli-on-zig .#sigil-rust-cli-on-rust .#mecha-policy-zig \
+		.#zig-consumer-results
 	run nix build --out-link "$NIX_OUT" "$@"
 	link_output bin/sigil
 	# Link EVERY archive the flake produces. tests/test_no_signing_symbols
@@ -79,6 +85,9 @@ elif command -v nix >/dev/null 2>&1; then
 	run nix build .#sigil-rust-cli-on-rust --out-link .nix-out/rust-cli-on-rust
 	# The pinned Zig mecha_policy, the oracle for tests/differential/policy.
 	run nix build .#mecha-policy-zig --out-link .nix-out/mecha-policy-zig
+	# The downstream Zig consumer's recorded results, read by
+	# tests/integration/zig_consumer.sh.
+	run nix build .#zig-consumer-results --out-link .nix-out/zig-consumer
 else
 	unlink_outputs
 	run zig build "-Doptimize=$optimize" "$@"

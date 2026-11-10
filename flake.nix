@@ -277,6 +277,66 @@
           ln -s ${mecha-policy}/include/mecha_policy.h $out/include/mecha_policy.h
         '';
 
+        # The downstream Zig consumer (tests/zig_consumer) compiled once here,
+        # so its cross-target builds rerun only when the Zig package or the
+        # consumer changes, not on every ./test. Its source is the Zig
+        # package's declared paths, the consumer, and the conformance program
+        # the consumer links. Each step's exit status and log are recorded as
+        # data instead of failing this build, so
+        # tests/integration/zig_consumer.sh reports every target on its own;
+        # the conformance program is installed for that suite to run and
+        # inspect. The steps run concurrently.
+        packages.zig-consumer-results = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-zig-consumer-results";
+          inherit version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions ((map (p: ./. + "/${p}") zonPaths) ++ [
+              ./tests/zig_consumer
+              ./tests/conformance/verify_conformance.c
+            ]);
+          };
+          nativeBuildInputs = [ zigPkg ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
+          dontConfigure = true;
+          dontFixup = true;
+          dontInstall = true;
+          buildPhase = ''
+            ${zigSetup}
+            root=$PWD
+            pkg=()
+            [ -d "$root/zig-pkg" ] && pkg=(--system "$root/zig-pkg")
+            mkdir -p $out/steps
+            # step NAME ARGS...: one zig build of the consumer, its own cache.
+            step() {
+              local name=$1; shift
+              if (cd "$root/tests/zig_consumer" && zig build "''${pkg[@]}" \
+                  --cache-dir "$TMPDIR/cache-$name" "$@") >"$out/steps/$name.log" 2>&1; then
+                echo 0 >"$out/steps/$name.rc"
+              else
+                echo $? >"$out/steps/$name.rc"
+              fi
+            }
+            pids=()
+            while IFS= read -r t; do
+              [ -n "$t" ] || continue
+              step "resolve-$t" resolve "-Dtarget=$t" &
+              pids+=($!)
+            done < "$root/tests/zig_consumer/targets"
+            step install install --prefix "$out" &
+            pids+=($!)
+            for p in "''${pids[@]}"; do wait "$p"; done
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              # Zig writes an FHS loader path; repoint it at the stdenv loader
+              # so the suite can run the program on NixOS.
+              exe=$out/bin/verify_conformance
+              if [ -f "$exe" ]; then
+                patchelf --set-interpreter "$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)" "$exe"
+              fi
+            ''}
+          '';
+        };
+
         # NOTE: don't key on ${system} here — flake-utils.eachDefaultSystem
         # already wraps the returned attrs in ${system}. Writing
         # `checks.${system} = ...` produces checks.<sys>.<sys>, which CI
@@ -357,6 +417,7 @@
             SIGIL_RUST_ON_ZIG_OUT = self.packages.${system}.sigil-rust-cli-on-zig;
             SIGIL_RUST_ON_RUST_OUT = self.packages.${system}.sigil-rust-cli-on-rust;
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
+            SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
