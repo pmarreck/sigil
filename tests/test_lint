@@ -66,6 +66,7 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/scripts/c-header-functions" \
 		"$REPO_ROOT/scripts/prelink-staticlib" \
 		"$REPO_ROOT/tests/integration/ceremony_preflight.sh" \
+		"$REPO_ROOT/tests/integration/cross_impl.sh" \
 		"$REPO_ROOT/ceremony-preflight"
 	do
 		[[ -f "$candidate" ]] && shell_scripts+=("$candidate")
