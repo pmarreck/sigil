@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Differential test: the Zig and Rust implementations must answer identically.
+#
+# The same C driver is linked once against each implementation's libsigil.a
+# with a stock C compiler, and the two outputs are compared byte for byte.
+# A missing implementation is a failure, never a skip: a differential control
+# with one side absent proves nothing.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ZIG_OUT="${SIGIL_ZIG_OUT:-$REPO_ROOT/zig-out}"
+RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
+CC="${CC:-cc}"
+
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1" >&2; [[ $# -gt 1 ]] && printf '       %s\n' "$2" >&2; }
+finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-differential-XXXXXX")" || exit 1
+trap 'rm -rf -- "$work"' EXIT
+
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	lib="$out/lib/libsigil.a"
+	if [[ ! -f "$lib" ]]; then
+		fail "$impl implementation provides lib/libsigil.a" "missing: $lib"
+		finish
+	fi
+	# The Rust archive carries the Rust standard library, which needs the
+	# platform's thread and dynamic-loading libraries on some toolchains.
+	# Naming them is harmless for the Zig archive.
+	build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+		"$SCRIPT_DIR/driver.c" "$lib" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1)
+	build_rc=$?
+	if [[ $build_rc -ne 0 ]]; then
+		fail "$impl archive links the driver with a stock C compiler" "$build_log"
+		finish
+	fi
+	pass "$impl archive links the driver with a stock C compiler"
+done
+
+"$work/driver-zig" meta >"$work/meta-zig" 2>"$work/meta-zig.err"
+zig_rc=$?
+"$work/driver-rust" meta >"$work/meta-rust" 2>"$work/meta-rust.err"
+rust_rc=$?
+if [[ $zig_rc -eq 0 && $rust_rc -eq 0 ]]; then
+	pass "both drivers report metadata"
+else
+	fail "both drivers report metadata" "zig rc=$zig_rc rust rc=$rust_rc"
+fi
+
+# Guard against a vacuous comparison: two empty files are equal.
+lines=$(wc -l <"$work/meta-zig")
+if [[ "$lines" -ge 52 ]]; then
+	pass "metadata record covers version, lengths and every error code"
+else
+	fail "metadata record covers version, lengths and every error code" "only $lines lines"
+fi
+
+if diff_out=$(diff "$work/meta-zig" "$work/meta-rust"); then
+	pass "version, lengths and all error strings are identical"
+else
+	fail "version, lengths and all error strings are identical" "$diff_out"
+fi
+
+finish

@@ -124,6 +124,34 @@
           dontInstall = true;
         };
 
+        packages.sigil-zig = self.packages.${system}.default;
+
+        # The Rust implementation, held to the Zig one by tests/differential.
+        # It installs the same tree shape: the C header and an archive named
+        # libsigil.a, so a consumer's link line does not depend on which
+        # implementation it was given. Cargo's unit tests run in checkPhase.
+        packages.sigil-rust = pkgs.rustPlatform.buildRustPackage {
+          pname = "${pname}-rust";
+          inherit version;
+          src = ./.;
+          cargoRoot = "rust";
+          buildAndTestSubdir = "rust";
+          cargoLock.lockFile = ./rust/Cargo.lock;
+          nativeBuildInputs = [ pkgs.clippy ];
+          preBuild = ''
+            (cd rust && cargo clippy --offline --workspace --all-targets -- -D warnings)
+          '';
+          installPhase = ''
+            runHook preInstall
+            archive=$(find . -path '*/release/libsigil_ffi.a' | head -1)
+            [ -n "$archive" ] || { echo "no libsigil_ffi.a was built" >&2; exit 1; }
+            mkdir -p $out/lib $out/include
+            cp "$archive" $out/lib/libsigil.a
+            cp include/sigil.h $out/include/sigil.h
+            runHook postInstall
+          '';
+        };
+
         # NOTE: don't key on ${system} here — flake-utils.eachDefaultSystem
         # already wraps the returned attrs in ${system}. Writing
         # `checks.${system} = ...` produces checks.<sys>.<sys>, which CI
@@ -197,6 +225,9 @@
             pname = "${pname}-test-all";
             inherit version;
             src = ./.;
+            # The Rust implementation is handed to the suite by path, already
+            # built: a sandboxed check cannot run a nested nix build.
+            SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pbCli ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
             dontConfigure = true;
@@ -268,6 +299,11 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             zigPkg
+            # Rust toolchain for the port under rust/, from the pinned nixpkgs.
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.clippy
+            pkgs.rustfmt
             pkgs.hyperfine
             pkgs.jq
             # Linters for the masked-return-value class (tests/test_lint).

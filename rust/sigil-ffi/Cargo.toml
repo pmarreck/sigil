@@ -1,0 +1,18 @@
+[package]
+name = "sigil-ffi"
+description = "C ABI for the sigil verifier, exporting include/sigil.h."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sigil_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+sigil = { path = "../sigil" }
+
+[lints]
+workspace = true

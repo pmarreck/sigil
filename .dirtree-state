@@ -33,6 +33,7 @@ annotate=[
 	examples/update_vectors = mecha-update/v1 signed test vectors for validate_gui's updater TDD — test-only keypair, valid + 4 rejection cases, error-class asserted by tests/integration/update_vectors.sh
 	include/sigil_sign.h = Header for libsigil_sign.a. NOT for products - they link libsigil.a only.
 	mutate = Mutation testing: plants known defects, counts kills. Found the FFI leak-blindness. Allowlist of accepted survivors.
+	rust = Rust port workspace: sigil (verify core), sigil-ffi (C ABI staticlib)
 	src/envelope.zig = JSON envelope parse/write + verifyEnvelope: decode printable-binary, verify, only then release payload bytes.
 	src/ffi.zig = The C ABI (real public API): every export fn sigil_*, incl. sigil_verify_envelope and sigil_strerror. Static lib root.
 	src/ffi_sign.zig = Signing C ABI in a SEPARATE libsigil_sign.a. Only place randomness lives. No secret ever crosses the boundary.
@@ -47,6 +48,7 @@ annotate=[
 	src/verify.zig = Ed25519 primitive: verify(payload, sig, pubkey). Pure, std-only, the entire dependency budget of an embedder.
 	test = Master suite: Zig unit tests + CLI tests. Exit code = failure count.
 	tests/cli/test_cli = Bash CLI surface tests. Never set -e: most cases assert non-zero exits.
+	tests/differential = Zig-vs-Rust differential: one C driver linked against each archive, outputs compared
 	tests/integration/hint_vectors.sh = Hint vectors: byte-identical regeneration, coreutils recompute, input/hint equivalence classes
 	tests/integration/install_cert_vectors.sh = Verifies install-cert vectors under their key only, license hashes against real envelopes, machine hashes via coreutils
 	tests/integration/license_vectors.sh = Crypto-layer assertions over the license-class vectors: role verification byte-identity, cross-role SIGNATURE-class rejection, manifest consistency, vacuity guards

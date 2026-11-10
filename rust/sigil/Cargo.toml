@@ -1,0 +1,11 @@
+[package]
+name = "sigil"
+description = "Verify Ed25519-signed sigil documents. Contains no signing code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

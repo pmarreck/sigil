@@ -104,6 +104,12 @@ if [[ -f "$SCRIPT_DIR/tests/test_c_conformance" ]]; then
 	run_suite "C Conformance (stock cc)" "bash '$SCRIPT_DIR/tests/test_c_conformance'"
 fi
 
+# The Rust implementation must answer exactly as the Zig one does. The same
+# C driver is linked against each archive and the outputs are compared.
+if [[ -f "$SCRIPT_DIR/tests/differential/run" ]]; then
+	run_suite "Differential (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential/run'"
+fi
+
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
 if [[ -f "$SCRIPT_DIR/tests/cli/test_cli" ]]; then

@@ -43,3 +43,6 @@ zig-pkg
 
 # ./mutate takes this as a mutual-exclusion lock while it plants defects.
 .mutate.lock/
+
+# Cargo build cache for the Rust port
+rust/target/

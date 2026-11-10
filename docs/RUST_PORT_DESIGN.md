@@ -13,6 +13,11 @@ owner). Everything else is a proposal and can be changed before code lands.
 5. Both work with exactly the same data.
 6. The shared admission rules (mecha_policy: decide, install decide, machine
    hash, hint hash) are ported into the same Rust workspace.
+7. The port includes a Rust CLI. The same test suite runs across both CLI
+   surfaces, and the two libraries' ABIs are close enough that a consumer
+   can use either.
+8. Each frontend also runs against the other implementation's library through
+   that library's ABI, so the cross pairs both test and dogfood the ABI.
 
 ## Why two implementations are a risk, and what holds them together
 
@@ -23,17 +28,19 @@ rather than producing a report:
 - **One C ABI.** `include/sigil.h` and `include/sigil_sign.h` are the contract.
   The Rust libraries export exactly those symbols with exactly those error
   codes. No second header exists.
-- **One CLI source.** `cli/main.c` is already a pure consumer of that ABI. It
-  is compiled twice, once against each implementation's libraries, giving two
-  `sigil` binaries. `tests/cli/test_cli` and every integration suite run
-  unchanged against both through `SIGIL_BIN`. This satisfies ruling 3 without
-  a second argument parser that could drift.
+- **Two frontends, both pure ABI consumers.** The existing CLI is C
+  (`cli/main.c`), deliberately unable to import the Zig core. The Rust CLI
+  (`rust/sigil-cli`) follows the same rule: it declares the functions of the
+  two headers as `extern "C"` and never depends on the Rust core crates, so
+  the ABI is dogfooded on the Rust side too.
+- **A two-by-two matrix.** Each frontend links each library, giving four
+  `sigil` binaries: C on Zig, C on Rust, Rust on Zig and Rust on Rust.
+  `tests/cli/test_cli` and every integration suite run unchanged against all
+  four through `SIGIL_BIN`. The cross pairs prove the ABIs are
+  interchangeable; the same-language pairs are what ships. Output must be
+  byte-identical across the four wherever the suite asserts bytes.
 - **Differential checks.** Shared vectors plus a differential fuzz compare the
   two on verdict, error class and output bytes (see "Differential testing").
-
-The C CLI staying in C is a proposal. If the owner wants the CLI itself in
-Rust, it becomes a third binary held to the same suite; the C one would still
-be needed to dogfood the ABI.
 
 ## Workspace layout
 
@@ -46,6 +53,7 @@ rust/
   sigil-ffi/              staticlib exporting include/sigil.h
   sigil-sign-ffi/         staticlib exporting include/sigil_sign.h
   mecha-policy-ffi/       staticlib exporting mecha_policy.h
+  sigil-cli/              the Rust CLI, an extern "C" consumer of both headers
 ```
 
 - `sigil` depends on no signing code, mirroring `libsigil.a` against
@@ -151,11 +159,12 @@ the pinned Zig library as the oracle.
    differential fuzz agree with Zig.
 3. `mecha-policy`, same gate against the Zig library.
 4. `sigil-sign`: seal and keyfile known answers, key providers, paper, QR,
-   PDF, then the second CLI binary passing `tests/cli` unchanged.
-5. `CANONICAL_IMPL` selection and publication.
+   PDF, with the C CLI on the Rust libraries passing `tests/cli` unchanged.
+5. `sigil-cli` in Rust, then all four frontend and library pairs passing.
+6. `CANONICAL_IMPL` selection and publication.
 
 Consumers can pin after step 2 (verify) and step 3 (policy). Which
-implementation is canonical after step 5 is an owner decision and stays `zig`
+implementation is canonical after step 6 is an owner decision and stays `zig`
 until asked.
 
 ## Costs to keep in view
