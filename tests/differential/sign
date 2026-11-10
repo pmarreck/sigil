@@ -1,0 +1,461 @@
+#!/usr/bin/env bash
+# Differential test for the signing library (include/sigil_sign.h): the Zig
+# and Rust libsigil_sign.a must answer identically, and both must match the
+# oracles that neither implementation's current code produced: the committed
+# license envelopes and public keys, and OpenSSL's Ed25519 for the fixture
+# seeds.
+#
+# One C driver (sign_driver.c) is linked against each archive with a stock C
+# compiler. A missing implementation is a failure, never a skip. Every key
+# used here is TEST-ONLY with a public passphrase; the cheap fixtures use tiny
+# KDF parameters so the suite stays fast.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ZIG_OUT="${SIGIL_ZIG_OUT:-$REPO_ROOT/zig-out}"
+RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
+CC="${CC:-cc}"
+FUZZ_CASES="${SIGIL_DIFF_FUZZ_CASES:-1500}"
+SV="$REPO_ROOT/examples/sign_vectors"
+HEADER="$REPO_ROOT/include/sigil_sign.h"
+
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+	if [[ $# -gt 1 ]]; then head -20 <<<"$2" | sed 's/^/       /' >&2; fi
+}
+finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-sign-differential-XXXXXX")" || exit 1
+trap 'rm -rf -- "$work"' EXIT
+
+# ── Build one driver per implementation ─────────────────────────────────────
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	lib="$out/lib/libsigil_sign.a"
+	if [[ ! -f "$lib" ]]; then
+		fail "$impl implementation provides lib/libsigil_sign.a" "missing: $lib"
+		finish
+	fi
+	# The Zig archive references roundq and the 128-bit float helpers
+	# (std.json's number parser), which a stock C toolchain supplies through
+	# libquadmath. The Rust archive needs the platform thread and loader
+	# libraries for its standard library.
+	extra=()
+	[[ "$impl" == zig ]] && extra=(-lquadmath)
+	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+		"$SCRIPT_DIR/sign_driver.c" "$lib" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+		pass "$impl archive links the driver, which calls every declared function"
+	else
+		fail "$impl archive links the driver, which calls every declared function" "$build_log"
+		finish
+	fi
+done
+
+if cmp -s "$HEADER" "$RUST_OUT/include/sigil_sign.h"; then
+	pass "the Rust package ships include/sigil_sign.h unchanged"
+else
+	fail "the Rust package ships include/sigil_sign.h unchanged"
+fi
+
+# ── Export inventory, parsed from the header ────────────────────────────────
+# Declarations start a line with their return type; comments start with
+# "/*" or " *", so a function named in prose is not mistaken for one.
+if ! grep -oE '^[a-z][a-z ]*[ *]sigil_[a-z0-9_]+\(' "$HEADER" >"$work/decl-lines"; then
+	fail "parse the declared functions from sigil_sign.h"
+	finish
+fi
+grep -oE 'sigil_[a-z0-9_]+' "$work/decl-lines" >"$work/declared"
+sort -u -o "$work/declared" "$work/declared"
+declared=$(<"$work/declared")
+declared_count=$(wc -l <"$work/declared")
+if [[ $declared_count -lt 7 ]]; then
+	fail "parse the declared functions from sigil_sign.h" "only $declared_count found"
+	finish
+fi
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	nm -g --defined-only "$out/lib/libsigil_sign.a" >"$work/nm-$impl" 2>/dev/null
+	awk '$2 == "T" && $3 ~ /^sigil_/ { print $3 }' "$work/nm-$impl" >"$work/exported-$impl"
+	sort -u -o "$work/exported-$impl" "$work/exported-$impl"
+	# Exactly the declared set: an extra sigil_ export (verify functions, say)
+	# would collide with libsigil.a in a binary that links both.
+	if inventory=$(diff "$work/declared" "$work/exported-$impl"); then
+		pass "$impl archive exports exactly the $declared_count declared sigil_ functions"
+	else
+		fail "$impl archive exports exactly the declared sigil_ functions" "$inventory"
+	fi
+done
+uncalled=""
+for fn in $declared; do
+	grep -qE "\\b${fn}[[:space:]]*\\(" "$SCRIPT_DIR/sign_driver.c" || uncalled="$uncalled $fn"
+done
+if [[ -z "$uncalled" ]]; then
+	pass "the driver calls every declared function"
+else
+	fail "the driver calls every declared function" "never called:$uncalled"
+fi
+
+# same MIN_LINES ARGS...: both drivers succeed, produce enough output and
+# agree byte for byte. Reason in $DETAIL on failure; records nothing.
+DETAIL=""
+same() {
+	local min_lines="$1" impl rc lines
+	shift
+	for impl in zig rust; do
+		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl"
+		rc=$?
+		if [[ $rc -ne 0 ]]; then
+			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl")"
+			return 1
+		fi
+	done
+	lines=$(wc -l <"$work/out-zig")
+	if [[ $lines -lt $min_lines ]]; then
+		DETAIL="only $lines output lines; expected at least $min_lines"
+		return 1
+	fi
+	DETAIL=$(diff "$work/out-zig" "$work/out-rust") || return 1
+	DETAIL=""
+}
+compare() {
+	local label="$1"
+	shift
+	if same "$@"; then pass "$label"; else fail "$label" "$DETAIL"; return 1; fi
+}
+
+# expect LABEL FILE: the last comparison's output contains every line of FILE.
+expect() {
+	local label="$1" missing
+	missing=$(grep -vxFf "$work/out-zig" "$2")
+	if [[ -z "$missing" ]]; then pass "$label"; else fail "$label" "missing: $missing"; fi
+}
+
+compare "every error code has the same name" 49 meta
+
+# ── Independent oracle: OpenSSL's Ed25519 for the fixture seeds ─────────────
+# PKCS#8 for an Ed25519 seed is a fixed 16-byte prefix plus the seed.
+seed_der() {
+	printf '302e020100300506032b657004220420%s' "$(printf "%0.s$1" {1..32})" | xxd -r -p >"$2"
+}
+seed_der 5a "$work/seed5a.der"
+seed_der 6b "$work/seed6b.der"
+# seed_pub DER: the raw public key in hex. seed_pem DER: the PEM in hex.
+seed_pub() {
+	openssl pkey -inform DER -in "$1" -pubout -outform DER -out "$work/spki.der" || return 1
+	tail -c 32 "$work/spki.der" >"$work/raw.pub" || return 1
+	xxd -p -c 64 "$work/raw.pub"
+}
+seed_pem() {
+	openssl pkey -inform DER -in "$1" -out "$work/seed.pem" || return 1
+	xxd -p -c 256 "$work/seed.pem"
+}
+pub5a=$(seed_pub "$work/seed5a.der")
+pub6b=$(seed_pub "$work/seed6b.der")
+pem5a=$(seed_pem "$work/seed5a.der")
+if [[ ${#pub5a} -ne 64 || ${#pub6b} -ne 64 || -z "$pem5a" ]]; then
+	fail "OpenSSL derives the fixture seeds' public keys and PEM" "pub5a=$pub5a pub6b=$pub6b"
+	finish
+fi
+
+if compare "keyfile operations agree on the cheap fixture" 16 keyfile "$SV/cheap.key" "$SV/passphrase.txt"; then
+	cat >"$work/expect" <<-EOF
+		pubkey 0 $pub5a
+		seal null out -3
+		seal null keyfile -3
+		seal null passphrase -3
+		seal null payload -3
+		seal null length -3
+		seal wrong passphrase -22
+		pubkey null out -3
+		pubkey null keyfile -3
+		open keyfile as bundle -27
+	EOF
+	expect "both derive OpenSSL's public key for seed 5a and refuse as the header documents" "$work/expect"
+fi
+if compare "keyfile operations agree on the two-lane fixture" 16 keyfile "$SV/cheap_lanes.key" "$SV/passphrase.txt"; then
+	printf 'pubkey 0 %s\n' "$pub6b" >"$work/expect"
+	expect "both derive OpenSSL's public key for seed 6b under two lanes" "$work/expect"
+fi
+if compare "hot bundle operations agree on the cheap fixture" 6 bundle "$SV/cheap.hot.sealed" "$SV/passphrase.txt"; then
+	cat >"$work/expect" <<-EOF
+		open 0 $((${#pem5a} / 2)) $pem5a
+		open wrong passphrase -22
+		open null bundle -3
+		open null length -3
+		bundle as keyfile -21
+	EOF
+	expect "both open the bundle to OpenSSL's PEM for seed 5a" "$work/expect"
+fi
+
+# ── Independent oracle: the committed license envelopes ─────────────────────
+# Ed25519 is deterministic, so sealing a committed payload with its test key
+# must reproduce the committed envelope. One vector per manifest and role
+# covers both keys at production KDF parameters without paying for all of
+# them.
+printf '%s' test-beta-not-for-production >"$work/pp-test-beta"
+printf '%s' test-paid-not-for-production >"$work/pp-test-paid"
+reproduced=0
+for manifest in examples/license_vectors/manifest.json examples/license_vectors_v2/manifest.json; do
+	dir="$REPO_ROOT/${manifest%/manifest.json}"
+	if ! jq -r '[.vectors[] | select(.signed_by_role == "test-beta" or .signed_by_role == "test-paid")]
+		| group_by(.signed_by_role)[] | first | [.signed_by_role, .payload, .file] | @tsv' \
+		"$REPO_ROOT/$manifest" >"$work/reproduce.tsv"; then
+		fail "read the signed vectors from $manifest"
+		continue
+	fi
+	while IFS=$'\t' read -r role payload envelope; do
+		key="$REPO_ROOT/examples/license_vectors/${role//-/_}.key"
+		for impl in zig rust; do
+			if "$work/driver-$impl" seal "$key" "$work/pp-$role" "$dir/$payload" >"$work/sealed" 2>"$work/err" \
+				&& cmp -s "$work/sealed" "$dir/$envelope"; then
+				reproduced=$((reproduced + 1))
+			else
+				err=$(<"$work/err")
+				fail "$impl reproduces ${manifest%/manifest.json}/$envelope" "$err"
+			fi
+		done
+	done <"$work/reproduce.tsv"
+done
+if [[ $reproduced -eq 8 ]]; then
+	pass "both reproduce a committed envelope per manifest and role, byte for byte ($reproduced seals)"
+else
+	fail "both reproduce a committed envelope per manifest and role" "$reproduced of 8"
+fi
+
+# ── Keys generated by each implementation open in the other ─────────────────
+printf '%s' "keygen-differential-pass" >"$work/kg-pass"
+for impl in zig rust; do
+	if ! "$work/driver-$impl" keygen "$work/gen-$impl.key" "$work/gen-$impl.hot.sealed" \
+		"keygen-differential-pass" >"$work/keygen-$impl" 2>"$work/err"; then
+		err=$(<"$work/err")
+		fail "$impl generates a key pair" "$err"
+		finish
+	fi
+done
+if keygen_diff=$(diff "$work/keygen-zig" "$work/keygen-rust"); then
+	pass "keygen agrees on success and every refusal"
+else
+	fail "keygen agrees on success and every refusal" "$keygen_diff"
+fi
+# custody_ok LABEL OPS KEY BUNDLE: both agree and every one of OPS succeeded.
+custody_ok() {
+	local label="$1" ops="$2" ok
+	shift 2
+	if ! same "$ops" custody "$@" "$work/kg-pass"; then
+		fail "$label" "$DETAIL"
+		return
+	fi
+	ok=$(grep -c '^[a-z]* 0 ' "$work/out-zig")
+	if [[ $ok -eq $ops ]]; then
+		pass "$label"
+	else
+		DETAIL=$(<"$work/out-zig")
+		fail "$label" "$DETAIL"
+	fi
+}
+for maker in zig rust; do
+	custody_ok "a key pair made by $maker opens, signs and restores identically in both" 3 \
+		"$work/gen-$maker.key" "$work/gen-$maker.hot.sealed"
+	custody_ok "a single keyfile made by $maker opens and signs identically in both" 2 \
+		"$work/gen-$maker.key.single" -
+done
+
+# ── Hand-written keyfile variants around the strict parser ──────────────────
+# Every variant keeps the KDF cheap: values that would be expensive are
+# either rejected by the parser (overflow) or never written.
+base=$(<"$SV/cheap.key")
+vdir="$work/variants"
+mkdir -p "$vdir"
+variant() { printf '%s' "$2" >"$vdir/$1"; }
+sub() { variant "$1" "${base/"$2"/"$3"}"; }
+# jqv NAME FILTER: a structural edit, written without a trailing newline.
+jqv() { jq -j "$2" <<<"$base" >"$vdir/$1" || fail "jq builds variant $1"; }
+bs=$'\x5c' # a JSON escape's backslash, built here so no editor folds it
+variant base "$base"
+variant base_newline "$base"$'\n'
+variant crlf "$base"$'\r\n'
+variant leading_space " $base"
+variant trailing_garbage "${base}x"
+variant trailing_object "${base}{}"
+printf '\xef\xbb\xbf%s' "$base" >"$vdir/bom"
+jqv pretty .
+jqv reordered '{ciphertext, nonce, salt, p, m, t, kdf, sigil} | tojson'
+for spec in t:0 t:2 t:1.0 t:1e0 't:"1"' t:-1 t:-0 t:01 t:+1 t:4294967296 t:null 't:{}' \
+	m:0 m:7 m:8 m:65 m:064 m:18446744073709551616 p:0 p:2 p:8 p:9 p:16777216; do
+	field=${spec%%:*}
+	case $field in t) from='"t":1' ;; m) from='"m":64' ;; *) from='"p":1' ;; esac
+	value=${spec#*:}
+	value=${value//-/neg}
+	value=${value//+/plus}
+	value=${value//\"/q}
+	value=${value//\{/lb}
+	value=${value//\}/rb}
+	name="${field}_${value}"
+	sub "$name" "$from" "\"$field\":${spec#*:}"
+done
+sub t_spaced '"t":1' '"t" : 1 '
+sub dup_t '"t":1' '"t":1,"t":1'
+sub unknown_field '{"sigil"' '{"x":1,"sigil"'
+sub old_public_field '{"sigil"' '{"public":"abc","sigil"'
+sub escaped_key '"t":1' "\"${bs}u0074\":1"
+sub escaped_value '"secret-key-v1"' "\"secret-key-${bs}u0076${bs}u0031\""
+sub sigil_v2 '"secret-key-v1"' '"secret-key-v2"'
+sub as_hot_bundle '"secret-key-v1"' '"hot-bundle-v1"'
+sub kdf_lower '"Argon2id"' '"argon2id"'
+sub kdf_scrypt '"Argon2id"' '"scrypt"'
+sub sigil_number '"sigil":"secret-key-v1"' '"sigil":1'
+jqv missing_salt 'del(.salt) | tojson'
+jqv missing_t 'del(.t) | tojson'
+jqv missing_ciphertext 'del(.ciphertext) | tojson'
+jqv salt_short '.salt |= .[:-1] | tojson'
+jqv salt_long '.salt += "A" | tojson'
+jqv nonce_short '.nonce |= .[:-1] | tojson'
+jqv ciphertext_short '.ciphertext |= .[:-1] | tojson'
+jqv ciphertext_swapped '.ciphertext |= (.[1:2] + .[0:1] + .[2:]) | tojson'
+jqv salt_ascii_alias '.salt |= ("0" + .[1:]) | tojson'
+jqv nested_sigil '.sigil = {"a":1} | tojson'
+variant empty ""
+variant empty_object "{}"
+variant array "[]"
+variant json_null "null"
+variant json_string '"x"'
+variant not_json "hello"
+fd -t f . "$vdir" >"$work/variant-list"
+sort -o "$work/variant-list" "$work/variant-list"
+variants=$(wc -l <"$work/variant-list")
+if compare "public-key derivation agrees on all $variants keyfile variants" "$variants" pubkeys "$SV/passphrase.txt" "$work/variant-list"; then
+	# Hand-written verdicts for the variants whose answer the format fixes.
+	# Unknown fields are ignored (old keyfiles still open), but a spliced
+	# "public" value changes nothing: the key comes from the decrypted seed.
+	cat >"$work/expect" <<-EOF
+		base 0 $pub5a
+		base_newline 0 $pub5a
+		pretty 0 $pub5a
+		reordered 0 $pub5a
+		t_spaced 0 $pub5a
+		t_2 -22
+		p_2 -22
+		m_65 -22
+		t_1.0 -20
+		t_1e0 -20
+		t_q1q -20
+		t_01 -20
+		t_neg1 -20
+		t_neg0 -20
+		t_plus1 -20
+		t_4294967296 -20
+		m_18446744073709551616 -20
+		p_16777216 -20
+		dup_t -20
+		unknown_field 0 $pub5a
+		old_public_field 0 $pub5a
+		trailing_garbage -20
+		empty -20
+		sigil_v2 -21
+		kdf_scrypt -21
+		as_hot_bundle -21
+		ciphertext_swapped -22
+		crlf 0 $pub5a
+		leading_space 0 $pub5a
+		escaped_key 0 $pub5a
+		escaped_value 0 $pub5a
+		t_0 -23
+		m_0 -23
+		m_7 -23
+		p_0 -23
+		p_9 -23
+		m_8 -22
+		p_8 -22
+		t_null -20
+		t_lbrb -20
+		m_064 -20
+		missing_t -20
+		missing_salt -20
+		missing_ciphertext -20
+		nested_sigil -20
+		sigil_number -20
+		bom -20
+		trailing_object -20
+		empty_object -20
+		array -20
+		json_null -20
+		json_string -20
+		not_json -20
+		kdf_lower -21
+	EOF
+	expect "both match the hand-written keyfile verdicts" "$work/expect"
+	awk '{ print $2 }' "$work/out-zig" >"$work/codes"
+	sort -u -o "$work/codes" "$work/codes"
+	codes=$(tr '\n' ' ' <"$work/codes")
+	if [[ "$codes" == *"-23"* && "$codes" == *"-21"* && "$codes" == *"-22"* && "$codes" == *"-20"* ]]; then
+		pass "the variants reach every keyfile refusal class ($codes)"
+	else
+		fail "the variants reach every keyfile refusal class" "reached: $codes"
+	fi
+fi
+
+# ── Paper cold copies ───────────────────────────────────────────────────────
+if compare "paper PDFs agree byte for byte across sizes, kinds, labels and the QR edge" 100 paper "$SV/cheap.key"; then
+	cat >"$work/expect" <<-'EOF'
+		paper 1166 -28 0 0000000000000000
+		paper 1167 -28 0 0000000000000000
+		paper null out -3
+		paper null artifacts -3
+		paper zero count -3
+		paper null date -3
+		paper null length -3
+		paper null label -3
+		paper null bytes -3
+	EOF
+	expect "both refuse past the QR capacity and enforce the argument contract" "$work/expect"
+	if grep -qE '^paper 1165 0 [1-9]' "$work/out-zig"; then
+		pass "1165 bytes, the last size that fits a version 40 code, renders"
+	else
+		near=$(grep '^paper 116' "$work/out-zig")
+		fail "1165 bytes, the last size that fits a version 40 code, renders" "$near"
+	fi
+	if command -v qpdf >/dev/null; then
+		"$work/driver-rust" paper-dump 300 "$work/rust.pdf"
+		if qpdf_out=$(qpdf --check "$work/rust.pdf" 2>&1); then
+			pass "a rendered paper PDF passes qpdf --check"
+		else
+			fail "a rendered paper PDF passes qpdf --check" "$qpdf_out"
+		fi
+	else
+		fail "qpdf is available for the PDF structure check"
+	fi
+fi
+
+# ── Seeded mutation fuzz ────────────────────────────────────────────────────
+: >"$work/fuzz-codes"
+fuzz_failures=""
+seed=1
+for target in "keyfile $SV/cheap.key" "keyfile $SV/cheap_lanes.key" "bundle $SV/cheap.hot.sealed"; do
+	read -r mode file <<<"$target"
+	if same "$FUZZ_CASES" fuzz "$mode" "$seed" "$FUZZ_CASES" "$file" "$SV/passphrase.txt"; then
+		awk -v m="$mode" '$2 != "skip" { print m ":" $2 }' "$work/out-zig" >>"$work/fuzz-codes"
+	else
+		fuzz_failures="$fuzz_failures
+seed=$seed $file: $DETAIL"
+	fi
+	seed=$((seed + 1))
+done
+sort -u -o "$work/fuzz-codes" "$work/fuzz-codes"
+reached=$(tr '\n' ' ' <"$work/fuzz-codes")
+if [[ -z "$fuzz_failures" && "$reached" == *"keyfile:0 "* && "$reached" == *"bundle:0 "* \
+	&& "$reached" == *"bundle:-27"* && "$reached" == *"keyfile:-22"* ]]; then
+	pass "fuzz: $((3 * FUZZ_CASES)) mutated keyfiles and bundles agree (reached: $reached)"
+else
+	fail "fuzz: mutated keyfiles and bundles agree and reach enough outcomes" \
+		"differing:${fuzz_failures:- none}; reached: $reached"
+fi
+
+finish

@@ -1,0 +1,18 @@
+[package]
+name = "sigil-sign-ffi"
+description = "C ABI for Rust sigil signing, exporting include/sigil_sign.h. For the sigil CLI only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sigil_sign_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+sigil-sign = { path = "../sigil-sign" }
+
+[lints]
+workspace = true

@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 curve25519-dalek = "4.1"
 sha2 = "0.10"
+sigil-sign = { path = "../sigil-sign" }
 
 [lints]
 workspace = true

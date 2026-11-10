@@ -429,6 +429,35 @@ pub fn corpus() -> String {
 	out
 }
 
+/// Passphrase of the generated signing fixtures. Public by design: these
+/// keys are test fixtures and authorize nothing.
+pub const SIGN_FIXTURE_PASSPHRASE: &str = "sign-vectors-not-for-production";
+
+/// Cheap-parameter keyfiles and a hot bundle from fixed seeds, so the
+/// signing differential can open thousands of mutations quickly. Returns
+/// (file name, bytes).
+pub fn sign_fixtures() -> Vec<(&'static str, Vec<u8>)> {
+	use sigil_sign::{KdfParams, wrap_hot_bundle, wrap_key};
+	let pass = SIGN_FIXTURE_PASSPHRASE.as_bytes();
+	let cheap = KdfParams { t: 1, m: 64, p: 1 };
+	let lanes = KdfParams { t: 2, m: 128, p: 2 };
+	vec![
+		(
+			"cheap.key",
+			wrap_key(&[0x5a; 32], pass, &[0x11; 16], &[0x22; 24], cheap).expect("wrap"),
+		),
+		(
+			"cheap_lanes.key",
+			wrap_key(&[0x6b; 32], pass, &[0x33; 16], &[0x44; 24], lanes).expect("wrap"),
+		),
+		(
+			"cheap.hot.sealed",
+			wrap_hot_bundle(&[0x5a; 32], pass, &[0x55; 16], &[0x66; 24], cheap).expect("wrap"),
+		),
+		("passphrase.txt", pass.to_vec()),
+	]
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -441,6 +470,17 @@ mod tests {
 			corpus(),
 			"regenerate examples/verify_edge_vectors/cases.tsv"
 		);
+	}
+
+	#[test]
+	fn committed_sign_fixtures_match_the_generator() {
+		let dir =
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sign_vectors");
+		for (name, bytes) in sign_fixtures() {
+			let committed =
+				std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+			assert_eq!(committed, bytes, "regenerate examples/sign_vectors/{name}");
+		}
 	}
 
 	#[test]

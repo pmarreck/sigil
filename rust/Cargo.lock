@@ -307,8 +307,16 @@ dependencies = [
  "chacha20poly1305",
  "ed25519-dalek",
  "getrandom",
+ "sha2",
  "sigil",
  "zeroize",
+]
+
+[[package]]
+name = "sigil-sign-ffi"
+version = "0.1.0"
+dependencies = [
+ "sigil-sign",
 ]
 
 [[package]]
@@ -317,6 +325,7 @@ version = "0.1.0"
 dependencies = [
  "curve25519-dalek",
  "sha2",
+ "sigil-sign",
 ]
 
 [[package]]

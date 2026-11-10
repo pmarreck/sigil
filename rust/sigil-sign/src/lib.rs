@@ -13,6 +13,9 @@
 #![forbid(unsafe_code)]
 
 mod json;
+pub mod paper;
+mod pdf;
+pub mod qr;
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};

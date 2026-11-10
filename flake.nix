@@ -155,6 +155,10 @@
             mkdir -p $out/lib $out/include
             cp "$archive" $out/lib/libsigil.a
             cp include/sigil.h $out/include/sigil.h
+            sign=$(find . -path '*/release/libsigil_sign_ffi.a' | head -1)
+            [ -n "$sign" ] || { echo "no libsigil_sign_ffi.a was built" >&2; exit 1; }
+            cp "$sign" $out/lib/libsigil_sign.a
+            cp include/sigil_sign.h $out/include/sigil_sign.h
             policy=$(find . -path '*/release/libmecha_policy_ffi.a' | head -1)
             [ -n "$policy" ] || { echo "no libmecha_policy_ffi.a was built" >&2; exit 1; }
             cp "$policy" $out/lib/libmecha_policy.a
