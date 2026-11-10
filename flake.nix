@@ -52,10 +52,33 @@
           let actual = builtins.hashFile "sha256" ./build.zig.zon; in
           if actual == zigDepsZonSha256 then true
           else throw "build.zig.zon changed (sha256 ${actual}) but zigDepsHash was computed for ${zigDepsZonSha256}; refresh both (see the comment above zigDepsHash)";
+        # The Zig package's source is exactly what build.zig.zon declares in
+        # `.paths`, read from that file, so the two cannot drift. A file the
+        # build needs but the package does not declare fails here, as it would
+        # for a downstream consumer fetching the package; an edit outside the
+        # declared paths (docs, tests, examples, the Rust workspace) no longer
+        # rebuilds the Zig package.
+        zonPaths =
+          let
+            parts = builtins.split "\\.paths = \\.\\{" (builtins.readFile ./build.zig.zon);
+            block = builtins.head (builtins.split "}" (builtins.elemAt parts 2));
+            names = map builtins.head
+              (builtins.filter builtins.isList (builtins.split "\"([^\"]+)\"" block));
+            escapes = builtins.filter (n: builtins.match "(.*/)?\\.\\.(/.*)?|/.*" n != null) names;
+          in
+          if builtins.length parts != 3 then throw "build.zig.zon must contain exactly one `.paths = .{` block"
+          else if names == [ ] then throw "build.zig.zon's .paths names nothing"
+          else if escapes != [ ] then throw "build.zig.zon .paths must stay inside the package: ${toString escapes}"
+          else names;
+        zigSrc = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions (map (p: ./. + "/${p}") zonPaths);
+        };
+
         zigDeps = pkgs.stdenv.mkDerivation {
           pname = "${pname}-zig-deps";
           inherit version;
-          src = ./.;
+          src = zigSrc;
           nativeBuildInputs = [ zigPkg pkgs.git pkgs.cacert ];
           outputHashMode = "recursive";
           outputHashAlgo = "sha256";
@@ -133,7 +156,7 @@
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit pname version;
-          src = ./.;
+          src = zigSrc;
           nativeBuildInputs = [ zigPkg ]
             ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
           dontConfigure = true;
@@ -169,16 +192,18 @@
           pname = "${pname}-rust";
           inherit version;
           # Only what the workspace reads: its crates (the CLI is built on
-          # its own), the two headers it exports, the prelink scripts and the
-          # fixtures its tests compare against. An edit elsewhere in the
-          # repository no longer rebuilds the Rust packages.
+          # its own), the two headers it exports, the prelink script and the
+          # header parser it calls, and the fixtures its tests compare
+          # against. An edit elsewhere in the repository, another script
+          # included, no longer rebuilds the Rust packages.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               (pkgs.lib.fileset.difference ./rust ./rust/sigil-cli)
               ./include/sigil.h
               ./include/sigil_sign.h
-              ./scripts
+              ./scripts/prelink-staticlib
+              ./scripts/c-header-functions
               ./examples/verify_edge_vectors
               ./examples/sign_vectors
             ];
