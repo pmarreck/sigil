@@ -181,7 +181,8 @@ for manifest in examples/license_vectors/manifest.json examples/license_vectors_
 		| select(.signed_by_role == "test-beta" or .signed_by_role == "test-paid")
 		| . as $v | .policy_evals[]?
 		| [ "\($dir)/\($v.payload)", (if $v.signed_by_role == "test-beta" then "0" else "1" end),
-			.product, (.app_major | tostring), ((.app_minor // 0) | tostring), .now_utc_date, "-", "-", .expect ]
+			.product, (.app_major | tostring), ((.app_minor // 0) | tostring), .now_utc_date,
+			(.clock_high_water // "-"), "-", .expect ]
 		| @tsv' "$manifest"
 done >"$work/decide.rows"
 cut -f1-8 "$work/decide.rows" >"$work/decide.tsv"

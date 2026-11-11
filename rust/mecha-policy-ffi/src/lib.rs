@@ -108,7 +108,7 @@ pub extern "C" fn mecha_policy_abi_version() -> u32 {
 /// The package version.
 #[unsafe(no_mangle)]
 pub extern "C" fn mecha_policy_version() -> *const c_char {
-	c"0.2.1".as_ptr()
+	c"0.3.0".as_ptr()
 }
 
 /// Decide whether a verified installation certificate admits this machine.

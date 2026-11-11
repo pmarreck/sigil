@@ -1,7 +1,7 @@
 {
   "schema": "mecha-license-vectors/2",
   "contract": "docs/MECHA_LICENSE_CONTRACT_V1.md section 14 (payload v2, version ceiling answered 2026-10-06)",
-  "note": "Every eval carries app_minor. Expected decisions are hand-written from the contract. v1 vectors are referenced from ../license_vectors, which stays frozen. mecha_policy ABI 2 decide must reproduce every expect.",
+  "note": "Every eval carries app_minor. An eval with clock_high_water passes that stored mark; without it, no mark is stored. A grant with an expiry is clock_rollback when now_utc_date is before the mark; a grant with no expiry never is (contract section 9, 2026-11-11). Expected decisions are hand-written from the contract. v1 vectors are referenced from ../license_vectors, which stays frozen. mecha_policy ABI 2 decide must reproduce every expect.",
   "trust_roles": {
     "test-beta": {
       "pubkey": "../license_vectors/test_beta.key.pub"
@@ -78,6 +78,15 @@
           "app_major": 1,
           "app_minor": 3,
           "expect": "expired"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "clock_high_water": "2026-10-20",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 3,
+          "expect": "clock_rollback",
+          "why": "every v2 grant has an expiry, so the mark is judged"
         },
         {
           "now_utc_date": "2026-10-17",
@@ -408,6 +417,33 @@
           "app_major": 2,
           "app_minor": 0,
           "expect": "version_ceiling"
+        },
+        {
+          "now_utc_date": "2026-09-20",
+          "clock_high_water": "2026-09-20",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized",
+          "why": "a day equal to the mark is not a rollback"
+        },
+        {
+          "now_utc_date": "2026-09-17",
+          "clock_high_water": "2026-09-20",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "clock_rollback",
+          "why": "a dated grant: a clock set back could extend it"
+        },
+        {
+          "now_utc_date": "2026-10-18",
+          "clock_high_water": "2026-10-20",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "clock_rollback",
+          "why": "the mark is judged before expiry"
         }
       ]
     },
@@ -424,6 +460,24 @@
           "app_minor": 99,
           "expect": "authorized",
           "why": "v1 paid grant: no minor ceiling"
+        },
+        {
+          "now_utc_date": "2026-09-17",
+          "clock_high_water": "2026-09-20",
+          "product": "mecha-validate",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "authorized",
+          "why": "no expiry: a clock set back extends nothing, so the mark is not judged"
+        },
+        {
+          "now_utc_date": "2026-09-17",
+          "clock_high_water": "2026-09-20",
+          "product": "mecha-validate",
+          "app_major": 2,
+          "app_minor": 0,
+          "expect": "version_ceiling",
+          "why": "the ceiling still applies"
         }
       ]
     },
@@ -486,6 +540,15 @@
           "app_major": 1,
           "app_minor": 1,
           "expect": "expired"
+        },
+        {
+          "now_utc_date": "2026-10-17",
+          "clock_high_water": "2026-10-20",
+          "product": "mecha-beamflix",
+          "app_major": 1,
+          "app_minor": 0,
+          "expect": "clock_rollback",
+          "why": "every v2 grant has an expiry, so the mark is judged"
         },
         {
           "now_utc_date": "2026-10-17",

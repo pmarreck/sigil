@@ -150,17 +150,17 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1791910868,
-        "narHash": "sha256-iM94RFn6hg17exoo/fmgGppry+7TXbgkhdxq4F4Dx2Y=",
+        "lastModified": 1794423016,
+        "narHash": "sha256-4/cvuE5R7KseQTuHpWRwKzhtAmm9C17xGMqG9SxlJc0=",
         "owner": "pmarreck",
         "repo": "mecha_policy",
-        "rev": "0f4a8b06755b7c4e10965ded38db70926c58d143",
+        "rev": "0ee2a70aaa517c3e1ff6ab7a6ebcbe9413c7149c",
         "type": "github"
       },
       "original": {
         "owner": "pmarreck",
         "repo": "mecha_policy",
-        "rev": "0f4a8b06755b7c4e10965ded38db70926c58d143",
+        "rev": "0ee2a70aaa517c3e1ff6ab7a6ebcbe9413c7149c",
         "type": "github"
       }
     },

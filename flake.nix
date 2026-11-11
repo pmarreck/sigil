@@ -18,7 +18,7 @@
     # The Zig mecha_policy at the commit the licensing contract pins: the
     # oracle the Rust mecha-policy crate is held to by tests/differential,
     # and the source of the mecha_policy.h header both implement.
-    mecha-policy.url = "github:pmarreck/mecha_policy/0f4a8b06755b7c4e10965ded38db70926c58d143";
+    mecha-policy.url = "github:pmarreck/mecha_policy/0ee2a70aaa517c3e1ff6ab7a6ebcbe9413c7149c";
   };
 
   outputs = { self, nixpkgs, flake-utils, zig-overlay, printable-binary, mecha-policy }:

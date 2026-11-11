@@ -29,10 +29,30 @@ done
 known='["authorized","malformed","wrong_product","expired","version_ceiling","class_key_mismatch","clock_rollback","operation_not_granted"]'
 bad=$(jq --argjson k "$known" '[.vectors[].policy_evals[] | select((.app_minor | type) != "number" or (.app_major | type) != "number" or (.expect as $x | $k | index($x)) == null)] | length' "$M")
 [[ "$bad" -eq 0 ]] && pass "every eval carries integer app_major and app_minor and a known decision" || fail "eval shape" "$bad bad"
-for kind in authorized version_ceiling expired malformed class_key_mismatch wrong_product; do
+for kind in authorized version_ceiling expired malformed class_key_mismatch wrong_product clock_rollback; do
 	c=$(jq --arg k "$kind" '[.vectors[].policy_evals[] | select(.expect == $k)] | length' "$M")
 	[[ "$c" -ge 1 ]] && pass "at least one eval expects $kind" || fail "coverage: $kind"
 done
+# The clock mark (contract section 9, 2026-11-11) is judged for a grant with
+# an expiry and never for one without. Both halves are required: a consumer
+# that ignores clock_high_water fails the dated half rather than passing the
+# undated half by accident.
+marks=$(jq -r '.vectors[] | .payload as $p | .policy_evals[] | select(has("clock_high_water"))
+	| [$p, .clock_high_water, .now_utc_date, .expect] | join("|")' "$M")
+judged=0; unjudged=0; contradicts=""
+while IFS='|' read -r p h n x; do
+	[[ -n "$p" ]] || continue
+	[[ "$h" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || contradicts="$contradicts $p:mark=$h"
+	[[ "$n" < "$h" ]] || continue
+	if jq -e 'has("expiry")' "$V/$p" >/dev/null; then
+		case "$x" in clock_rollback) judged=1 ;; authorized | expired) contradicts="$contradicts $p:$n<$h:$x" ;; esac
+	else
+		case "$x" in authorized) unjudged=1 ;; clock_rollback) contradicts="$contradicts $p:$n<$h:$x" ;; esac
+	fi
+done <<< "$marks"
+[[ $judged == 1 ]] && pass "a dated grant behind its mark is clock_rollback" || fail "coverage: a dated grant behind its mark is clock_rollback"
+[[ $unjudged == 1 ]] && pass "an undated grant behind its mark is authorized" || fail "coverage: an undated grant behind its mark is authorized"
+[[ -z "$contradicts" ]] && pass "every mark eval follows the clock rule" || fail "mark evals contradict the clock rule" "$contradicts"
 # v2 payloads say v 2 and carry max_minor; the frozen v1 set does not change.
 for f in v2_valid v2_leap; do
 	[[ $(jq -r '.v + "/" + .max_minor' "$V/$f.payload.json") =~ ^2/[0-9]+$ ]] && pass "$f is a v2 payload with max_minor" || fail "$f v2 shape"

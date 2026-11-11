@@ -15,7 +15,7 @@ mod json;
 use sha2::{Digest, Sha256};
 
 /// Package version, identical to the Zig library's `mecha_policy_version()`.
-pub const VERSION: &str = "0.2.1";
+pub const VERSION: &str = "0.3.0";
 
 /// ABI contract version, identical to `mecha_policy_abi_version()`.
 pub const ABI_VERSION: u32 = 2;
@@ -443,7 +443,7 @@ fn rolled_back(now: &[u8], high_water: Option<&[u8]>) -> bool {
 
 /// Evaluate one verified license payload against one admission request.
 /// Order: schema, class/key binding, product, version ceiling, clock
-/// rollback, expiry, operation.
+/// rollback (only for a grant with an expiry), expiry, operation.
 pub fn decide(req: &Request<'_>) -> Result<Decision, Error> {
 	if !is_valid_date(req.now_utc_date) {
 		return Err(Error::InvalidNow);
@@ -470,7 +470,10 @@ pub fn decide(req: &Request<'_>) -> Result<Decision, Error> {
 	{
 		return Ok(Decision::VersionCeiling);
 	}
-	if rolled_back(req.now_utc_date, req.clock_high_water) {
+	// The mark guards an expiry: a clock set back can only extend a grant
+	// that ends. A grant with no expiry has nothing to extend, so its mark
+	// is not judged (contract section 9, 2026-11-11).
+	if g.expiry.is_some() && rolled_back(req.now_utc_date, req.clock_high_water) {
 		return Ok(Decision::ClockRollback);
 	}
 	if let Some(x) = &g.expiry
@@ -488,6 +491,8 @@ pub fn decide(req: &Request<'_>) -> Result<Decision, Error> {
 }
 
 /// The value to persist as the clock high-water mark after an evaluation.
+/// The mark is exactly the 10 bytes of a `YYYY-MM-DD` UTC date (contract
+/// section 9); how an app stores and protects it on disk is its own.
 pub fn next_high_water<'a>(now_utc_date: &'a [u8], stored: Option<&'a [u8]>) -> &'a [u8] {
 	match stored {
 		Some(s) if s > now_utc_date => s,
@@ -787,6 +792,31 @@ mod tests {
 			let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
 			assert_eq!(valid, if leap { 366 } else { 365 }, "{year}");
 		}
+	}
+
+	#[test]
+	fn the_clock_mark_is_judged_only_for_a_grant_with_an_expiry() {
+		// examples/license_vectors: beta_valid (expiry 2026-10-17) and
+		// paid_valid (no expiry).
+		let dated = br#"{"customer_email":"beta-tester@example.com","customer_name_canonical":"beta tester","expiry":"2026-10-17","features":"full","max_major":"1","offline_days":"365","payment_provider":"beta","payment_ref":"beta_0001","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}"#;
+		let undated = br#"{"customer_email":"customer@example.com","customer_name_canonical":"paying customer","features":"full","max_major":"1","offline_days":"365","payment_provider":"paddle","payment_ref":"txn_test_0001","product":"mecha-validate","purchase_date":"2026-09-17","v":"1"}"#;
+		let ask = |payload: &'static [u8], role, mark: Option<&'static [u8]>| {
+			decide(&Request {
+				payload,
+				verified_role: role,
+				product: b"mecha-validate",
+				app_major: 1,
+				app_minor: 0,
+				now_utc_date: b"2026-09-17",
+				clock_high_water: mark,
+				operation: None,
+			})
+		};
+		let ahead = Some(&b"2026-09-20"[..]);
+		assert_eq!(ask(dated, Role::BetaLicense, ahead), Ok(Decision::ClockRollback));
+		assert_eq!(ask(dated, Role::BetaLicense, None), Ok(Decision::Authorized));
+		assert_eq!(ask(undated, Role::PaidLicense, ahead), Ok(Decision::Authorized));
+		assert_eq!(ask(undated, Role::PaidLicense, None), Ok(Decision::Authorized));
 	}
 
 	#[test]

@@ -74,7 +74,8 @@ One implementation, not three. Proposal:
   the same semantics via the acceptance vectors (§6) rather than a port.
 - Inputs, all injected: verified payload bytes; WHICH trust role verified
   (§4); product id of the asking app; app major version; current UTC time;
-  prior monotonic clock high-water mark.
+  prior monotonic clock high-water mark (judged only for a grant with an
+  expiry; section 9).
 - Output: a typed decision — `authorized` | refusal with a STABLE reason
   code (`no_license`, `not_authentic`, `malformed`, `wrong_product`,
   `expired`, `version_ceiling`, `class_key_mismatch`, `clock_rollback`,
@@ -178,6 +179,28 @@ the GUI never links a second verifier):
 - Clock high-water mark: mecha_policy specifies the persisted store format
   (opaque bytes in/out) so every app persists the same thing; apps own
   storage location and I/O.
+  Clarified 2026-11-11 (asked by BeamFlix):
+  - Judged only for a grant with an expiry (SCS ruling 2026-11-11;
+    mecha_policy 0.3.0, ABI 2 unchanged). The mark exists so a clock set
+    back cannot extend a grant that ends. A grant with no expiry (today a
+    v1 `paddle` or `comp` grant) has nothing to extend, so `decide` never
+    answers `clock_rollback` for it, whatever mark it is given. Every beta
+    grant and every v2 grant has an expiry and is judged as before. The
+    rule lives in mecha_policy, not in each app, so no app reads `expiry`
+    before the policy does. Vectors: the evals in
+    examples/license_vectors_v2 that carry `clock_high_water`.
+  - The shared format is the mark's value: exactly the 10 bytes of a
+    `YYYY-MM-DD` UTC date, which `decide` and `decideInstall` take and
+    `nextHighWater` returns. How an app stores and protects it on disk (a
+    MAC under an app key, a binding to the license and machine) is its
+    persistence adapter, like its license store; every frontend of one
+    product uses the same adapter. No app reads another's mark, and a key
+    an app embeds is not a secret, so there is no shared on-disk format.
+  - An app may set the mark from an authenticated time source, lower as
+    well as higher (BeamFlix uses an HTTPS `Date` check); `nextHighWater`
+    only ever raises it. An app may refuse when it cannot trust its stored
+    mark, with an app-side reason, as with import-adapter codes (BeamFlix:
+    `clock_unconfirmed`).
 - Trust domain vs signer role are ORTHOGONAL. `test-beta`/`test-paid` keys
   sign real beta/paid-CLASS grants; only test artifacts embed their
   pubkeys. The invariant is "test authority never authorizes production
@@ -843,6 +866,15 @@ which machine may run it under that license. Execution needs both.
   only for a verified certificate whose payload fails the schema. Spec and vectors:
   sigil examples/install_cert_vectors (mecha-install-cert-vectors/1, test
   role `test-install-cert`, passphrase public by design).
+- Clock mark for a certificate (2026-11-11, asked by BeamFlix): every
+  certificate payload v1 has an expiry, so `decideInstall` judges the mark
+  it is given, unchanged. For a certificate bound to a license with no
+  expiry, BeamFlix passes no mark (SCS ruling, 2026-11-11), and another app
+  may do the same. The accepted risk: offline, a clock set back keeps that
+  certificate from reaching its one-year expiry, which postpones the yearly
+  online refresh for as long as the machine stays offline with its clock
+  set back. Certificate payload v2 (section 16) drops that term for v3
+  grants.
 - Audit (commerce 0df5327, accepted): the mint audit row stays four fields
   (entitlement id, envelope SHA-256, role, time); the certificate's
   SHA-256 identifies it, and cert_id and machine live in the stored
