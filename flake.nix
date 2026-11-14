@@ -139,6 +139,9 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               ./rust/sigil-cli
+              # The workspace's formatting rules, which cargo fmt finds in
+              # the parent directory.
+              ./rust/rustfmt.toml
               ./include/sigil.h
               ./include/sigil_sign.h
             ];
@@ -148,8 +151,9 @@
           cargoLock.lockFile = ./rust/sigil-cli/Cargo.lock;
           SIGIL_LIB_DIR = "${libs}/lib";
           SIGIL_LIB_EXTRA = extraLibs;
-          nativeBuildInputs = [ pkgs.clippy ];
+          nativeBuildInputs = [ pkgs.clippy pkgs.rustfmt ];
           preBuild = ''
+            (cd rust/sigil-cli && cargo fmt --check)
             (cd rust/sigil-cli && cargo clippy --offline --all-targets -- -D warnings)
           '';
         };
@@ -214,8 +218,9 @@
           # The pinned printable-binary alphabet, read by the Rust glyph-table
           # test so the committed table cannot drift from the Zig side's map.
           SIGIL_PB_CHARACTER_MAP = "${printable-binary}/character_map.txt";
-          nativeBuildInputs = [ pkgs.clippy ];
+          nativeBuildInputs = [ pkgs.clippy pkgs.rustfmt ];
           preBuild = ''
+            (cd rust && cargo fmt --check)
             (cd rust && cargo clippy --offline --workspace --all-targets -- -D warnings)
           '';
           installPhase = ''

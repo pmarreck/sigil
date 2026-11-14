@@ -74,6 +74,15 @@ report_suite() {
 	fi
 	TOTAL_PASS=$((TOTAL_PASS + pass))
 	TOTAL_FAIL=$((TOTAL_FAIL + fail))
+	if [[ "$fail" != "0" ]]; then
+		# A failure early in a long suite is not among its last lines: show
+		# each FAIL status line with the detail after it, then the tail.
+		# Passing lines may contain the word, so match it as the status.
+		local esc=$'\e'
+		grep -E -A4 "^[[:space:]]*(${esc}\\[[0-9;]*m)?FAIL" <<<"$output" \
+			|| echo "  (no FAIL status line; the suite exited $rc)"
+		echo "  ┄┄┄"
+	fi
 	echo "$output" | tail -12
 	echo "  (${took}s)"
 }

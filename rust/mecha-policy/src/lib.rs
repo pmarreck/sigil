@@ -813,10 +813,22 @@ mod tests {
 			})
 		};
 		let ahead = Some(&b"2026-09-20"[..]);
-		assert_eq!(ask(dated, Role::BetaLicense, ahead), Ok(Decision::ClockRollback));
-		assert_eq!(ask(dated, Role::BetaLicense, None), Ok(Decision::Authorized));
-		assert_eq!(ask(undated, Role::PaidLicense, ahead), Ok(Decision::Authorized));
-		assert_eq!(ask(undated, Role::PaidLicense, None), Ok(Decision::Authorized));
+		assert_eq!(
+			ask(dated, Role::BetaLicense, ahead),
+			Ok(Decision::ClockRollback)
+		);
+		assert_eq!(
+			ask(dated, Role::BetaLicense, None),
+			Ok(Decision::Authorized)
+		);
+		assert_eq!(
+			ask(undated, Role::PaidLicense, ahead),
+			Ok(Decision::Authorized)
+		);
+		assert_eq!(
+			ask(undated, Role::PaidLicense, None),
+			Ok(Decision::Authorized)
+		);
 	}
 
 	#[test]
