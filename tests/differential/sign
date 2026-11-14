@@ -106,15 +106,20 @@ cat >"$work/coexist.c" <<'EOF'
 #include "sigil_sign.h"
 int main(void) { return printf("%s %s\n", sigil_version(), sigil_sign_strerror(0)) < 0; }
 EOF
+# Both GNU ld and lld: lld refuses an archive whose unwind tables point into
+# a COMDAT group it discarded as a duplicate of another archive's, which GNU
+# ld tolerates (scripts/prelink-staticlib renames those groups).
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	if coexist_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" "$work/coexist.c" \
-		"$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" -lpthread -ldl -lm \
-		-o "$work/coexist-$impl" 2>&1) && "$work/coexist-$impl" >/dev/null; then
-		pass "$impl libsigil.a and libsigil_sign.a link into one binary and run"
-	else
-		fail "$impl libsigil.a and libsigil_sign.a link into one binary and run" "$coexist_log"
-	fi
+	for ld in bfd lld; do
+		if coexist_log=$("$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+			"$work/coexist.c" "$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" -lpthread -ldl -lm \
+			-o "$work/coexist-$impl-$ld" 2>&1) && "$work/coexist-$impl-$ld" >/dev/null; then
+			pass "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run"
+		else
+			fail "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run" "$coexist_log"
+		fi
+	done
 done
 
 # same MIN_LINES ARGS...: both drivers succeed, produce enough output and

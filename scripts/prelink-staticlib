@@ -29,6 +29,35 @@ trap 'rm -rf -- "$work"' EXIT
 bash "$script_dir/c-header-functions" "$header" >"$work/declared" || exit 1
 "${LD:-ld}" -r --whole-archive "$archive" -o "$work/prelinked.o" || exit 1
 "${OBJCOPY:-objcopy}" --keep-global-symbols="$work/declared" "$work/prelinked.o" || exit 1
+# COMDAT groups. Every Rust archive carries the same ones (the unwinder's
+# DW.ref.rust_eh_personality), and so does a Rust program's own runtime.
+# lld keeps one group per signature, discards the rest, and then refuses the
+# discarded copy's relocations from .eh_frame; GNU ld tolerates them. The
+# signatures are local now, so prefixing them with this archive's name keeps
+# its copy distinct and lets it link beside any other.
+prefix=$(basename "$out" .a)
+prefix=${prefix#lib}
+# signatures OBJECT: its COMDAT group signatures, sorted, into $work/signatures.
+signatures() {
+	"${READELF:-readelf}" -gW "$1" >"$work/groups" || return 1
+	awk '/^COMDAT group section/ { s = $0; sub(/\] contains.*/, "", s); sub(/.*\[/, "", s); print s }' \
+		"$work/groups" >"$work/signatures" || return 1
+	sort -u -o "$work/signatures" "$work/signatures"
+}
+signatures "$work/prelinked.o" || exit 1
+comm -23 "$work/signatures" "$work/declared" >"$work/shared" || exit 1
+awk -v p="$prefix." '{ print $0, p $0 }' "$work/shared" >"$work/renames" || exit 1
+if [[ -s "$work/renames" ]]; then
+	"${OBJCOPY:-objcopy}" --redefine-syms="$work/renames" "$work/prelinked.o" || exit 1
+fi
+signatures "$work/prelinked.o" || exit 1
+awk -v p="$prefix." 'index($0, p) != 1' "$work/signatures" >"$work/unprefixed" || exit 1
+comm -23 "$work/unprefixed" "$work/declared" >"$work/left" || exit 1
+if [[ -s "$work/left" ]]; then
+	echo "prelink-staticlib: COMDAT groups in $archive keep shared names:" >&2
+	sed 's/^/  /' "$work/left" >&2
+	exit 1
+fi
 
 # The result must define every declared function globally and nothing else.
 "${NM:-nm}" -g --defined-only "$work/prelinked.o" >"$work/nm" || exit 1

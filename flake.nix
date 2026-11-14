@@ -419,7 +419,8 @@
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pbCli ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
+              # lld: the differential suites link the archives with GNU ld and lld.
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf pkgs.lld ];
             dontConfigure = true;
             dontFixup = true;
             buildPhase = ''
@@ -500,6 +501,8 @@
             pkgs.rustfmt
             pkgs.hyperfine
             pkgs.jq
+            # The differential suites link the archives with GNU ld and lld.
+            pkgs.lld
             # Linters for the masked-return-value class (tests/test_lint).
             # Zig rejects unused return values at compile time; C and Bash
             # make the same check opt-in, so these are that opt-in. The gate

@@ -112,13 +112,23 @@ for impl in zig rust; do
 	else
 		policy="$RUST_OUT/lib/libmecha_policy.a" verify="$RUST_OUT/lib/libsigil.a" extra=()
 	fi
-	if coexist_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" -I "$header_dir" \
-		"$work/coexist.c" "$verify" "$policy" "${extra[@]}" -lpthread -ldl -lm -o "$work/coexist-$impl" 2>&1) \
-		&& "$work/coexist-$impl" >/dev/null; then
-		pass "$impl libsigil.a and libmecha_policy.a link into one binary and run"
-	else
-		fail "$impl libsigil.a and libmecha_policy.a link into one binary and run" "$coexist_log"
-	fi
+	# Both GNU ld and lld (see tests/differential/sign). Nix wraps GNU ld to
+	# add an rpath for each library it links, such as the Zig archive's
+	# libquadmath; the plain ld.lld does not, so lld is given that rpath.
+	for ld in bfd lld; do
+		rpath=()
+		if [[ "$ld" == lld && ${#extra[@]} -gt 0 ]]; then
+			qlib=$("$CC" -print-file-name=libquadmath.so.0)
+			rpath=(-Wl,-rpath,"${qlib%/*}")
+		fi
+		if coexist_log=$("$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+			-I "$header_dir" "$work/coexist.c" "$verify" "$policy" "${extra[@]}" "${rpath[@]}" -lpthread -ldl -lm \
+			-o "$work/coexist-$impl-$ld" 2>&1) && "$work/coexist-$impl-$ld" >/dev/null; then
+			pass "$impl libsigil.a and libmecha_policy.a link into one binary with $ld and run"
+		else
+			fail "$impl libsigil.a and libmecha_policy.a link into one binary with $ld and run" "$coexist_log"
+		fi
+	done
 done
 
 # same MIN_LINES ARGS...: both drivers succeed, produce enough output and
