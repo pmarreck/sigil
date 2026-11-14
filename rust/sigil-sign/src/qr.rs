@@ -436,8 +436,7 @@ fn gf_mul(a: u8, b: u8) -> u8 {
 
 fn rs_generator(n: usize) -> Vec<u8> {
 	let mut g = vec![1u8];
-	for i in 0..n {
-		let root = GF.0[i];
+	for &root in &GF.0[..n] {
 		g.push(0);
 		for j in (1..g.len()).rev() {
 			g[j] ^= gf_mul(g[j - 1], root);
