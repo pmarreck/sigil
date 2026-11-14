@@ -39,21 +39,29 @@ trap 'rm -rf -- "$work"' EXIT
 # ── Build one driver per implementation ─────────────────────────────────────
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	lib="$out/lib/libsigil_sign.a"
-	if [[ ! -f "$lib" ]]; then
-		fail "$impl implementation provides lib/libsigil_sign.a" "missing: $lib"
+	if [[ ! -f "$out/lib/libsigil_sign.a" ]]; then
+		fail "$impl implementation provides lib/libsigil_sign.a" "missing: $out/lib/libsigil_sign.a"
 		finish
 	fi
-	# Both archives link with the stock toolchain alone; no libquadmath. The
-	# Zig one needed it until its keyfile parser stopped reaching std.json's
-	# 128-bit float helpers, so this link is also that regression check. The
-	# Rust archive needs the platform thread and loader libraries for its
-	# standard library.
-	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
-		"$SCRIPT_DIR/sign_driver.c" "$lib" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+done
+# Both archives link with the stock toolchain alone; no libquadmath. The Zig
+# one needed it until its keyfile parser stopped reaching std.json's 128-bit
+# float helpers, so this link is also that regression check. The Rust archive
+# needs the platform thread and loader libraries for its standard library.
+# The two compiles are independent, so they run at once.
+declare -A build_pid=()
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	"$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" "$SCRIPT_DIR/sign_driver.c" \
+		"$out/lib/libsigil_sign.a" -lpthread -ldl -lm -o "$work/driver-$impl" >"$work/build-$impl.log" 2>&1 &
+	build_pid[$impl]=$!
+done
+for impl in zig rust; do
+	if wait "${build_pid[$impl]}"; then
 		pass "$impl archive links the driver, which calls every declared function"
 	else
-		fail "$impl archive links the driver, which calls every declared function" "$build_log"
+		wait
+		fail "$impl archive links the driver, which calls every declared function" "$(<"$work/build-$impl.log")"
 		finish
 	fi
 done
@@ -109,15 +117,26 @@ EOF
 # Both GNU ld and lld: lld refuses an archive whose unwind tables point into
 # a COMDAT group it discarded as a duplicate of another archive's, which GNU
 # ld tolerates (scripts/prelink-staticlib renames those groups).
+# The four links are independent, so they run at once; results are judged
+# in a fixed order.
+declare -A coexist_pid=()
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
 	for ld in bfd lld; do
-		if coexist_log=$("$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+		{ "$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
 			"$work/coexist.c" "$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" -lpthread -ldl -lm \
-			-o "$work/coexist-$impl-$ld" 2>&1) && "$work/coexist-$impl-$ld" >/dev/null; then
+			-o "$work/coexist-$impl-$ld" && "$work/coexist-$impl-$ld" >/dev/null; } \
+			>"$work/coexist-$impl-$ld.log" 2>&1 &
+		coexist_pid[$impl-$ld]=$!
+	done
+done
+for impl in zig rust; do
+	for ld in bfd lld; do
+		if wait "${coexist_pid[$impl-$ld]}"; then
 			pass "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run"
 		else
-			fail "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run" "$coexist_log"
+			fail "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run" \
+				"$(<"$work/coexist-$impl-$ld.log")"
 		fi
 	done
 done
@@ -230,27 +249,40 @@ fi
 printf '%s' test-beta-not-for-production >"$work/pp-test-beta"
 printf '%s' test-paid-not-for-production >"$work/pp-test-paid"
 reproduced=0
+: >"$work/reproduce.tsv"
 for manifest in examples/license_vectors/manifest.json examples/license_vectors_v2/manifest.json; do
-	dir="$REPO_ROOT/${manifest%/manifest.json}"
-	if ! jq -r '[.vectors[] | select(.signed_by_role == "test-beta" or .signed_by_role == "test-paid")]
-		| group_by(.signed_by_role)[] | first | [.signed_by_role, .payload, .file] | @tsv' \
-		"$REPO_ROOT/$manifest" >"$work/reproduce.tsv"; then
+	if ! jq -r --arg m "$manifest" '[.vectors[] | select(.signed_by_role == "test-beta" or .signed_by_role == "test-paid")]
+		| group_by(.signed_by_role)[] | first | [$m, .signed_by_role, .payload, .file] | @tsv' \
+		"$REPO_ROOT/$manifest" >>"$work/reproduce.tsv"; then
 		fail "read the signed vectors from $manifest"
-		continue
 	fi
-	while IFS=$'\t' read -r role payload envelope; do
-		key="$REPO_ROOT/examples/license_vectors/${role//-/_}.key"
-		for impl in zig rust; do
-			if "$work/driver-$impl" seal "$key" "$work/pp-$role" "$dir/$payload" >"$work/sealed" 2>"$work/err" \
-				&& cmp -s "$work/sealed" "$dir/$envelope"; then
-				reproduced=$((reproduced + 1))
-			else
-				err=$(<"$work/err")
-				fail "$impl reproduces ${manifest%/manifest.json}/$envelope" "$err"
-			fi
-		done
-	done <"$work/reproduce.tsv"
 done
+# Each seal is one production-strength unlock and they are independent, so
+# all of them run at once; each is judged afterwards, in order.
+seal_pids=()
+n=0
+while IFS=$'\t' read -r manifest role payload envelope; do
+	dir="$REPO_ROOT/${manifest%/manifest.json}"
+	key="$REPO_ROOT/examples/license_vectors/${role//-/_}.key"
+	for impl in zig rust; do
+		n=$((n + 1))
+		"$work/driver-$impl" seal "$key" "$work/pp-$role" "$dir/$payload" \
+			>"$work/sealed-$n" 2>"$work/err-seal-$n" &
+		seal_pids+=("$!")
+	done
+done <"$work/reproduce.tsv"
+n=0
+while IFS=$'\t' read -r manifest role payload envelope; do
+	dir="$REPO_ROOT/${manifest%/manifest.json}"
+	for impl in zig rust; do
+		n=$((n + 1))
+		if wait "${seal_pids[n - 1]}" && cmp -s "$work/sealed-$n" "$dir/$envelope"; then
+			reproduced=$((reproduced + 1))
+		else
+			fail "$impl reproduces ${manifest%/manifest.json}/$envelope" "$(<"$work/err-seal-$n")"
+		fi
+	done
+done <"$work/reproduce.tsv"
 if [[ $reproduced -eq 8 ]]; then
 	pass "both reproduce a committed envelope per manifest and role, byte for byte ($reproduced seals)"
 else
@@ -259,11 +291,17 @@ fi
 
 # ── Keys generated by each implementation open in the other ─────────────────
 printf '%s' "keygen-differential-pass" >"$work/kg-pass"
+# The two keygens are independent, so they run at once.
+declare -A keygen_pid=()
 for impl in zig rust; do
-	if ! "$work/driver-$impl" keygen "$work/gen-$impl.key" "$work/gen-$impl.hot.sealed" \
-		"keygen-differential-pass" >"$work/keygen-$impl" 2>"$work/err"; then
-		err=$(<"$work/err")
-		fail "$impl generates a key pair" "$err"
+	"$work/driver-$impl" keygen "$work/gen-$impl.key" "$work/gen-$impl.hot.sealed" \
+		"keygen-differential-pass" >"$work/keygen-$impl" 2>"$work/err-keygen-$impl" &
+	keygen_pid[$impl]=$!
+done
+for impl in zig rust; do
+	if ! wait "${keygen_pid[$impl]}"; then
+		wait
+		fail "$impl generates a key pair" "$(<"$work/err-keygen-$impl")"
 		finish
 	fi
 done
