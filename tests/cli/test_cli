@@ -678,6 +678,18 @@ assert_stdout_matches 'sigil_public_key: \[32\]u8' "pubkey --format zig emits an
 	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format zig
 assert_status 64 "pubkey rejects an unknown --format" \
 	"$SIGIL" pubkey --key "$KEY" --passphrase-file "$PW" --format base64
+# The usage error comes before the passphrase is read or the key unlocked: a
+# mistyped format must not cost a key derivation. The passphrase file does
+# not exist, so reaching for it would fail differently.
+bad_format_err=$("$SIGIL" pubkey --key "$KEY" --passphrase-file "$WORK/no-such-passphrase" \
+	--format base64 2>&1 >/dev/null)
+bad_format_rc=$?
+if [[ $bad_format_rc -eq 64 && "$bad_format_err" == *"unknown --format"* ]]; then
+	pass "pubkey rejects an unknown --format before reading the passphrase"
+else
+	fail "pubkey rejects an unknown --format before reading the passphrase" \
+		"rc=$bad_format_rc: $bad_format_err"
+fi
 
 # Deriving from the keyfile now REQUIRES the passphrase; the sibling .pub
 # file is the passphrase-free path.

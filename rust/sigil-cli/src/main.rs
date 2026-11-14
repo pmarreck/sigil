@@ -1040,6 +1040,29 @@ fn emit_byte_array(decl: &[u8], pk: &[u8], open: &[u8], close: &[u8]) -> Vec<u8>
 	s
 }
 
+/// The `pubkey --format` values.
+#[derive(Clone, Copy)]
+enum PubkeyFormat {
+	Text,
+	Raw,
+	Hex,
+	C,
+	Zig,
+}
+
+impl PubkeyFormat {
+	fn parse(s: &[u8]) -> Option<Self> {
+		match s {
+			b"text" => Some(Self::Text),
+			b"raw" => Some(Self::Raw),
+			b"hex" => Some(Self::Hex),
+			b"c" => Some(Self::C),
+			b"zig" => Some(Self::Zig),
+			_ => None,
+		}
+	}
+}
+
 fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 	let o = match parse(args, 2, ui) {
 		Ok(o) => o,
@@ -1047,6 +1070,16 @@ fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 	};
 	let Some(src) = o.key.or(o.pubkey).or(o.positional) else {
 		die_usage("pubkey needs --key <keyfile> or --pubkey <path>", None);
+		return EX_USAGE;
+	};
+	// A usage error comes before the passphrase is read or the key unlocked:
+	// a mistyped format must not cost a key derivation.
+	let format_arg = o.format.unwrap_or(b"text");
+	let Some(format) = PubkeyFormat::parse(format_arg) else {
+		die_usage(
+			"unknown --format (want text, hex, raw, c or zig)",
+			Some(format_arg),
+		);
 		return EX_USAGE;
 	};
 	let raw = match read_all(src) {
@@ -1099,9 +1132,8 @@ fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 	}
 	let pk = &pk[..n];
 	let destination = o.out.unwrap_or(b"-");
-	let format = o.format.unwrap_or(b"text");
 	let rendered = match format {
-		b"text" => {
+		PubkeyFormat::Text => {
 			let mut text = [0u8; 512];
 			let mut len = 0usize;
 			// SAFETY: every pointer is valid for the length passed with it.
@@ -1119,8 +1151,8 @@ fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 			}
 			return write_all(destination, &text[..len.min(512)], PLAIN);
 		}
-		b"raw" => return write_all(destination, pk, PLAIN),
-		b"hex" => {
+		PubkeyFormat::Raw => return write_all(destination, pk, PLAIN),
+		PubkeyFormat::Hex => {
 			let mut s: Vec<u8> = pk
 				.iter()
 				.flat_map(|b| format!("{b:02x}").into_bytes())
@@ -1128,19 +1160,14 @@ fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 			s.push(b'\n');
 			s
 		}
-		b"c" => emit_byte_array(
+		PubkeyFormat::C => emit_byte_array(
 			b"static const unsigned char SIGIL_PUBLIC_KEY[32] = ",
 			pk,
 			b"{",
 			b"};",
 		),
-		b"zig" => emit_byte_array(b"pub const sigil_public_key: [32]u8 = .", pk, b"{", b"};"),
-		_ => {
-			die_usage(
-				"unknown --format (want text, hex, raw, c or zig)",
-				Some(format),
-			);
-			return EX_USAGE;
+		PubkeyFormat::Zig => {
+			emit_byte_array(b"pub const sigil_public_key: [32]u8 = .", pk, b"{", b"};")
 		}
 	};
 	// cli/main.c renders into 512 bytes, NUL included.

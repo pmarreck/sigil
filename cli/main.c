@@ -92,7 +92,7 @@ static void die_usage(const char *msg, const char *arg) {
 /* ── Paths ──────────────────────────────────────────────────────────────── */
 
 /* "-" and "@stdin" mean standard input; "-", "@stdout", "@stderr" likewise on
- * the way out. Every path-taking option honours these. */
+ * the way out. Every path-taking option honors these. */
 static int is_stdin_path(const char *p) {
 	return strcmp(p, "-") == 0 || strcmp(p, "@stdin") == 0;
 }
@@ -739,6 +739,14 @@ static int cmd_pubkey(int argc, char *argv[]) {
 
 	const char *src = o.key ? o.key : (o.pubkey ? o.pubkey : o.positional);
 	if (!src) { die_usage("pubkey needs --key <keyfile> or --pubkey <path>", NULL); return EX_USAGE; }
+	/* A usage error comes before the passphrase is read or the key unlocked:
+	 * a mistyped format must not cost a key derivation. */
+	const char *fmt = o.format ? o.format : "text";
+	if (strcmp(fmt, "text") && strcmp(fmt, "raw") && strcmp(fmt, "hex") && strcmp(fmt, "c")
+		&& strcmp(fmt, "zig")) {
+		die_usage("unknown --format (want text, hex, raw, c or zig)", fmt);
+		return EX_USAGE;
+	}
 
 	unsigned char *raw = NULL;
 	size_t raw_len = 0;
@@ -772,7 +780,6 @@ static int cmd_pubkey(int argc, char *argv[]) {
 	free(raw);
 
 	const size_t n = sigil_public_key_len();
-	const char *fmt = o.format ? o.format : "text";
 
 	if (!strcmp(fmt, "text")) {
 		char text[512];
@@ -798,6 +805,7 @@ static int cmd_pubkey(int argc, char *argv[]) {
 		len = emit_byte_array(rendered, sizeof rendered,
 			"pub const sigil_public_key: [32]u8 = .", pk, n, "{", "};");
 	} else {
+		/* Unreachable: the format was checked before the key was read. */
 		die_usage("unknown --format (want text, hex, raw, c or zig)", fmt);
 		return EX_USAGE;
 	}
