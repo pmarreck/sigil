@@ -18,9 +18,10 @@
 #   codes and written files byte for byte. Byte identity is transitive, so
 #   comparing each with the reference covers every pair.
 #
-# Makers and transcript runs execute concurrently, one job per pair, each in
-# its own directory. A missing pair fails; it never skips. Keys are TEST-ONLY
-# and live in disposable scratch. NOT `set -e`.
+# The makers run first, one job per pair; then every reader and every
+# transcript run execute at once, each in its own directory. A missing pair
+# fails; it never skips. Keys are TEST-ONLY and live in disposable scratch.
+# NOT `set -e`.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEFAULT_PAIRS="$ROOT/zig-out/bin/sigil:$ROOT/.nix-out/c-on-rust/bin/sigil"
@@ -63,10 +64,10 @@ printf '%s' 'not-the-passphrase' >"$WORK/wrong"
 printf '%s' '{"customer":"cross implementation","v":"1"}' >"$WORK/payload.json"
 
 # ── Round trips ─────────────────────────────────────────────────────────────
-# make_and_read I: pair I generates a key pair and its outputs; every other
-# pair reads them. Writes one verdict file per reader: "ok", or why not.
-make_and_read() {
-	local i="$1" maker="${bins[$1]}" dir="$WORK/made-$1" j reader why maker_pem reader_pem rc
+# make_pair I: pair I generates a key pair, derives its public key, seals the
+# payload and writes a tampered copy.
+make_pair() {
+	local i="$1" maker="${bins[$1]}" dir="$WORK/made-$1"
 	mkdir -p "$dir"
 	if ! "$maker" keygen --out "$dir/k.key" --hot-bundle-out "$dir/k.hot" --passphrase-file "$WORK/pw" -q \
 		|| ! "$maker" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.pub" -q \
@@ -75,52 +76,36 @@ make_and_read() {
 		return
 	fi
 	sed 's/implementation/implementatioN/' "$dir/maker.sigil" >"$dir/tampered.sigil"
-	# The restored PEM is a private key: keep it in memory, never in a file.
-	maker_pem=$("$maker" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-	for j in "${!bins[@]}"; do
-		[[ "$j" == "$i" ]] && continue
-		reader="${bins[$j]}"
-		why=""
-		if ! { "$reader" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.pub" -q \
-			&& cmp -s "$dir/maker.pub" "$dir/reader-$j.pub"; }; then
-			why="$why public key;"
-		fi
-		if ! { "$reader" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.sigil" -q \
-			&& cmp -s "$dir/maker.sigil" "$dir/reader-$j.sigil"; }; then
-			why="$why envelope;"
-		fi
-		reader_pem=$("$reader" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-		if [[ "$maker_pem" != "-----BEGIN PRIVATE KEY-----"* || "$reader_pem" != "$maker_pem" ]]; then
-			why="$why PEM;"
-		fi
-		if ! { "$reader" verify "$dir/maker.sigil" --pubkey "$dir/maker.pub" -q >"$dir/reader-$j.out" 2>/dev/null \
-			&& cmp -s "$dir/reader-$j.out" "$WORK/payload.json"; }; then
-			why="$why verify;"
-		fi
-		"$reader" verify "$dir/tampered.sigil" --pubkey "$dir/maker.pub" -q >/dev/null 2>&1
-		rc=$?
-		if [[ $rc -ne 1 ]]; then why="$why tampered envelope exit $rc;"; fi
-		echo "${why:-ok}" >"$dir/verdict-$j"
-	done
 }
 
-for i in "${!bins[@]}"; do make_and_read "$i" & done
-wait
-for i in "${!bins[@]}"; do
-	if [[ -f "$WORK/made-$i/maker-failed" ]]; then
-		fail "pair $i generates a key pair, derives its public key and seals" "${bins[i]}"
-		continue
+# read_pair I J: pair J reads what pair I made. Writes made-I/verdict-J:
+# "ok", or why not.
+read_pair() {
+	local i="$1" j="$2" maker="${bins[$1]}" reader="${bins[$2]}" dir="$WORK/made-$1" why="" maker_pem reader_pem rc
+	[[ -f "$dir/maker-failed" ]] && return
+	# The restored PEM is a private key: keep it in memory, never in a file.
+	maker_pem=$("$maker" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
+	if ! { "$reader" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.pub" -q \
+		&& cmp -s "$dir/maker.pub" "$dir/reader-$j.pub"; }; then
+		why="$why public key;"
 	fi
-	for j in "${!bins[@]}"; do
-		[[ "$j" == "$i" ]] && continue
-		verdict=$(<"$WORK/made-$i/verdict-$j")
-		if [[ "$verdict" == ok ]]; then
-			pass "a key pair made by pair $i reads identically in pair $j"
-		else
-			fail "a key pair made by pair $i reads identically in pair $j" "differs:$verdict"
-		fi
-	done
-done
+	if ! { "$reader" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.sigil" -q \
+		&& cmp -s "$dir/maker.sigil" "$dir/reader-$j.sigil"; }; then
+		why="$why envelope;"
+	fi
+	reader_pem=$("$reader" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
+	if [[ "$maker_pem" != "-----BEGIN PRIVATE KEY-----"* || "$reader_pem" != "$maker_pem" ]]; then
+		why="$why PEM;"
+	fi
+	if ! { "$reader" verify "$dir/maker.sigil" --pubkey "$dir/maker.pub" -q >"$dir/reader-$j.out" 2>/dev/null \
+		&& cmp -s "$dir/reader-$j.out" "$WORK/payload.json"; }; then
+		why="$why verify;"
+	fi
+	"$reader" verify "$dir/tampered.sigil" --pubkey "$dir/maker.pub" -q >/dev/null 2>&1
+	rc=$?
+	if [[ $rc -ne 1 ]]; then why="$why tampered envelope exit $rc;"; fi
+	echo "${why:-ok}" >"$dir/verdict-$j"
+}
 
 # ── Transcripts ─────────────────────────────────────────────────────────────
 # Each pair runs in its own directory holding the reference maker's fixtures
@@ -221,14 +206,50 @@ run_table() {
 	done
 }
 
-for i in "${!bins[@]}"; do
-	if ! prepare "$WORK/t-$i"; then
-		fail "prepare transcript fixtures for pair $i"
-		finish
-	fi
-done
-for i in "${!bins[@]}"; do run_table "${bins[i]}" "$WORK/t-$i" & done
+# ── Run ─────────────────────────────────────────────────────────────────────
+# The makers go first, one job per pair. Then every reader (one job per maker
+# and reader) and every transcript run (one per pair) start at once: they are
+# independent, and the transcripts need only pair 0's made files. Results are
+# judged afterwards, round trips first, in a fixed order.
+for i in "${!bins[@]}"; do make_pair "$i" & done
 wait
+prepare_failed=""
+for i in "${!bins[@]}"; do
+	if [[ -z "$prepare_failed" ]] && ! prepare "$WORK/t-$i"; then prepare_failed="$i"; fi
+done
+for i in "${!bins[@]}"; do
+	for j in "${!bins[@]}"; do
+		[[ "$j" == "$i" ]] || read_pair "$i" "$j" &
+	done
+done
+if [[ -z "$prepare_failed" ]]; then
+	for i in "${!bins[@]}"; do run_table "${bins[i]}" "$WORK/t-$i" & done
+fi
+wait
+
+for i in "${!bins[@]}"; do
+	if [[ -f "$WORK/made-$i/maker-failed" ]]; then
+		fail "pair $i generates a key pair, derives its public key and seals" "${bins[i]}"
+		continue
+	fi
+	for j in "${!bins[@]}"; do
+		[[ "$j" == "$i" ]] && continue
+		verdict=$(<"$WORK/made-$i/verdict-$j")
+		if [[ "$verdict" == ok ]]; then
+			pass "a key pair made by pair $i reads identically in pair $j"
+		else
+			fail "a key pair made by pair $i reads identically in pair $j" "differs:$verdict"
+		fi
+	done
+done
+
+if [[ -n "$prepare_failed" ]]; then
+
+	fail "prepare transcript fixtures for pair $prepare_failed"
+
+	finish
+
+fi
 for ((i = 1; i < ${#bins[@]}; i++)); do
 	differ=""
 	for ((n = 1; n <= COUNT; n++)); do
