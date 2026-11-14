@@ -135,6 +135,11 @@ else
 fi
 
 [[ -s "$KEY" ]] && pass "keygen wrote a non-empty keyfile" || fail "keygen wrote a non-empty keyfile"
+
+# The wrong passphrase that several sections use.
+printf 'other' > "$WORK/pw2"
+
+shard_a() {
 [[ -s "$PUB" ]] && pass "keygen wrote <keyfile>.pub alongside it" || fail "keygen wrote <keyfile>.pub alongside it"
 
 # SC2312 below is deliberate throughout this file where a command substitution
@@ -206,6 +211,9 @@ assert_status 0 "--force allows the overwrite" \
 assert_status 64 "keygen refuses an empty passphrase" \
 	"$SIGIL" keygen --out "$WORK/empty.key" --passphrase-file /dev/null
 
+}
+
+shard_b() {
 # ── keygen --hot-bundle-out / hot-bundle open ───────────────────────────────
 #
 # Custody contract v1.2 section 2 (Peter, 2026-09-28): the sealed hot bundle
@@ -413,6 +421,9 @@ assert_status 74 "paper refuses to clobber an existing PDF without --force" "$SI
 assert_status 0 "paper --help exits 0" "$SIGIL" paper --help
 assert_stdout_matches 'paper ' "--help lists paper" "$SIGIL" --help
 
+}
+
+shard_c() {
 # ── sign / verify round trip ────────────────────────────────────────────────
 
 DOC="$WORK/license.toml"
@@ -495,7 +506,6 @@ assert_stderr_matches 'signature does not verify' \
 	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB"
 
 # A different key must not verify this envelope.
-printf 'other' > "$WORK/pw2"
 "$SIGIL" keygen --out "$WORK/other.key" --passphrase-file "$WORK/pw2" >/dev/null 2>&1
 assert_status 1 "an envelope signed by another key is rejected" \
 	"$SIGIL" verify "$ENV" --pubkey "$WORK/other.key.pub"
@@ -666,6 +676,9 @@ else pass "no ANSI escapes when stderr is not a terminal"; fi
 assert_status 0 "--no-color is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-color
 assert_status 0 "--no-ansi is accepted" "$SIGIL" verify "$ENV" --pubkey "$PUB" --no-ansi
 
+}
+
+shard_d() {
 # ── pubkey ──────────────────────────────────────────────────────────────────
 
 assert_stdout_matches '^sigil-pubkey-v1 ' "pubkey --key prints the text form" \
@@ -751,6 +764,9 @@ raw_size=$(wc -c < "$WORK/raw.key")
 if [[ "$raw_size" -eq 32 ]]; then pass "pubkey --format raw emits exactly 32 bytes"
 else fail "pubkey --format raw emits exactly 32 bytes" "got $raw_size"; fi
 
+}
+
+shard_e() {
 # ── Long passphrases ────────────────────────────────────────────────────────
 #
 # The prompt path read through a fixed 1024-byte buffer, so anything longer was
@@ -865,6 +881,46 @@ else
 		fi
 	fi
 fi
+}
+
+# ── Shards ──────────────────────────────────────────────────────────────────
+# Most of this suite's time is production-strength unlocks, and the sections
+# above do not depend on one another, so they run as five concurrent shards.
+# Each shard works in its own copy of the fixtures (shard_a regenerates the
+# key with --force), writes its checks to a file and records its counts. The
+# files are shown in section order and the counts summed, so the report reads
+# as it did when the sections ran in sequence. A shard that dies before
+# recording its counts is a failure.
+WORK_ROOT="$WORK"
+shard_names=(a b c d e)
+shard_pids=()
+for name in "${shard_names[@]}"; do
+	(
+		WORK="$WORK_ROOT/shard-$name"
+		mkdir -p "$WORK" && cp -p "$PW" "$WORK_ROOT/pw2" "$KEY" "$PUB" "$WORK/" || exit 1
+		PW="$WORK/pw"
+		KEY="$WORK/mecha.key"
+		PUB="$WORK/mecha.key.pub"
+		PASS=0
+		FAIL=0
+		"shard_$name"
+		echo "$PASS $FAIL" >"$WORK_ROOT/shard-$name.counts"
+	) >"$WORK_ROOT/shard-$name.out" 2>&1 &
+	shard_pids+=("$!")
+done
+for i in "${!shard_names[@]}"; do
+	name=${shard_names[i]}
+	wait "${shard_pids[i]}"
+	cat "$WORK_ROOT/shard-$name.out"
+	if [[ -f "$WORK_ROOT/shard-$name.counts" ]]; then
+		read -r shard_pass shard_fail <"$WORK_ROOT/shard-$name.counts"
+		PASS=$((PASS + shard_pass))
+		FAIL=$((FAIL + shard_fail))
+	else
+		fail "shard $name ran to completion" "it recorded no counts"
+	fi
+done
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 
 echo ""
