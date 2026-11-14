@@ -42,17 +42,28 @@ for impl in zig rust; do
 		fail "$impl implementation provides lib/libmecha_policy.a and the header" "missing: $lib or $header"
 		finish
 	fi
+done
+# The two compiles are independent, so they run at once.
+declare -A build_pid=()
+for impl in zig rust; do
+	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
 	# The pinned Zig archive references roundq (std.json's number parser pulls
 	# in 128-bit float support), which a stock C toolchain supplies only
 	# through libquadmath. Zig-built consumers get it from Zig's runtime. This
 	# is a known defect of that archive (sigil PLAN), not of the harness.
 	extra=()
 	[[ "$impl" == zig ]] && extra=(-lquadmath)
-	if build_log=$("$CC" -std=c11 -Wall -Wextra -Werror -I "$header_dir" \
-		"$SCRIPT_DIR/policy_driver.c" "$lib" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" 2>&1); then
+	"$CC" -std=c11 -Wall -Wextra -Werror -I "$header_dir" "$SCRIPT_DIR/policy_driver.c" \
+		"$out/lib/libmecha_policy.a" "${extra[@]}" -lpthread -ldl -lm -o "$work/driver-$impl" \
+		>"$work/build-$impl.log" 2>&1 &
+	build_pid[$impl]=$!
+done
+for impl in zig rust; do
+	if wait "${build_pid[$impl]}"; then
 		pass "$impl archive links the driver, which calls every declared function"
 	else
-		fail "$impl archive links the driver, which calls every declared function" "$build_log"
+		wait
+		fail "$impl archive links the driver, which calls every declared function" "$(<"$work/build-$impl.log")"
 		finish
 	fi
 done
@@ -106,6 +117,7 @@ cat >"$work/coexist.c" <<'EOF'
 #include "mecha_policy.h"
 int main(void) { return printf("%s %s\n", sigil_version(), mecha_policy_version()) < 0; }
 EOF
+declare -A coexist_pid=()
 for impl in zig rust; do
 	if [[ "$impl" == zig ]]; then
 		policy="$ZIG_OUT/lib/libmecha_policy.a" verify="$SIGIL_ZIG_OUT/lib/libsigil.a" extra=(-lquadmath)
@@ -121,12 +133,21 @@ for impl in zig rust; do
 			qlib=$("$CC" -print-file-name=libquadmath.so.0)
 			rpath=(-Wl,-rpath,"${qlib%/*}")
 		fi
-		if coexist_log=$("$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
+		# The four links are independent, so they run at once.
+		{ "$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
 			-I "$header_dir" "$work/coexist.c" "$verify" "$policy" "${extra[@]}" "${rpath[@]}" -lpthread -ldl -lm \
-			-o "$work/coexist-$impl-$ld" 2>&1) && "$work/coexist-$impl-$ld" >/dev/null; then
+			-o "$work/coexist-$impl-$ld" && "$work/coexist-$impl-$ld" >/dev/null; } \
+			>"$work/coexist-$impl-$ld.log" 2>&1 &
+		coexist_pid[$impl-$ld]=$!
+	done
+done
+for impl in zig rust; do
+	for ld in bfd lld; do
+		if wait "${coexist_pid[$impl-$ld]}"; then
 			pass "$impl libsigil.a and libmecha_policy.a link into one binary with $ld and run"
 		else
-			fail "$impl libsigil.a and libmecha_policy.a link into one binary with $ld and run" "$coexist_log"
+			fail "$impl libsigil.a and libmecha_policy.a link into one binary with $ld and run" \
+				"$(<"$work/coexist-$impl-$ld.log")"
 		fi
 	done
 done
@@ -134,14 +155,16 @@ done
 # same MIN_LINES ARGS...: both drivers succeed, produce enough output and
 # agree byte for byte. Reason in $DETAIL on failure; records nothing.
 DETAIL=""
+# SAME_TAG, when set, suffixes the output files so concurrent calls do not
+# share them.
 same() {
-	local min_lines="$1" impl rc lines
+	local min_lines="$1" impl rc lines tag="${SAME_TAG:-}"
 	shift
 	# Both drivers at once: they read the same inputs and write separate
 	# outputs, so running them concurrently halves the wait.
 	local -A pid=()
 	for impl in zig rust; do
-		"$work/driver-$impl" "$@" >"$work/out-$impl" 2>"$work/err-$impl" &
+		"$work/driver-$impl" "$@" >"$work/out-$impl$tag" 2>"$work/err-$impl$tag" &
 		pid[$impl]=$!
 	done
 	for impl in zig rust; do
@@ -149,16 +172,16 @@ same() {
 		rc=$?
 		if [[ $rc -ne 0 ]]; then
 			wait
-			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl")"
+			DETAIL="$impl driver exited $rc: $(cat "$work/err-$impl$tag")"
 			return 1
 		fi
 	done
-	lines=$(wc -l <"$work/out-zig")
+	lines=$(wc -l <"$work/out-zig$tag")
 	if [[ $lines -lt $min_lines ]]; then
 		DETAIL="only $lines output lines; expected at least $min_lines"
 		return 1
 	fi
-	DETAIL=$(diff "$work/out-zig" "$work/out-rust") || return 1
+	DETAIL=$(diff "$work/out-zig$tag" "$work/out-rust$tag") || return 1
 	DETAIL=""
 }
 compare() {
@@ -258,17 +281,34 @@ fi
 
 license=$(jq -r '.licenses.beta_valid' examples/install_cert_vectors/manifest.json)
 machine=$(jq -r '.machines.A' examples/install_cert_vectors/manifest.json)
-seed=1
 fuzz_failures=""
 : >"$work/fuzz-codes"
+# Every payload's fuzz run starts at once (each runs both drivers, with its
+# own output files); they are judged afterwards in seed order.
+fuzz_pids=()
+seed=1
 while IFS= read -r payload; do
 	mode=decide
 	grep -qx "$payload" "$work/certs" && mode=install
-	if same "$FUZZ_CASES" fuzz "$mode" "$seed" "$FUZZ_CASES" "$payload" "$license" "$machine"; then
-		awk -v m="$mode" '{ for (i = 2; i <= NF; i++) print m ":" $i }' "$work/out-zig" >>"$work/fuzz-codes"
+	(
+		SAME_TAG="-fuzz-$seed"
+		same "$FUZZ_CASES" fuzz "$mode" "$seed" "$FUZZ_CASES" "$payload" "$license" "$machine"
+		rc=$?
+		printf '%s' "$DETAIL" >"$work/detail-fuzz-$seed"
+		exit "$rc"
+	) &
+	fuzz_pids+=("$!")
+	seed=$((seed + 1))
+done <"$work/all-payloads"
+seed=1
+while IFS= read -r payload; do
+	mode=decide
+	grep -qx "$payload" "$work/certs" && mode=install
+	if wait "${fuzz_pids[seed - 1]}"; then
+		awk -v m="$mode" '{ for (i = 2; i <= NF; i++) print m ":" $i }' "$work/out-zig-fuzz-$seed" >>"$work/fuzz-codes"
 	else
 		fuzz_failures="$fuzz_failures
-seed=$seed $payload: $DETAIL"
+seed=$seed $payload: $(<"$work/detail-fuzz-$seed")"
 	fi
 	seed=$((seed + 1))
 done <"$work/all-payloads"
