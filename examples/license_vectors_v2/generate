@@ -44,7 +44,19 @@ v2 v2_beamflix_valid txn_v2_0014 paddle '"expiry":"2027-10-17",' '"max_minor":"1
 # any real clock, and a second BeamFlix license for the certificate vectors.
 v2 v2_beamflix_expired txn_v2_0015 paddle '"expiry":"2026-09-17",' '"max_minor":"1",' 2 '' mecha-beamflix 2025-09-17
 
-sign() { "$SIGIL" sign "$1.payload.json" --key "$2" --passphrase-file "$3" --out "$4.sigil" || { echo "FATAL: signing $4" >&2; exit 1; }; }
+# sign PAYLOAD KEY PASSPHRASE OUT starts one signature. Each is a
+# production-strength unlock and they are independent (Ed25519 is
+# deterministic, so concurrency cannot change a byte), so they run at once;
+# signed() then waits for all of them and fails if any failed.
+sign_pids=(); sign_outs=()
+sign() { "$SIGIL" sign "$1.payload.json" --key "$2" --passphrase-file "$3" --out "$4.sigil" & sign_pids+=("$!"); sign_outs+=("$4"); }
+signed() {
+	local k failed=0
+	for k in "${!sign_pids[@]}"; do
+		wait "${sign_pids[k]}" || { echo "FATAL: signing ${sign_outs[k]}" >&2; failed=1; }
+	done
+	[[ $failed == 0 ]] || exit 1
+}
 for n in v2_valid v2_leap v2_missing_expiry v2_missing_max_minor v2_max_minor_leading_zero v2_max_minor_plus v2_unknown_field v1_with_max_minor v2_bad_expiry v2_impossible_expiry v2_century_expiry v2_rotshield_valid v2_beamflix_valid v2_beamflix_expired; do
 	sign "$n" "$V1/test_paid.key" "$ppp" "$n"
 done
@@ -53,6 +65,7 @@ sign v2_beta_class "$V1/test_beta.key" "$ppb" v2_beta_class
 sign v2_valid "$V1/test_beta.key" "$ppb" v2_valid_under_beta_key
 sign v2_rotshield_valid "$V1/test_beta.key" "$ppb" v2_rotshield_valid_under_beta_key
 sign v2_beamflix_valid "$V1/test_beta.key" "$ppb" v2_beamflix_valid_under_beta_key
+signed
 
 # e <now> <product> <major> <minor> <expect> [why]
 e() { jq -cn --arg n "$1" --arg p "$2" --argjson ma "$3" --argjson mi "$4" --arg x "$5" --arg w "${6:-}" \
