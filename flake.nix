@@ -358,6 +358,39 @@
           '';
         };
 
+        # The two macOS cross-builds that tests/integration/macos_archive.sh
+        # inspects, run once per change to the Zig package's own sources
+        # instead of in the working tree on every ./test. Each target's exit
+        # status, log and installed tree are recorded as data instead of
+        # failing this build, so the suite reports each target on its own.
+        packages.macos-archive-results = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-macos-archive-results";
+          inherit version;
+          src = zigSrc;
+          nativeBuildInputs = [ zigPkg ];
+          dontConfigure = true;
+          dontFixup = true;
+          dontInstall = true;
+          buildPhase = ''
+            ${zigSetup}
+            mkdir -p $out
+            # target T: one cross-build into $out/T, with its own cache.
+            target() {
+              if zig build -Dtarget="$1" --prefix "$out/$1" --cache-dir "$TMPDIR/cache-$1" \
+                  >"$out/$1.log" 2>&1; then
+                echo 0 >"$out/$1.rc"
+              else
+                echo $? >"$out/$1.rc"
+              fi
+            }
+            target aarch64-macos &
+            a=$!
+            target x86_64-macos &
+            b=$!
+            wait "$a"; wait "$b"
+          '';
+        };
+
         packages.zig-consumer-results = pkgs.stdenv.mkDerivation {
           pname = "${pname}-zig-consumer-results";
           inherit version;
@@ -475,6 +508,7 @@
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
             SIGIL_ZIG_UNIT_TESTS_OUT = self.packages.${system}.zig-unit-test-results;
+            SIGIL_MACOS_ARCHIVE_OUT = self.packages.${system}.macos-archive-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pkgs.pkg-config pbCli ]
               # lld: the differential suites link the archives with GNU ld and lld.
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf pkgs.lld ];
