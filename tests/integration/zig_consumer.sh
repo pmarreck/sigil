@@ -15,6 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 R="${SIGIL_ZIG_CONSUMER_OUT:-$ROOT/.nix-out/zig-consumer}"
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
+# shellcheck disable=SC2312  # diagnostic-only: the verdict is already counted
 fail() { FAIL=$((FAIL + 1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [[ $# -gt 1 ]] && printf '%s\n' "$2" | tail -5 | sed 's/^/       /'; return 0; }
 echo "downstream Zig consumer — $R"
 
@@ -24,15 +25,20 @@ if [[ ! -d "$R/steps" ]]; then
 fi
 
 # step NAME: the recorded exit status is present and zero.
-step_ok() { [[ -f "$R/steps/$1.rc" && "$(cat "$R/steps/$1.rc")" == 0 ]]; }
+step_ok() { local rc; [[ -f "$R/steps/$1.rc" ]] && rc=$(<"$R/steps/$1.rc") && [[ $rc == 0 ]]; }
 step_log() { cat "$R/steps/$1.log" 2>/dev/null || echo "no record for step $1"; }
 
 targets=$(grep -v '^[[:space:]]*$' "$ROOT/tests/zig_consumer/targets" 2>/dev/null)
-[[ $(wc -l <<<"$targets") -ge 5 ]] && pass "the consumer is compiled for $(wc -l <<<"$targets") targets" \
+ntargets=$(wc -l <<<"$targets")
+[[ $ntargets -ge 5 ]] && pass "the consumer is compiled for $ntargets targets" \
 	|| fail "tests/zig_consumer/targets lists the shipped targets" "$targets"
 for t in $targets; do
-	step_ok "resolve-$t" && pass "artifact(\"sigil\") is the static verifier for $t" \
-		|| fail "artifact(\"sigil\") resolves for $t" "$(step_log "resolve-$t")"
+	if step_ok "resolve-$t"; then
+		pass "artifact(\"sigil\") is the static verifier for $t"
+	else
+		log=$(step_log "resolve-$t")
+		fail "artifact(\"sigil\") resolves for $t" "$log"
+	fi
 done
 
 D="$ROOT/examples/demo"
@@ -43,19 +49,28 @@ else
 	out=$(step_log install); rc=1
 fi
 if [[ $rc -eq 0 ]] && grep -q '^  ok' <<<"$out" && ! grep -q 'FAIL' <<<"$out"; then
-	pass "C conformance program linked through artifact(\"sigil\") passes ($(grep -c '^  ok' <<<"$out") checks)"
+	nok=$(grep -c '^  ok' <<<"$out")
+	pass "C conformance program linked through artifact(\"sigil\") passes ($nok checks)"
 else fail "C conformance program linked through artifact(\"sigil\")" "$out"; fi
 
-# Forbidden: every function the signing header exports that the verifier
-# header does not. Positive half: nm must see the verifier's own sigil_verify.
-forbidden=$(comm -23 <(grep -oE '\bsigil_[a-z_]+ *\(' "$ROOT/include/sigil_sign.h" | tr -d ' (' | sort -u) \
-	<(grep -oE '\bsigil_[a-z_]+ *\(' "$ROOT/include/sigil.h" | tr -d ' (' | sort -u))
-if [[ -f "$exe" && -n "$forbidden" ]]; then
-	defined=$(nm --defined-only "$exe" 2>/dev/null | awk '{print $NF}')
+# Forbidden: every function the signing header declares that the verifier
+# header does not, as scripts/c-header-functions reads them (the same reader
+# the export inventories use). Positive half: nm must see the verifier's own
+# sigil_verify.
+forbidden=""
+if sign_fns=$(bash "$ROOT/scripts/c-header-functions" "$ROOT/include/sigil_sign.h") \
+	&& verify_fns=$(bash "$ROOT/scripts/c-header-functions" "$ROOT/include/sigil.h"); then
+	sign_fns=$(sort -u <<<"$sign_fns")
+	verify_fns=$(sort -u <<<"$verify_fns")
+	forbidden=$(comm -23 <(printf '%s\n' "$sign_fns") <(printf '%s\n' "$verify_fns"))
+fi
+if [[ -f "$exe" && -n "$forbidden" ]] && nm_out=$(nm --defined-only "$exe" 2>&1); then
+	defined=$(awk '{print $NF}' <<<"$nm_out")
 	grep -qx 'sigil_verify' <<<"$defined" && pass "nm sees sigil_verify in the linked consumer" || fail "nm sees sigil_verify in the linked consumer"
 	leaked=$(grep -xF -f <(printf '%s\n' "$forbidden") <<<"$defined")
-	[[ -z "$leaked" ]] && pass "the linked consumer defines none of $(wc -l <<<"$forbidden") signing exports" || fail "the linked consumer defines no signing exports" "$leaked"
-else fail "consumer executable installed and signing export list derived" "$exe"; fi
+	nforbidden=$(wc -l <<<"$forbidden")
+	[[ -z "$leaked" ]] && pass "the linked consumer defines none of $nforbidden signing exports" || fail "the linked consumer defines no signing exports" "$leaked"
+else fail "consumer executable installed, read by nm, and signing export list derived" "$exe"; fi
 
 echo ""
 echo "$PASS passed, $FAIL failed"

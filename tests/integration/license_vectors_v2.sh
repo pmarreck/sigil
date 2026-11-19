@@ -14,17 +14,24 @@ WORK="${TMPDIR:-/tmp}/sigil-lv2-$$"; mkdir -p "$WORK" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 echo "license vectors v2 — $V"
 
-[[ $(jq -r .schema "$M") == "mecha-license-vectors/2" ]] && pass "schema is mecha-license-vectors/2" || fail "schema"
-pub() { case "$1" in test-beta) echo "$V1/test_beta.key.pub" ;; test-paid) echo "$V1/test_paid.key.pub" ;; esac; }
-other() { case "$1" in test-beta) echo test-paid ;; test-paid) echo test-beta ;; esac; }
+schema=$(jq -r .schema "$M") || schema="(jq failed)"
+[[ $schema == "mecha-license-vectors/2" ]] && pass "schema is mecha-license-vectors/2" || fail "schema" "$schema"
+# pub and other fail for a role they do not know, so an unknown role cannot
+# turn the refusal check below into a vacuous pass.
+pub() { case "$1" in test-beta) echo "$V1/test_beta.key.pub" ;; test-paid) echo "$V1/test_paid.key.pub" ;; *) return 1 ;; esac; }
+other() { case "$1" in test-beta) echo test-paid ;; test-paid) echo test-beta ;; *) return 1 ;; esac; }
 nv=$(jq '.vectors | length' "$M")
 [[ "$nv" -ge 12 ]] && pass "manifest lists $nv vectors" || fail "manifest size" "$nv"
 for ((i = 0; i < nv; i++)); do
 	f=$(jq -r ".vectors[$i].file" "$M"); p=$(jq -r ".vectors[$i].payload" "$M"); r=$(jq -r ".vectors[$i].signed_by_role" "$M")
-	if "$SIGIL" verify "$V/$f" --pubkey "$(pub "$r")" -q > "$WORK/out" 2>/dev/null && cmp -s "$WORK/out" "$V/$p"; then pass "$f verifies under $r to its exact payload"
+	if ! own=$(pub "$r") || ! o=$(other "$r") || ! opub=$(pub "$o"); then
+		fail "$f names a known signing role" "$r"
+		continue
+	fi
+	if "$SIGIL" verify "$V/$f" --pubkey "$own" -q > "$WORK/out" 2>/dev/null && cmp -s "$WORK/out" "$V/$p"; then pass "$f verifies under $r to its exact payload"
 	else fail "$f verifies under $r to its exact payload"; fi
-	if "$SIGIL" verify "$V/$f" --pubkey "$(pub "$(other "$r")")" -q >/dev/null 2>&1; then fail "$f must not verify under $(other "$r")"
-	else pass "$f refused under $(other "$r")"; fi
+	if "$SIGIL" verify "$V/$f" --pubkey "$opub" -q >/dev/null 2>&1; then fail "$f must not verify under $o"
+	else pass "$f refused under $o"; fi
 done
 known='["authorized","malformed","wrong_product","expired","version_ceiling","class_key_mismatch","clock_rollback","operation_not_granted"]'
 bad=$(jq --argjson k "$known" '[.vectors[].policy_evals[] | select((.app_minor | type) != "number" or (.app_major | type) != "number" or (.expect as $x | $k | index($x)) == null)] | length' "$M")
@@ -55,14 +62,16 @@ done <<< "$marks"
 [[ -z "$contradicts" ]] && pass "every mark eval follows the clock rule" || fail "mark evals contradict the clock rule" "$contradicts"
 # v2 payloads say v 2 and carry max_minor; the frozen v1 set does not change.
 for f in v2_valid v2_leap; do
-	[[ $(jq -r '.v + "/" + .max_minor' "$V/$f.payload.json") =~ ^2/[0-9]+$ ]] && pass "$f is a v2 payload with max_minor" || fail "$f v2 shape"
+	shape=$(jq -r '.v + "/" + .max_minor' "$V/$f.payload.json") || shape="(jq failed)"
+	[[ $shape =~ ^2/[0-9]+$ ]] && pass "$f is a v2 payload with max_minor" || fail "$f v2 shape" "$shape"
 done
 # Each product the contract names has a paid v2 grant admitted at its own
 # ceiling and refused one minor and one major above it; authorized evals name
 # the payload's own product. The product list is the contract's own line, so
 # a product added there without vectors fails here.
 if products=$(bash "$ROOT/scripts/contract-products"); then
-	pass "the contract names $(wc -l <<<"$products") products"
+	nprod=$(wc -l <<<"$products")
+	pass "the contract names $nprod products"
 else
 	fail "read the contract's product identifiers"; products=""
 fi
@@ -70,6 +79,8 @@ for prod in $products; do
 	q='[.vectors[] | select(.signed_by_role == "test-paid" and (.file | startswith("v2_"))) as $v
 		| ($v.payload) as $p | $v.policy_evals[] | select(.product == $prod) | . + {payload: $p}]'
 	rows=$(jq -c --arg prod "$prod" "$q" "$M")
+	# A failed jq leaves no rows, and every coverage check below then fails.
+	evals=$(jq -r '.[] | [.payload, .app_major, .app_minor, .expect] | join("|")' <<< "$rows") || evals=""
 	ok=1
 	while IFS='|' read -r payload ma mi x; do
 		mm=$(jq -r '.max_major + "|" + .max_minor + "|" + .product' "$V/$payload")
@@ -81,7 +92,7 @@ for prod in $products; do
 				[[ "$ma" == "$pma" && "$mi" == $((pmi + 1)) ]] && seen_minor=1
 				[[ "$ma" == $((pma + 1)) ]] && seen_major=1 ;;
 		esac
-	done < <(jq -r '.[] | [.payload, .app_major, .app_minor, .expect] | join("|")' <<< "$rows")
+	done <<< "$evals"
 	[[ ${seen_at:-0} == 1 ]] && pass "$prod: paid v2 grant admitted at its own ceiling" || fail "$prod: paid v2 grant admitted at its own ceiling"
 	[[ ${seen_minor:-0} == 1 ]] && pass "$prod: refused one minor above the ceiling" || fail "$prod: refused one minor above the ceiling"
 	[[ ${seen_major:-0} == 1 ]] && pass "$prod: refused one major above the ceiling" || fail "$prod: refused one major above the ceiling"
@@ -92,8 +103,13 @@ done
 # and are never rewritten (it used to run the generator in place, rewriting
 # them on every ./test). The scratch tree is laid out like the repository, so
 # the generator finds the v1 test keys where it expects them.
-before=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json | sha256sum)
-v1before=$(cd "$V1" && sha256sum ./*.sigil manifest.json | sha256sum)
+# digest_v2 and digest_v1 fingerprint each committed set, or fail. A failed
+# hash leaves a different marker before and after, so the untouched checks
+# below cannot pass by comparing two hashes of nothing.
+digest_v2() { local s; s=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json) || return 1; sha256sum <<<"$s"; }
+digest_v1() { local s; s=$(cd "$V1" && sha256sum ./*.sigil manifest.json) || return 1; sha256sum <<<"$s"; }
+before=$(digest_v2) || before="(v2 digest failed before)"
+v1before=$(digest_v1) || v1before="(v1 digest failed before)"
 regen="$WORK/regen/examples/license_vectors_v2"
 if mkdir -p "$regen" "$WORK/regen/examples/license_vectors" \
 	&& cp "$V/generate" "$regen/" \
@@ -102,6 +118,7 @@ if mkdir -p "$regen" "$WORK/regen/examples/license_vectors" \
 	(cd "$V" && ls ./*.sigil ./*.payload.json manifest.json) >"$WORK/committed.list"
 	(cd "$regen" && ls ./*.sigil ./*.payload.json manifest.json) >"$WORK/regenerated.list"
 	differ=""
+	[[ -s "$WORK/committed.list" ]] || differ="no committed vectors listed;"
 	cmp -s "$WORK/committed.list" "$WORK/regenerated.list" || differ="different file sets;"
 	while IFS= read -r f; do
 		cmp -s "$V/$f" "$regen/$f" || differ="$differ $f"
@@ -109,10 +126,11 @@ if mkdir -p "$regen" "$WORK/regen/examples/license_vectors" \
 	[[ -z "$differ" ]] && pass "regeneration in scratch is byte-identical to the committed vectors" \
 		|| fail "regeneration in scratch is byte-identical to the committed vectors" "$differ"
 else
-	fail "regenerate the vectors in scratch" "$(tail -3 "$WORK/regen.log" 2>/dev/null)"
+	log_tail=$(tail -3 "$WORK/regen.log" 2>/dev/null) || log_tail="(no log)"
+	fail "regenerate the vectors in scratch" "$log_tail"
 fi
-after=$(cd "$V" && sha256sum ./*.sigil ./*.payload.json manifest.json | sha256sum)
-v1after=$(cd "$V1" && sha256sum ./*.sigil manifest.json | sha256sum)
+after=$(digest_v2) || after="(v2 digest failed after)"
+v1after=$(digest_v1) || v1after="(v1 digest failed after)"
 [[ "$before" == "$after" ]] && pass "the committed v2 vectors are untouched" || fail "the committed v2 vectors changed"
 [[ "$v1before" == "$v1after" ]] && pass "the frozen v1 set is untouched" || fail "the frozen v1 set changed"
 echo "$PASS passed, $FAIL failed"

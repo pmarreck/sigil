@@ -14,11 +14,16 @@ echo "restore-check payload — $P"
 if [[ ! -f "$P" ]]; then fail "restore-check payload exists"; echo "$PASS passed, $FAIL failed"; exit 1; fi
 jq -e . "$P" >/dev/null 2>&1 && pass "payload is JSON" || fail "payload is JSON"
 for k in product max_major expiry purchase_date payment_provider customer_email cert_id machine license_sha256 issued; do
-	if [[ $(jq --arg k "$k" 'has($k)' "$P") == false ]]; then pass "payload carries no '$k' (no license or certificate parser can accept it)"
-	else fail "payload must not carry '$k'"; fi
+	has=$(jq --arg k "$k" 'has($k)' "$P") || has="(jq failed)"
+	if [[ $has == false ]]; then pass "payload carries no '$k' (no license or certificate parser can accept it)"
+	else fail "payload must not carry '$k'" "$has"; fi
 done
-[[ $(jq -r .purpose "$P") == "mecha-restore-check" ]] && pass "payload names its purpose" || fail "payload names its purpose"
-jq -cS . "$P" | tr -d '\n' > "${TMPDIR:-/tmp}/rc-canon-$$"
+purpose=$(jq -r .purpose "$P") || purpose="(jq failed)"
+[[ $purpose == "mecha-restore-check" ]] && pass "payload names its purpose" || fail "payload names its purpose" "$purpose"
+# jq -c ends its one line with a newline, which $() drops: the same bytes
+# as piping it through tr -d '\n', without masking jq's status.
+canon=$(jq -cS . "$P") || canon="(jq failed)"
+printf '%s' "$canon" > "${TMPDIR:-/tmp}/rc-canon-$$"
 cmp -s "${TMPDIR:-/tmp}/rc-canon-$$" "$P" && pass "payload is canonical (jq -cS)" || fail "payload is canonical (jq -cS)"
 rm -f "${TMPDIR:-/tmp}/rc-canon-$$"
 echo "$PASS passed, $FAIL failed"

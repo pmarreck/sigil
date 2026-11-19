@@ -29,7 +29,12 @@ if ! command -v "$CC" >/dev/null 2>&1; then
 	echo "FATAL: no stock C compiler ($CC) — the customer link path cannot be tested" >&2
 	exit 1
 fi
-case "$("$CC" --version 2>&1 | head -1)" in
+if ! cc_version=$("$CC" --version 2>&1); then
+	echo "FATAL: $CC --version failed, so it cannot be checked for zig cc: $cc_version" >&2
+	exit 1
+fi
+cc_version=${cc_version%%$'\n'*}
+case "$cc_version" in
 	*zig*)
 		echo "FATAL: \$CC resolves to zig cc, which hides the very failure this test exists to catch." >&2
 		echo "       Set CC to gcc or clang." >&2
@@ -49,7 +54,7 @@ if [[ $build_rc -ne 0 ]]; then
 	echo "0 passed, 1 failed"
 	exit 1
 fi
-echo "  ok   libsigil.a links with a stock C compiler ($("$CC" --version 2>&1 | head -1))"
+echo "  ok   libsigil.a links with a stock C compiler ($cc_version)"
 
 # The fixture triple is sigil's own signed output, committed under
 # examples/demo/. It restores the sensitivity the RFC raw vector provided

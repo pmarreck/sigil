@@ -32,8 +32,11 @@ for kind in disk mac tpm; do
 done
 bad=0
 for ((i = 0; i < nk; i++)); do
-	read -r p k n h < <(jq -r ".kats[$i] | \"\(.product) \(.kind) \(.normalized) \(.hint)\"" "$M")
-	[[ "$(hint "$p" "$k" "$n")" == "$h" && "$h" =~ ^[0-9a-f]{64}$ ]] || { bad=$((bad + 1)); echo "       kat $i ($k) mismatch"; }
+	# A failed jq or hint leaves an empty field, which cannot match a 64-hex hint.
+	row=$(jq -r ".kats[$i] | \"\(.product) \(.kind) \(.normalized) \(.hint)\"" "$M") || row=""
+	read -r p k n h <<<"$row"
+	got=$(hint "$p" "$k" "$n") || got=""
+	[[ "$got" == "$h" && "$h" =~ ^[0-9a-f]{64}$ ]] || { bad=$((bad + 1)); echo "       kat $i ($k) mismatch"; }
 done
 [[ $bad -eq 0 ]] && pass "all $nk hints recompute with coreutils" || fail "hints recompute" "$bad bad"
 # Equivalence classes: equal (product, kind, normalized) <=> equal hint.

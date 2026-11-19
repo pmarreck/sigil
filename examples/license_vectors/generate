@@ -11,7 +11,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SIGIL="${SIGIL_BIN:-$REPO_ROOT/zig-out/bin/sigil}"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
 BETA_PP="test-beta-not-for-production"
 PAID_PP="test-paid-not-for-production"
@@ -63,4 +63,6 @@ done
 write_payload paid_valid.payload.json "$p_paid_valid"
 sign paid_valid test_paid.key "$pp_paid"
 
-echo "generated: $(ls -1 ./*.sigil | wc -l) envelopes"
+envelopes=(./*.sigil)
+[[ -e ${envelopes[0]} ]] || { echo "FATAL: no envelopes were written" >&2; exit 1; }
+echo "generated: ${#envelopes[@]} envelopes"

@@ -106,13 +106,23 @@ fi
 
 # Manifest consistency, both directions: every referenced file exists, and
 # every fixture envelope is referenced. Mechanical, not hand-picked.
+# An empty reference list would pass the existence check vacuously.
 manifest_ok=1
-while IFS= read -r ref; do
+if refs=$(grep -o '"[a-z_]*\.\(sigil\|payload\.json\)"' "$LV/manifest.json"); then
+	refs=$(tr -d '"' <<<"$refs")
+	refs=$(sort -u <<<"$refs")
+	mapfile -t refs <<<"$refs"
+else
+	refs=()
+	manifest_ok=0
+	fail "the manifest references fixture files" "no .sigil or .payload.json names in $LV/manifest.json"
+fi
+for ref in "${refs[@]}"; do
 	if [[ ! -f "$LV/$ref" ]]; then
 		fail "manifest references existing file: $ref"
 		manifest_ok=0
 	fi
-done < <(grep -o '"[a-z_]*\.\(sigil\|payload\.json\)"' "$LV/manifest.json" | tr -d '"' | sort -u)
+done
 [[ $manifest_ok -eq 1 ]] && pass "every file the manifest references exists"
 
 sweep_ok=1
@@ -159,8 +169,17 @@ fi
 # the sigil CLI derives from the committed .pub — the seed->pubkey link itself
 # is proven by mecha-commerce's issuer suite under native sigil verify.
 for role in test_beta test_paid; do
-	der_len="$(sed -n '2p' "$LV/$role.pkcs8.pem" | base64 -d 2>/dev/null | wc -c)"
-	prefix="$(sed -n '2p' "$LV/$role.pkcs8.pem" | base64 -d 2>/dev/null | head -c 16 | od -An -tx1 | tr -d ' \n')"
+	# The DER is binary, so it is decoded once into a file, each step checked.
+	der="$(mktemp "${TMPDIR:-/tmp}/sigil-lv-der-XXXXXX")"
+	if b64=$(sed -n '2p' "$LV/$role.pkcs8.pem") && base64 -d <<<"$b64" >"$der" 2>/dev/null \
+		&& der_len=$(wc -c <"$der") && prefix=$(od -An -tx1 -N16 "$der"); then
+		der_len=${der_len//[[:space:]]/}
+		prefix=${prefix//[[:space:]]/}
+	else
+		der_len="(decode failed)"
+		prefix=""
+	fi
+	rm -f "$der"
 	if [[ "$der_len" == "48" && "$prefix" == "302e020100300506032b657004220420" ]]; then
 		pass "$role.pkcs8.pem is a well-formed Ed25519 PKCS#8 (RFC 8410)"
 	else

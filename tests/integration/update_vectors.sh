@@ -107,7 +107,17 @@ expect 1 yes "manifest_rollback offered to the license key fails at SIGNATURE" \
 	"$UV/manifest_rollback.sigil" "$REPO_ROOT/examples/demo/demo.key.pub"
 
 # Manifest consistency, both directions.
-for ref in $(grep -o '"manifest_[a-z_]*\.sigil"' "$UV/manifest.json" | tr -d '"' | sort -u); do
+# An empty reference list would make the first loop vacuous, so it fails.
+if refs=$(grep -o '"manifest_[a-z_]*\.sigil"' "$UV/manifest.json"); then
+	pass "manifest.json references manifest fixtures"
+	refs=$(tr -d '"' <<<"$refs")
+	refs=$(sort -u <<<"$refs")
+	mapfile -t refs <<<"$refs"
+else
+	fail "manifest.json references manifest fixtures" "no \"manifest_*.sigil\" names in $UV/manifest.json"
+	refs=()
+fi
+for ref in "${refs[@]}"; do
 	if [[ -f "$UV/$ref" ]]; then pass "manifest.json references existing $ref"; else fail "manifest.json references existing $ref"; fi
 done
 for f in "$UV"/manifest_*.sigil; do

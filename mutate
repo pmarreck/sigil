@@ -48,7 +48,14 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 echo $$ > "$LOCK/pid"
 
-hash_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+# hash_of FILE: FILE's SHA-256, or failure when it cannot be read. A piped
+# `cut` would report success with an empty hash, and the restore guard
+# below skips empty hashes.
+hash_of() {
+	local out
+	out=$(sha256sum "$1" 2>/dev/null) || return 1
+	printf '%s\n' "${out%% *}"
+}
 
 CONCURRENT_EDIT=0
 
@@ -59,7 +66,7 @@ CONCURRENT_EDIT=0
 declare -A LAST_WRITTEN
 for f in "${SOURCES[@]}"; do
 	cp "$f" "$BACKUP/$(basename "$f")" || exit 1
-	LAST_WRITTEN["$f"]="$(hash_of "$f")"
+	LAST_WRITTEN["$f"]="$(hash_of "$f")" || { echo "FATAL: cannot hash $f" >&2; exit 1; }
 done
 
 # record_written: call after DELIBERATELY changing a source, so the guard does

@@ -2,39 +2,68 @@
 # Offline-renewal file vectors (contract section 14.3). Built with jq -cS so
 # key order is canonical. Each embedded envelope is the printable-binary
 # ENCODING of the exact bytes of an existing vector (Peter 2026-10-01 17:20),
-# so the files contain no JSON escapes. Nothing new is signed here.
+# so the files contain no JSON escapes. Only renew_cert is signed here.
+#
+# Every step stops the generator when it fails, so a failed tool can never
+# leave an empty or partial vector behind.
+# shellcheck disable=SC2016  # single-quoted emit arguments are jq programs; jq expands $lic
 set -u
+die() { echo "FATAL: $*" >&2; exit 1; }
 D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; R="$(cd "$D/../.." && pwd)"
 LV="$R/examples/license_vectors"; IV="$R/examples/install_cert_vectors"
-MA=$(jq -r .machines.A "$IV/manifest.json")
+MA=$(jq -r .machines.A "$IV/manifest.json") || die "reading machine A"
 pb() { printable-binary --no-double-encode-check < "$1" 2>/dev/null; }
-LIC=$(pb "$LV/beta_valid.sigil"); CERT=$(pb "$IV/cert_valid.sigil")
-jq -cnS --arg lic "$LIC" --arg m "$MA" \
-	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}' | tr -d '\n' > "$D/request_activate.json"
-jq -cnS --arg cert "$CERT" '{install_cert:$cert,v:"1"}' | tr -d '\n' > "$D/bundle_cert_only.json"
-jq -cnS --arg lic "$LIC" --arg cert "$CERT" '{install_cert:$cert,license:$lic,v:"1"}' | tr -d '\n' > "$D/bundle_license_and_cert.json"
+LIC=$(pb "$LV/beta_valid.sigil") || die "encoding beta_valid.sigil"
+CERT=$(pb "$IV/cert_valid.sigil") || die "encoding cert_valid.sigil"
+# emit FILE JQ_ARGS...: jq -cnS's single line into FILE without its newline.
+# Compact output escapes any newline inside a string, so the only one is the
+# terminator, which $() drops.
+emit() {
+	local file=$1 out
+	shift
+	out=$(jq -cnS "$@") || die "building ${file##*/}"
+	printf '%s' "$out" > "$file" || die "writing $file"
+}
+emit "$D/request_activate.json" --arg lic "$LIC" --arg m "$MA" \
+	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}'
+emit "$D/bundle_cert_only.json" --arg cert "$CERT" '{install_cert:$cert,v:"1"}'
+emit "$D/bundle_license_and_cert.json" --arg lic "$LIC" --arg cert "$CERT" '{install_cert:$cert,license:$lic,v:"1"}'
 # Contract 15.1: the same activation request carrying device hints, each the
 # first mecha-validate known answer per kind from examples/hint_vectors.
 HV="$R/examples/hint_vectors/manifest.json"
-hv() { jq -r --arg k "$1" '[.kats[] | select(.product == "mecha-validate" and .kind == $k)][0].hint' "$HV"; }
-jq -cnS --arg lic "$LIC" --arg m "$MA" --arg d "$(hv disk)" --arg a "$(hv mac)" --arg t "$(hv tpm)" \
-	'{hints:{disk:$d,mac:$a,tpm:$t},installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}' | tr -d '\n' > "$D/request_activate_hints.json"
+hv() {
+	local h
+	h=$(jq -r --arg k "$1" '[.kats[] | select(.product == "mecha-validate" and .kind == $k)][0].hint' "$HV") \
+		|| die "reading the $1 hint"
+	[[ $h =~ ^[0-9a-f]{64}$ ]] || die "no mecha-validate $1 hint in $HV (got '$h')"
+	printf '%s\n' "$h"
+}
+hint_disk=$(hv disk) || exit 1
+hint_mac=$(hv mac) || exit 1
+hint_tpm=$(hv tpm) || exit 1
+emit "$D/request_activate_hints.json" --arg lic "$LIC" --arg m "$MA" --arg d "$hint_disk" --arg a "$hint_mac" --arg t "$hint_tpm" \
+	'{hints:{disk:$d,mac:$a,tpm:$t},installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",v:"1"}'
 # Contract 15.2: an activation that displaced the oldest device; the bundle
 # names only that device's first-activation date (unsigned, informational).
-jq -cnS --arg cert "$CERT" '{displaced:{first_activated:"2026-09-17"},install_cert:$cert,v:"1"}' | tr -d '\n' > "$D/bundle_cert_displaced.json"
+emit "$D/bundle_cert_displaced.json" --arg cert "$CERT" '{displaced:{first_activated:"2026-09-17"},install_cert:$cert,v:"1"}'
 # Contract 15.2: the same activation request carrying a usage report (1 GiB
 # scanned in this certificate's current epoch).
-jq -cnS --arg lic "$LIC" --arg m "$MA" \
-	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",usage:{epoch:"0192f3a4-5b6c-7d8e-9f01-23456789abce",scanned_bytes:"1073741824"},v:"1"}' | tr -d '\n' > "$D/request_activate_usage.json"
+emit "$D/request_activate_usage.json" --arg lic "$LIC" --arg m "$MA" \
+	'{installed_major:"1",installed_minor:"0",license:$lic,machine:$m,operation:"activate",usage:{epoch:"0192f3a4-5b6c-7d8e-9f01-23456789abce",scanned_bytes:"1073741824"},v:"1"}'
 # Contract 14.4: a renew/migrate bundle. The v2 license from
 # examples/license_vectors_v2 plus a certificate minted for EXACTLY that
 # license on machine A (test-install-cert, passphrase public by design).
 SIGIL="${SIGIL_BIN:-$R/zig-out/bin/sigil}"
 L2="$R/examples/license_vectors_v2"
-lh=$(sha256sum "$L2/v2_valid.sigil"); lh=${lh%% *}
-printf '{"cert_id":"0192f3a4-5b6c-7d8e-9f01-23456789abcf","expiry":"2027-10-17","issued":"2026-10-17","license_sha256":"%s","machine":"%s","product":"mecha-validate","v":"1"}' "$lh" "$MA" > "$D/renew_cert.payload.json"
-icpp="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")"; printf '%s' "test-install-cert-not-for-production" > "$icpp"
-"$SIGIL" sign "$D/renew_cert.payload.json" --key "$IV/test_install_cert.key" --passphrase-file "$icpp" --out "$D/renew_cert.sigil" >/dev/null 2>&1 || { rm -f "$icpp"; echo "FATAL: signing renew_cert" >&2; exit 1; }
+lh=$(sha256sum "$L2/v2_valid.sigil") || die "hashing v2_valid.sigil"
+lh=${lh%% *}
+printf '{"cert_id":"0192f3a4-5b6c-7d8e-9f01-23456789abcf","expiry":"2027-10-17","issued":"2026-10-17","license_sha256":"%s","machine":"%s","product":"mecha-validate","v":"1"}' "$lh" "$MA" > "$D/renew_cert.payload.json" \
+	|| die "writing renew_cert.payload.json"
+icpp="$(mktemp "${TMPDIR:-/tmp}/sigil-pp-XXXXXX")" || die "creating the passphrase file"
+printf '%s' "test-install-cert-not-for-production" > "$icpp"
+"$SIGIL" sign "$D/renew_cert.payload.json" --key "$IV/test_install_cert.key" --passphrase-file "$icpp" --out "$D/renew_cert.sigil" >/dev/null 2>&1 || { rm -f "$icpp"; die "signing renew_cert"; }
 rm -f "$icpp"
-jq -cnS --arg lic "$(pb "$L2/v2_valid.sigil")" --arg cert "$(pb "$D/renew_cert.sigil")" '{install_cert:$cert,license:$lic,v:"1"}' | tr -d '\n' > "$D/bundle_renew_v2.json"
+LIC2=$(pb "$L2/v2_valid.sigil") || die "encoding v2_valid.sigil"
+RCERT=$(pb "$D/renew_cert.sigil") || die "encoding renew_cert.sigil"
+emit "$D/bundle_renew_v2.json" --arg lic "$LIC2" --arg cert "$RCERT" '{install_cert:$cert,license:$lic,v:"1"}'
 echo generated

@@ -7,6 +7,7 @@
 # mecha_policy's ABI 2 decide is judged by answers it did not produce.
 # Ed25519 is deterministic: regeneration is byte-identical.
 set -u
+die() { echo "FATAL: $*" >&2; exit 1; }
 D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; R="$(cd "$D/../.." && pwd)"
 SIGIL="${SIGIL_BIN:-$R/zig-out/bin/sigil}"
 V1="$R/examples/license_vectors"
@@ -67,92 +68,131 @@ sign v2_rotshield_valid "$V1/test_beta.key" "$ppb" v2_rotshield_valid_under_beta
 sign v2_beamflix_valid "$V1/test_beta.key" "$ppb" v2_beamflix_valid_under_beta_key
 signed
 
+# A vector is written as `vec FILE PAYLOAD ROLE` followed by its evals, each
+# an `e` or `eh` line; vec_close ends the last one. Every jq call is checked,
+# so a failure stops the generator instead of leaving an empty manifest.
+VECS=(); vec_head=(); vec_evals=()
 # e <now> <product> <major> <minor> <expect> [why]
-e() { jq -cn --arg n "$1" --arg p "$2" --argjson ma "$3" --argjson mi "$4" --arg x "$5" --arg w "${6:-}" \
-	'{now_utc_date:$n,product:$p,app_major:$ma,app_minor:$mi,expect:$x} + (if $w == "" then {} else {why:$w} end)'; }
+e() {
+	local j
+	j=$(jq -cn --arg n "$1" --arg p "$2" --argjson ma "$3" --argjson mi "$4" --arg x "$5" --arg w "${6:-}" \
+		'{now_utc_date:$n,product:$p,app_major:$ma,app_minor:$mi,expect:$x} + (if $w == "" then {} else {why:$w} end)') \
+		|| die "eval '$*' of ${vec_head[0]:-no vector}"
+	vec_evals+=("$j")
+}
 # eh <mark> <now> <product> <major> <minor> <expect> [why]: e, with the stored
 # clock high-water mark. The mark is judged only for a grant with an expiry
 # (contract section 9, 2026-11-11).
-eh() { jq -cn --arg h "$1" --arg n "$2" --arg p "$3" --argjson ma "$4" --argjson mi "$5" --arg x "$6" --arg w "${7:-}" \
-	'{now_utc_date:$n,clock_high_water:$h,product:$p,app_major:$ma,app_minor:$mi,expect:$x} + (if $w == "" then {} else {why:$w} end)'; }
-vec() { # file payload role evals...
-	local f="$1" p="$2" r="$3"; shift 3
-	jq -cn --arg f "$f" --arg p "$p" --arg r "$r" --argjson ev "[$(IFS=,; echo "$*")]" \
-		'{file:$f,payload:$p,signed_by_role:$r,sigil_verify:"verified",policy_evals:$ev}'
+eh() {
+	local j
+	j=$(jq -cn --arg h "$1" --arg n "$2" --arg p "$3" --argjson ma "$4" --argjson mi "$5" --arg x "$6" --arg w "${7:-}" \
+		'{now_utc_date:$n,clock_high_water:$h,product:$p,app_major:$ma,app_minor:$mi,expect:$x} + (if $w == "" then {} else {why:$w} end)') \
+		|| die "eval '$*' of ${vec_head[0]:-no vector}"
+	vec_evals+=("$j")
+}
+# vec FILE PAYLOAD ROLE: end the previous vector and start this one.
+vec() { vec_close; vec_head=("$1" "$2" "$3"); }
+vec_close() {
+	local j ev IFS=,
+	[[ ${#vec_head[@]} -eq 0 ]] && return 0
+	[[ ${#vec_evals[@]} -gt 0 ]] || die "vector ${vec_head[0]} has no evals"
+	ev="${vec_evals[*]}"
+	j=$(jq -cn --arg f "${vec_head[0]}" --arg p "${vec_head[1]}" --arg r "${vec_head[2]}" --argjson ev "[$ev]" \
+		'{file:$f,payload:$p,signed_by_role:$r,sigil_verify:"verified",policy_evals:$ev}') \
+		|| die "vector ${vec_head[0]}"
+	VECS+=("$j")
+	vec_head=(); vec_evals=()
 }
 M=mecha-validate
 RS=mecha-rotshield
 BF=mecha-beamflix
-VECS=(
-"$(vec v2_valid.sigil v2_valid.payload.json test-paid \
-	"$(e 2026-10-17 $M 1 0 authorized 'ceiling: 1.0 is below 1.3')" \
-	"$(e 2026-10-17 $M 1 2 authorized)" \
-	"$(e 2026-10-17 $M 1 3 authorized 'the licensed minor itself')" \
-	"$(e 2026-10-17 $M 1 4 version_ceiling 'a later minor needs a refresh')" \
-	"$(e 2026-10-17 $M 2 0 version_ceiling 'a later major needs a purchase')" \
-	"$(e 2026-10-17 $M 0 99 authorized 'an earlier major is below the ceiling whatever its minor')" \
-	"$(e 2027-10-17 $M 1 3 authorized 'expiry day is inclusive')" \
-	"$(e 2027-10-18 $M 1 3 expired)" \
-	"$(eh 2026-10-20 2026-10-17 $M 1 3 clock_rollback 'every v2 grant has an expiry, so the mark is judged')" \
-	"$(e 2026-10-17 mecha-rotshield 1 3 wrong_product)" \
-	"$(e 2026-10-17 $BF 1 0 wrong_product 'a validate grant never unlocks BeamFlix')")"
-"$(vec v2_leap.sigil v2_leap.payload.json test-paid \
-	"$(e 2029-02-28 $M 1 0 authorized 'minted 2028-02-29; +1 year clamps to Feb 28')" \
-	"$(e 2029-03-01 $M 1 0 expired)" \
-	"$(e 2029-02-28 $M 1 1 version_ceiling)")"
-"$(vec v2_missing_expiry.sigil v2_missing_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'expiry is mandatory in v2')")"
-"$(vec v2_missing_max_minor.sigil v2_missing_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is mandatory in v2')")"
-"$(vec v2_max_minor_leading_zero.sigil v2_max_minor_leading_zero.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'canonical decimal only')")"
-"$(vec v2_max_minor_plus.sigil v2_max_minor_plus.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'canonical decimal only')")"
-"$(vec v2_beta_class.sigil v2_beta_class.payload.json test-beta "$(e 2026-10-17 $M 1 0 malformed 'v2 is the paid versioned grant; beta stays v1')")"
-"$(vec v2_unknown_field.sigil v2_unknown_field.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'unknown fields fail the schema')")"
-"$(vec v1_with_max_minor.sigil v1_with_max_minor.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'max_minor is a v2 field')")"
-"$(vec v2_bad_expiry.sigil v2_bad_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed 'expiry must be a real date')")"
-"$(vec v2_impossible_expiry.sigil v2_impossible_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed '2027-02-29 does not exist')")"
-"$(vec v2_century_expiry.sigil v2_century_expiry.payload.json test-paid "$(e 2026-10-17 $M 1 0 malformed '2100 is not a leap year')")"
-"$(vec v2_rotshield_valid.sigil v2_rotshield_valid.payload.json test-paid \
-	"$(e 2026-10-17 $RS 1 0 authorized)" \
-	"$(e 2026-10-17 $RS 1 2 authorized 'the licensed minor itself')" \
-	"$(e 2026-10-17 $RS 1 3 version_ceiling 'a later minor needs a refresh')" \
-	"$(e 2026-10-17 $RS 2 0 version_ceiling 'a later major needs a purchase')" \
-	"$(e 2027-10-17 $RS 1 2 authorized 'expiry day is inclusive')" \
-	"$(e 2027-10-18 $RS 1 2 expired)" \
-	"$(e 2026-10-17 $M 1 0 wrong_product 'a RotShield grant never unlocks validate')" \
-	"$(e 2026-10-17 $BF 1 0 wrong_product 'a RotShield grant never unlocks BeamFlix')")"
-"$(vec v2_rotshield_valid_under_beta_key.sigil v2_rotshield_valid.payload.json test-beta "$(e 2026-10-17 $RS 1 0 class_key_mismatch 'a leaked beta key cannot mint paid RotShield grants')")"
-"$(vec v2_valid_under_beta_key.sigil v2_valid.payload.json test-beta "$(e 2026-10-17 $M 1 0 class_key_mismatch 'a leaked beta key cannot mint paid grants')")"
-"$(vec ../license_vectors/beta_valid.sigil ../license_vectors/beta_valid.payload.json test-beta \
-	"$(e 2026-10-17 $M 1 99 authorized 'v1 grants are major-only under the v2 entry point')" \
-	"$(e 2026-10-17 $M 2 0 version_ceiling)" \
-	"$(eh 2026-09-20 2026-09-20 $M 1 0 authorized 'a day equal to the mark is not a rollback')" \
-	"$(eh 2026-09-20 2026-09-17 $M 1 0 clock_rollback 'a dated grant: a clock set back could extend it')" \
-	"$(eh 2026-10-20 2026-10-18 $M 1 0 clock_rollback 'the mark is judged before expiry')")"
-"$(vec ../license_vectors/paid_valid.sigil ../license_vectors/paid_valid.payload.json test-paid \
-	"$(e 2026-10-17 $M 1 99 authorized 'v1 paid grant: no minor ceiling')" \
-	"$(eh 2026-09-20 2026-09-17 $M 1 0 authorized 'no expiry: a clock set back extends nothing, so the mark is not judged')" \
-	"$(eh 2026-09-20 2026-09-17 $M 2 0 version_ceiling 'the ceiling still applies')")"
-"$(vec v2_beamflix_valid.sigil v2_beamflix_valid.payload.json test-paid \
-	"$(e 2026-10-17 $BF 1 0 authorized)" \
-	"$(e 2026-10-17 $BF 1 1 authorized 'the licensed minor itself')" \
-	"$(e 2026-10-17 $BF 1 2 version_ceiling 'a later minor needs a refresh')" \
-	"$(e 2026-10-17 $BF 2 0 version_ceiling 'a later major needs a purchase')" \
-	"$(e 2026-10-17 $BF 0 1 authorized 'a 0.1 prerelease is below the 1.1 ceiling')" \
-	"$(e 2027-10-17 $BF 1 1 authorized 'expiry day is inclusive')" \
-	"$(e 2027-10-18 $BF 1 1 expired)" \
-	"$(eh 2026-10-20 2026-10-17 $BF 1 0 clock_rollback 'every v2 grant has an expiry, so the mark is judged')" \
-	"$(e 2026-10-17 $M 1 0 wrong_product 'a BeamFlix grant never unlocks validate')" \
-	"$(e 2026-10-17 $RS 1 0 wrong_product 'a BeamFlix grant never unlocks RotShield')")"
-"$(vec v2_beamflix_valid_under_beta_key.sigil v2_beamflix_valid.payload.json test-beta "$(e 2026-10-17 $BF 1 0 class_key_mismatch 'a leaked beta key cannot mint paid BeamFlix grants')")"
-"$(vec v2_beamflix_expired.sigil v2_beamflix_expired.payload.json test-paid \
-	"$(e 2026-09-17 $BF 0 1 authorized 'expiry day is inclusive')" \
-	"$(e 2026-09-18 $BF 0 1 expired 'expired on every clock after 2026-09-17')" \
-	"$(e 2026-11-10 $BF 0 1 expired)")"
-)
-jq -n --argjson v "[$(IFS=,; echo "${VECS[*]}")]" '{
+vec v2_valid.sigil v2_valid.payload.json test-paid
+	e 2026-10-17 $M 1 0 authorized 'ceiling: 1.0 is below 1.3'
+	e 2026-10-17 $M 1 2 authorized
+	e 2026-10-17 $M 1 3 authorized 'the licensed minor itself'
+	e 2026-10-17 $M 1 4 version_ceiling 'a later minor needs a refresh'
+	e 2026-10-17 $M 2 0 version_ceiling 'a later major needs a purchase'
+	e 2026-10-17 $M 0 99 authorized 'an earlier major is below the ceiling whatever its minor'
+	e 2027-10-17 $M 1 3 authorized 'expiry day is inclusive'
+	e 2027-10-18 $M 1 3 expired
+	eh 2026-10-20 2026-10-17 $M 1 3 clock_rollback 'every v2 grant has an expiry, so the mark is judged'
+	e 2026-10-17 mecha-rotshield 1 3 wrong_product
+	e 2026-10-17 $BF 1 0 wrong_product 'a validate grant never unlocks BeamFlix'
+vec v2_leap.sigil v2_leap.payload.json test-paid
+	e 2029-02-28 $M 1 0 authorized 'minted 2028-02-29; +1 year clamps to Feb 28'
+	e 2029-03-01 $M 1 0 expired
+	e 2029-02-28 $M 1 1 version_ceiling
+vec v2_missing_expiry.sigil v2_missing_expiry.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'expiry is mandatory in v2'
+vec v2_missing_max_minor.sigil v2_missing_max_minor.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'max_minor is mandatory in v2'
+vec v2_max_minor_leading_zero.sigil v2_max_minor_leading_zero.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'canonical decimal only'
+vec v2_max_minor_plus.sigil v2_max_minor_plus.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'canonical decimal only'
+vec v2_beta_class.sigil v2_beta_class.payload.json test-beta
+	e 2026-10-17 $M 1 0 malformed 'v2 is the paid versioned grant; beta stays v1'
+vec v2_unknown_field.sigil v2_unknown_field.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'unknown fields fail the schema'
+vec v1_with_max_minor.sigil v1_with_max_minor.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'max_minor is a v2 field'
+vec v2_bad_expiry.sigil v2_bad_expiry.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed 'expiry must be a real date'
+vec v2_impossible_expiry.sigil v2_impossible_expiry.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed '2027-02-29 does not exist'
+vec v2_century_expiry.sigil v2_century_expiry.payload.json test-paid
+	e 2026-10-17 $M 1 0 malformed '2100 is not a leap year'
+vec v2_rotshield_valid.sigil v2_rotshield_valid.payload.json test-paid
+	e 2026-10-17 $RS 1 0 authorized
+	e 2026-10-17 $RS 1 2 authorized 'the licensed minor itself'
+	e 2026-10-17 $RS 1 3 version_ceiling 'a later minor needs a refresh'
+	e 2026-10-17 $RS 2 0 version_ceiling 'a later major needs a purchase'
+	e 2027-10-17 $RS 1 2 authorized 'expiry day is inclusive'
+	e 2027-10-18 $RS 1 2 expired
+	e 2026-10-17 $M 1 0 wrong_product 'a RotShield grant never unlocks validate'
+	e 2026-10-17 $BF 1 0 wrong_product 'a RotShield grant never unlocks BeamFlix'
+vec v2_rotshield_valid_under_beta_key.sigil v2_rotshield_valid.payload.json test-beta
+	e 2026-10-17 $RS 1 0 class_key_mismatch 'a leaked beta key cannot mint paid RotShield grants'
+vec v2_valid_under_beta_key.sigil v2_valid.payload.json test-beta
+	e 2026-10-17 $M 1 0 class_key_mismatch 'a leaked beta key cannot mint paid grants'
+vec ../license_vectors/beta_valid.sigil ../license_vectors/beta_valid.payload.json test-beta
+	e 2026-10-17 $M 1 99 authorized 'v1 grants are major-only under the v2 entry point'
+	e 2026-10-17 $M 2 0 version_ceiling
+	eh 2026-09-20 2026-09-20 $M 1 0 authorized 'a day equal to the mark is not a rollback'
+	eh 2026-09-20 2026-09-17 $M 1 0 clock_rollback 'a dated grant: a clock set back could extend it'
+	eh 2026-10-20 2026-10-18 $M 1 0 clock_rollback 'the mark is judged before expiry'
+vec ../license_vectors/paid_valid.sigil ../license_vectors/paid_valid.payload.json test-paid
+	e 2026-10-17 $M 1 99 authorized 'v1 paid grant: no minor ceiling'
+	eh 2026-09-20 2026-09-17 $M 1 0 authorized 'no expiry: a clock set back extends nothing, so the mark is not judged'
+	eh 2026-09-20 2026-09-17 $M 2 0 version_ceiling 'the ceiling still applies'
+vec v2_beamflix_valid.sigil v2_beamflix_valid.payload.json test-paid
+	e 2026-10-17 $BF 1 0 authorized
+	e 2026-10-17 $BF 1 1 authorized 'the licensed minor itself'
+	e 2026-10-17 $BF 1 2 version_ceiling 'a later minor needs a refresh'
+	e 2026-10-17 $BF 2 0 version_ceiling 'a later major needs a purchase'
+	e 2026-10-17 $BF 0 1 authorized 'a 0.1 prerelease is below the 1.1 ceiling'
+	e 2027-10-17 $BF 1 1 authorized 'expiry day is inclusive'
+	e 2027-10-18 $BF 1 1 expired
+	eh 2026-10-20 2026-10-17 $BF 1 0 clock_rollback 'every v2 grant has an expiry, so the mark is judged'
+	e 2026-10-17 $M 1 0 wrong_product 'a BeamFlix grant never unlocks validate'
+	e 2026-10-17 $RS 1 0 wrong_product 'a BeamFlix grant never unlocks RotShield'
+vec v2_beamflix_valid_under_beta_key.sigil v2_beamflix_valid.payload.json test-beta
+	e 2026-10-17 $BF 1 0 class_key_mismatch 'a leaked beta key cannot mint paid BeamFlix grants'
+vec v2_beamflix_expired.sigil v2_beamflix_expired.payload.json test-paid
+	e 2026-09-17 $BF 0 1 authorized 'expiry day is inclusive'
+	e 2026-09-18 $BF 0 1 expired 'expired on every clock after 2026-09-17'
+	e 2026-11-10 $BF 0 1 expired
+vec_close
+vecs_json=$(IFS=,; printf '%s' "${VECS[*]}")
+manifest=$(jq -n --argjson v "[$vecs_json]" '{
   schema: "mecha-license-vectors/2",
   contract: "docs/MECHA_LICENSE_CONTRACT_V1.md section 14 (payload v2, version ceiling answered 2026-10-06)",
   note: "Every eval carries app_minor. An eval with clock_high_water passes that stored mark; without it, no mark is stored. A grant with an expiry is clock_rollback when now_utc_date is before the mark; a grant with no expiry never is (contract section 9, 2026-11-11). Expected decisions are hand-written from the contract. v1 vectors are referenced from ../license_vectors, which stays frozen. mecha_policy ABI 2 decide must reproduce every expect.",
   trust_roles: {"test-beta": {pubkey: "../license_vectors/test_beta.key.pub"}, "test-paid": {pubkey: "../license_vectors/test_paid.key.pub"}},
   vectors: $v
-}' > manifest.json
-echo "generated $(ls -1 ./*.sigil | wc -l) envelopes"
+}') || die "building manifest.json"
+# $() dropped jq's final newline; printf restores exactly that one.
+printf '%s\n' "$manifest" > manifest.json || die "writing manifest.json"
+envelopes=(./*.sigil)
+[[ -e ${envelopes[0]} ]] || die "no envelopes were written"
+echo "generated ${#envelopes[@]} envelopes"

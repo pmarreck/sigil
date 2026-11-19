@@ -15,6 +15,7 @@ trap 'rm -rf "$WORK"' EXIT
 echo "macOS archives — Apple-consumable members"
 cd "$ROOT" || exit 1
 for t in aarch64-macos x86_64-macos; do
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
 	if zig build -Dtarget="$t" --prefix "$WORK/$t" > "$WORK/$t.log" 2>&1; then pass "cross-build for $t"
 	else fail "cross-build for $t" "$(tail -3 "$WORK/$t.log" | tr '\n' '|')"; continue; fi
 	for a in libsigil.a libsigil_sign.a; do

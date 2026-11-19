@@ -40,7 +40,11 @@ nk=$(jq '.machine_hash_kats | length' "$M")
 for ((i = 0; i < nk; i++)); do
 	prod=$(jq -r ".machine_hash_kats[$i].product" "$M")
 	jq -j ".machine_hash_kats[$i].raw_id" "$M" > "$WORK/raw"
-	norm=$(tr -d ' \t\r\n' < "$WORK/raw" | tr 'A-Z' 'a-z')
+	if tr -d ' \t\r\n' < "$WORK/raw" > "$WORK/trimmed" && tr 'A-Z' 'a-z' < "$WORK/trimmed" > "$WORK/norm"; then
+		norm=$(<"$WORK/norm")
+	else
+		norm="(normalization failed)"
+	fi
 	{ printf 'mecha-install-v1%s' "$prod"; printf '\0'; printf '%s' "$norm"; } > "$WORK/pre"
 	h=$(sha256sum "$WORK/pre"); h=${h%% *}
 	want=$(jq -r ".machine_hash_kats[$i].machine" "$M")
@@ -65,7 +69,8 @@ license_payload() {
 	else printf '%s' "$ROOT/examples/license_vectors_v2/$1.payload.json"; fi
 }
 if products=$(bash "$ROOT/scripts/contract-products"); then
-	pass "the contract names $(wc -l <<<"$products") products"
+	nprod=$(wc -l <<<"$products")
+	pass "the contract names $nprod products"
 else
 	fail "read the contract's product identifiers"; products=""
 fi
@@ -73,26 +78,43 @@ for prod in $products; do
 	n=$(jq --arg p "$prod" '[.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p)] | length' "$M")
 	[[ "$n" -ge 1 ]] && pass "$prod has $n positive certificate evals" || fail "$prod has a positive certificate eval"
 	paid=0
+	# A failed jq lists no licenses, so the paid check below fails.
+	lics=$(jq -r --arg p "$prod" '.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p) | .license' "$M") || lics=""
+	lics=$(sort -u <<<"$lics")
 	while IFS= read -r lic; do
 		[[ -z "$lic" ]] && continue
-		shape=$(jq -r '[.v, .payment_provider] | join("/")' "$(license_payload "$lic")" 2>/dev/null)
+		lpf=$(license_payload "$lic")
+		shape=$(jq -r '[.v, .payment_provider] | join("/")' "$lpf" 2>/dev/null)
 		[[ "$shape" == "2/paddle" ]] && paid=1
-	done < <(jq -r --arg p "$prod" '.vectors[].evals[] | select(.expect == "install_cert_valid" and .product == $p) | .license' "$M" | sort -u)
+	done <<<"$lics"
 	[[ $paid == 1 ]] && pass "$prod: a certificate admits a paid v2 grant" || fail "$prod: a certificate admits a paid v2 grant"
 done
+if positives=$(jq -r '.vectors[].evals[] | select(.expect == "install_cert_valid") | [.product, .license] | join("|")' "$M"); then
+	positives=$(sort -u <<<"$positives")
+else
+	fail "list the positive certificate evals"; positives=""
+fi
 while IFS='|' read -r prod lic; do
 	[[ -z "$prod" ]] && continue
-	lp=$(jq -r .product "$(license_payload "$lic")" 2>/dev/null)
+	lpf=$(license_payload "$lic")
+	lp=$(jq -r .product "$lpf" 2>/dev/null)
 	[[ "$lp" == "$prod" ]] && pass "positive $prod eval binds a $prod grant ($lic)" || fail "positive $prod eval binds a $prod grant ($lic)" "license product: $lp"
-done < <(jq -r '.vectors[].evals[] | select(.expect == "install_cert_valid") | [.product, .license] | join("|")' "$M" | sort -u)
+done <<<"$positives"
 for ((i = 0; i < nv; i++)); do
 	p=$(jq -r ".vectors[$i].payload" "$M")
+	if bound=$(jq -r ".vectors[$i].evals[] | select(.expect == \"install_cert_valid\") | [.product, .license, .machine] | join(\"|\")" "$M"); then
+		bound=$(sort -u <<<"$bound")
+	else
+		fail "list the positive evals of vector $i"; bound=""
+	fi
 	while IFS='|' read -r prod lic mach; do
 		[[ -z "$prod" ]] && continue
 		got=$(jq -r '[.product, .license_sha256, .machine] | join("|")' "$V/$p")
-		want="$prod|$(jq -r ".licenses[\"$lic\"]" "$M")|$(jq -r ".machines[\"$mach\"]" "$M")"
+		lh=$(jq -r ".licenses[\"$lic\"]" "$M") || lh="(jq failed)"
+		mh=$(jq -r ".machines[\"$mach\"]" "$M") || mh="(jq failed)"
+		want="$prod|$lh|$mh"
 		[[ "$got" == "$want" ]] && pass "$p binds its positive eval ($prod, $lic, $mach)" || fail "$p binds its positive eval" "got $got want $want"
-	done < <(jq -r ".vectors[$i].evals[] | select(.expect == \"install_cert_valid\") | [.product, .license, .machine] | join(\"|\")" "$M" | sort -u)
+	done <<<"$bound"
 done
 
 # PKCS#8 TEST seeds for WebCrypto issuers (the commerce Worker cannot open
@@ -102,10 +124,24 @@ done
 for pair in "$V/test_install_cert" "$LV/test_beta" "$LV/test_paid"; do
 	role=$(basename "$pair"); pem="$pair.pkcs8.pem"
 	if [[ ! -f "$pem" ]]; then fail "$role.pkcs8.pem exists"; continue; fi
-	prefix=$(sed -n '2p' "$pem" | base64 -d 2>/dev/null | head -c 16 | od -An -tx1 | tr -d ' \n')
-	len=$(sed -n '2p' "$pem" | base64 -d 2>/dev/null | wc -c)
+	# The DER is binary, so it is decoded once into a file, each step checked.
+	if b64=$(sed -n '2p' "$pem") && base64 -d <<<"$b64" >"$WORK/$role.der" 2>/dev/null \
+		&& len=$(wc -c <"$WORK/$role.der") && prefix=$(od -An -tx1 -N16 "$WORK/$role.der"); then
+		len=${len//[[:space:]]/}
+		prefix=${prefix//[[:space:]]/}
+	else
+		len="(decode failed)"; prefix=""
+	fi
 	[[ "$len" == 48 && "$prefix" == 302e020100300506032b657004220420 ]] && pass "$role.pkcs8.pem is Ed25519 PKCS#8 (RFC 8410)" || fail "$role.pkcs8.pem shape" "len=$len prefix=$prefix"
-	got=$(openssl pkey -in "$pem" -pubout -outform DER 2>/dev/null | tail -c 32 | od -An -tx1 | tr -d ' \n')
+	# The public key is the last 32 bytes of openssl's SubjectPublicKeyInfo.
+	spki="$WORK/$role.spki"
+	if openssl pkey -in "$pem" -pubout -outform DER -out "$spki" 2>/dev/null \
+		&& spki_len=$(wc -c <"$spki") && (( spki_len >= 32 )) \
+		&& got=$(od -An -tx1 -v -j $((spki_len - 32)) "$spki"); then
+		got=${got//[[:space:]]/}
+	else
+		got="(openssl failed)"
+	fi
 	want=$("$SIGIL" pubkey --pubkey "$pair.key.pub" --format hex 2>/dev/null)
 	[[ -n "$want" && "$got" == "$want" ]] && pass "$role.pkcs8.pem seed derives the $role public key (openssl)" || fail "$role.pkcs8.pem seed derives the $role public key" "openssl=$got sigil=$want"
 done
