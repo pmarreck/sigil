@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
-# The shipped sigil programs are self-contained: each carries its library
-# inside, so copying the one executable (to a key ceremony machine, for
-# example) is enough, and the signing code never sits in a separate file.
+# The shipped sigil programs are fully static on Linux: no program
+# interpreter (dynamic loader), no shared library at all, sigil's or the
+# system's, and no string naming the Nix store. The one file runs on any
+# Linux of its architecture, glibc or musl, NixOS or not, including a
+# key-ceremony machine with nothing else installed, and the signing code
+# never sits in a separate file.
 #
-# The shipped pairs cross languages (docs/RUST_PORT_DESIGN.md, ruling 10):
-# the Rust CLI on the Zig core and the C CLI on the Rust core, each named by
-# its core. Both link their core statically, so neither may need a sigil or
-# mecha shared library at run time.
+# Shipped: the published C CLI on the Zig core (zig-out/bin/sigil, static
+# against musl), and the crossed pairs that ship once CANONICAL_IMPL selects
+# by core (docs/RUST_PORT_DESIGN.md, ruling 10): the Rust CLI on the Zig core
+# and the C CLI on the Rust core (static against glibc).
 #
 # Control: the Rust CLI on the Rust core is a test-only pair that loads the
 # Rust core as a shared library (a Rust program cannot also link a Rust
-# static library). The same predicate must flag it, which proves the check
-# reads real dependency lists rather than passing on empty ones.
+# static library), so it has a loader and NEEDED entries. The same check
+# must flag it, which proves the check reads real program headers rather
+# than passing on empty output.
 #
-# ELF only (readelf -d); no other platform is built today.
+# ELF only (readelf); no other platform is built today. macOS cannot be
+# fully static (libSystem is always dynamic).
 #
 # Per Mecha conventions: `set -u` only.
 set -u
@@ -36,44 +41,69 @@ if ! command -v "$READELF" >/dev/null 2>&1; then
 	finish
 fi
 
-# needed BINARY: the shared libraries BINARY names, one per line; fails when
-# the binary is missing or readelf cannot read it.
-needed() {
-	local out
+# dynamic_parts BINARY: one line per runtime dependency the ELF file has: its
+# program interpreter, and each NEEDED shared library. Empty for a fully
+# static executable. Fails when the file is missing or not ELF.
+dynamic_parts() {
+	local headers dynamic
 	[[ -x "$1" ]] || return 1
-	out=$("$READELF" -d "$1" 2>&1) || return 1
-	awk '/\(NEEDED\)/ { gsub(/^.*\[|\].*$/, ""); print }' <<<"$out"
+	headers=$("$READELF" -lW "$1" 2>&1) || return 1
+	dynamic=$("$READELF" -dW "$1" 2>&1) || return 1
+	awk '/Requesting program interpreter:/ { sub(/.*interpreter: /, ""); sub(/\]$/, ""); print "interpreter " $0 }' <<<"$headers"
+	awk '/\(NEEDED\)/ { gsub(/^.*\[|\].*$/, ""); print "NEEDED " $0 }' <<<"$dynamic"
 }
 
-declare -A shipped=(
-	["Rust CLI on Zig"]="${SIGIL_RUST_ON_ZIG_OUT:-$ROOT/.nix-out/rust-cli-on-zig}/bin/sigil"
-	["C CLI on Rust"]="${SIGIL_C_ON_RUST_OUT:-$ROOT/.nix-out/c-on-rust}/bin/sigil"
+labels=("C CLI on Zig (published)" "Rust CLI on Zig" "C CLI on Rust")
+bins=(
+	"${SIGIL_BIN:-$ROOT/zig-out/bin/sigil}"
+	"${SIGIL_RUST_ON_ZIG_OUT:-$ROOT/.nix-out/rust-cli-on-zig}/bin/sigil"
+	"${SIGIL_C_ON_RUST_OUT:-$ROOT/.nix-out/c-on-rust}/bin/sigil"
 )
 control="${SIGIL_RUST_ON_RUST_OUT:-$ROOT/.nix-out/rust-cli-on-rust}/bin/sigil"
 
-for label in "Rust CLI on Zig" "C CLI on Rust"; do
-	if ! deps=$(needed "${shipped[$label]}"); then
-		fail "$label: readelf reads ${shipped[$label]}"
+for i in "${!labels[@]}"; do
+	label=${labels[i]}
+	bin=$(readlink -f "${bins[i]}") || bin=${bins[i]}
+	if ! parts=$(dynamic_parts "$bin"); then
+		fail "$label: readelf reads $bin"
 		continue
 	fi
-	if [[ -z "$deps" ]]; then
-		fail "$label: the binary names its system libraries (none found)"
-		continue
-	fi
-	ours=$(grep -E '^lib(sigil|mecha)' <<<"$deps")
-	if [[ -z "$ours" ]]; then
-		pass "$label needs no sigil or mecha shared library"
+	if [[ -z "$parts" ]]; then
+		pass "$label is fully static: no loader, no shared library"
 	else
-		fail "$label needs no sigil or mecha shared library" "$ours"
+		fail "$label is fully static: no loader, no shared library" "$parts"
+	fi
+	# Not even a string naming the Nix store: a path there would point at
+	# nothing on another machine.
+	if ! text=$(strings -a "$bin" 2>&1); then
+		fail "$label: strings reads $bin" "$text"
+	elif store=$(grep -o '/nix/store/[^[:space:]]*' <<<"$text"); then
+		fail "$label names no Nix store path" "$store"
+	else
+		pass "$label names no Nix store path"
+	fi
+	if out=$("$bin" --version 2>&1); then
+		pass "$label runs on its own ($out)"
+	else
+		fail "$label runs on its own" "$out"
 	fi
 done
 
-if ! deps=$(needed "$control"); then
+bin=$(readlink -f "$control") || bin=$control
+if ! parts=$(dynamic_parts "$bin"); then
 	fail "control: readelf reads $control"
-elif grep -qE '^libsigil' <<<"$deps"; then
-	pass "control: the Rust CLI on Rust (test-only) is flagged for its shared library"
+elif grep -q '^interpreter ' <<<"$parts" && grep -q '^NEEDED libsigil' <<<"$parts"; then
+	pass "control: the Rust CLI on Rust (test-only) is flagged for its loader and shared library"
 else
-	fail "control: the Rust CLI on Rust (test-only) is flagged for its shared library" "$deps"
+	fail "control: the Rust CLI on Rust (test-only) is flagged for its loader and shared library" "${parts:-(nothing found)}"
+fi
+# Its loader is a store path, so the store-path scan must find one there.
+if ! text=$(strings -a "$bin" 2>&1); then
+	fail "control: strings reads $control" "$text"
+elif grep -q '/nix/store/' <<<"$text"; then
+	pass "control: the store-path scan finds the Rust CLI on Rust's loader path"
+else
+	fail "control: the store-path scan finds the Rust CLI on Rust's loader path"
 fi
 
 finish

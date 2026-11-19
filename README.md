@@ -105,6 +105,10 @@ in a comment.
 The verifier's entire dependency budget is `std.crypto.sign.Ed25519` plus a
 printable-binary decode. It does not link libc.
 
+On Linux the `sigil` CLI is a fully static executable (musl, no dynamic
+loader, no shared library), so the one file runs on any Linux of the same
+architecture, including an offline machine with nothing else installed.
+
 ## Key custody
 
 The secret key is stored passphrase-encrypted (Argon2id → XChaCha20-Poly1305).

@@ -54,11 +54,22 @@ rather than producing a report:
   `tests/cli/test_cli` and every integration suite run unchanged against all
   four through `SIGIL_BIN`. The cross pairs prove the ABIs are
   interchangeable and are what ships (ruling 10): `zig` is the Rust CLI on
-  the Zig core, `rust` the C CLI on the Rust core. Both link their core
-  statically, so the one executable is the whole program, which a key
-  ceremony relies on; `tests/test_shipped_cli_self_contained` fails if
-  either needs a sigil shared library. The same-language pairs are test
-  pairs. Output must be
+  the Zig core, `rust` the C CLI on the Rust core. On Linux both, and
+  today's published C CLI on the Zig core, are fully static against musl
+  (2026-11-19, owner's request): no dynamic loader and no shared library,
+  sigil's or the system's, so the one file runs on any Linux of its
+  architecture (glibc or musl, NixOS or not), which a key ceremony relies
+  on. Static glibc was rejected because Rust's standard library still
+  reaches getaddrinfo and getpwuid_r, which need glibc's shared libraries
+  at run time. `tests/test_shipped_cli_self_contained` fails if any of the
+  three has a program interpreter, a NEEDED entry or a string naming the
+  Nix store. The musl CLI and archives come from their own derivation, so
+  a consumer that overrides the default package's build line (validate_gui
+  does) is unaffected. Each link drops dead
+  code (function and data sections with --gc-sections; Rust's fat LTO).
+  macOS cannot be fully static (libSystem is always dynamic). The
+  same-language pairs are test pairs; the Rust CLI on Rust stays dynamic.
+  Output must be
   byte-identical across the four wherever the suite asserts bytes.
 - **Differential checks.** Shared vectors plus a differential fuzz compare the
   two on verdict, error class and output bytes (see "Differential testing").

@@ -74,6 +74,11 @@ interprets unauthenticated input.
 - Zig stays the canonical implementation until the owner says otherwise.
   The shipped programs cross languages and are named by their core (Rust CLI
   on the Zig core, C CLI on the Rust core; docs/RUST_PORT_DESIGN.md).
+- Shipped Linux executables are fully static against musl, sigil's one
+  libc (the owner, 2026-11-19: one libc per project, no Nix store paths in
+  standalone artifacts). There is no dynamic loader and no shared library,
+  so one file runs on any Linux of its architecture. Binary size is the
+  accepted cost, kept down by eliminating dead code at link time.
 
 ## How success is verified
 

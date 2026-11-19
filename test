@@ -143,7 +143,7 @@ report_lint() {
 # status is `tail`'s (always 0), so a failed build would slip through and the
 # suite would certify a stale binary. Capture first, then judge.
 if [[ "${SIGIL_SKIP_BUILD:-0}" == "1" ]]; then
-	# The caller (the CI sandbox) already built and patched zig-out. Trust,
+	# The caller (the CI sandbox) already linked zig-out to the shipped package. Trust,
 	# but verify the one thing the suites below cannot run without.
 	if [[ ! -x "$SCRIPT_DIR/zig-out/bin/sigil" ]]; then
 		report_lint
@@ -206,8 +206,9 @@ queue "Differential signing (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential
 # The Rust CLI may reach an implementation only through the C ABI.
 queue "Rust CLI boundary" "$NIXDEV bash '$SCRIPT_DIR/tests/test_rust_cli_boundary'"
 
-# The shipped pairs (each CLI on the other language's core) carry their core
-# inside, so the one executable is the whole program. Required: no skip.
+# The shipped CLIs (the published one and the crossed pairs) are fully
+# static on Linux: no loader, no shared library, so the one file is the
+# whole program on any Linux. Required: no skip.
 queue "Shipped CLIs self-contained" "$NIXDEV bash '$SCRIPT_DIR/tests/test_shipped_cli_self_contained'"
 
 # CLI surface tests (Bash-driven, against the built binary).

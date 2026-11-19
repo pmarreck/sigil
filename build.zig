@@ -52,6 +52,11 @@ pub fn build(b: *std.Build) void {
 		.linkage = .static,
 		.root_module = ffi_mod,
 	});
+	// One section per function and per datum, so a linker with
+	// --gc-sections (the CLI below, and any product that asks) drops every
+	// function the program never calls.
+	lib.link_function_sections = true;
+	lib.link_data_sections = true;
 	installStaticLib(b, lib, target);
 
 	// -- Signing library, kept SEPARATE from libsigil.a. The products link the
@@ -71,6 +76,8 @@ pub fn build(b: *std.Build) void {
 		.linkage = .static,
 		.root_module = sign_ffi_mod,
 	});
+	sign_lib.link_function_sections = true;
+	sign_lib.link_data_sections = true;
 	installStaticLib(b, sign_lib, target);
 
 	// -- Module probe: a TEST FIXTURE, not a deliverable. `b.addModule` emits no
@@ -102,13 +109,17 @@ pub fn build(b: *std.Build) void {
 	});
 	cli_mod.addCSourceFile(.{
 		.file = b.path("cli/main.c"),
-		.flags = &.{ "-std=c11", "-Wall", "-Wextra" },
+		.flags = &.{ "-std=c11", "-Wall", "-Wextra", "-ffunction-sections", "-fdata-sections" },
 	});
 	cli_mod.addIncludePath(b.path("include"));
 	// Artifact name "sigil-cli", installed as bin/sigil: downstream builds call
 	// `dependency("sigil").artifact("sigil")` and must get the verifier library,
 	// never an ambiguity panic or the CLI. tests/integration/zig_consumer.sh.
 	const cli = b.addExecutable(.{ .name = "sigil-cli", .root_module = cli_mod });
+	// Dead-code elimination at link time: every section nothing reaches
+	// (from the CLI, libsigil.a or libsigil_sign.a) is dropped. Zig's own
+	// code is already compiled lazily, so only what is referenced exists.
+	cli.link_gc_sections = true;
 	cli_mod.linkLibrary(lib);
 	cli_mod.linkLibrary(sign_lib);
 	b.getInstallStep().dependOn(&b.addInstallArtifact(cli, .{

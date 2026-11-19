@@ -130,8 +130,73 @@
         # libraries. Its source is that crate and the two public headers
         # alone: no core crate exists in the build, so the only way into an
         # implementation is the C ABI. `libDir` holds the libraries and
-        # `libs` names them as cargo link-lib specs (KIND=NAME).
-        rustCli = name: libDir: libs: pkgs.rustPlatform.buildRustPackage {
+        # `libs` names them as cargo link-lib specs (KIND=NAME). With
+        # `static`, Linux builds for the musl target with nixpkgs' static
+        # toolchain, so the executable has no loader and no shared library;
+        # its libraries must be musl builds too. Static glibc is not used: the
+        # standard library would still reach getaddrinfo and getpwuid_r,
+        # which need glibc's shared libraries at run time. The dynamic
+        # variant runs the crate's formatting and Clippy gates; the source is
+        # the same. Release builds eliminate dead code (fat LTO, one codegen
+        # unit, --gc-sections).
+        # The Zig build for the musl target (Linux only): the shipped static
+        # CLI and the musl archives the static Rust CLI on the Zig core links.
+        # A derivation of its own, so a consumer that overrides
+        # packages.default to build the verifier library for its own target
+        # (validate_gui substitutes the default build line) never rewrites it.
+        sigilZigMusl = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-zig-musl";
+          inherit version;
+          src = zigSrc;
+          nativeBuildInputs = [ zigPkg ];
+          dontConfigure = true;
+          dontFixup = true;
+          buildPhase = ''
+            ${zigSetup}
+            zig build -Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl \
+              -Doptimize=ReleaseFast --prefix $out
+            # This derivation skips the fixup phase that would strip debug
+            # information. The symbol table stays for the nm-based checks.
+            strip --strip-debug $out/bin/sigil
+          '';
+          dontInstall = true;
+        };
+
+
+        # The CLI's Rust archive (libsigil_verify_sign.a) built for the musl
+        # target, for the static C CLI on the Rust core. Only that crate is
+        # built; the workspace's lints and tests run in sigil-rust.
+        sigilRustMusl = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+          pname = "${pname}-rust-musl";
+          inherit version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              (pkgs.lib.fileset.difference ./rust ./rust/sigil-cli)
+              ./include/sigil.h
+              ./include/sigil_sign.h
+            ];
+          };
+          cargoRoot = "rust";
+          buildAndTestSubdir = "rust";
+          cargoLock.lockFile = ./rust/Cargo.lock;
+          cargoBuildFlags = [ "-p" "sigil-verify-sign-capi" ];
+          doCheck = false;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib $out/include
+            cp include/sigil.h include/sigil_sign.h $out/include/
+            f=$(find . -path "*/release/libsigil_verify_sign_capi.a" | head -1)
+            [ -n "$f" ] || { echo "no libsigil_verify_sign_capi.a was built" >&2; exit 1; }
+            cp "$f" $out/lib/libsigil_verify_sign.a
+            bash ${./scripts/write-pkgconfig} rust "$out" ${version}
+            runHook postInstall
+          '';
+        };
+
+        rustCli = name: libDir: libs: static:
+          let musl = static && pkgs.stdenv.isLinux; in
+          (if musl then pkgs.pkgsStatic.rustPlatform else pkgs.rustPlatform).buildRustPackage ({
           pname = "${pname}-${name}";
           inherit version;
           src = pkgs.lib.fileset.toSource {
@@ -150,23 +215,35 @@
           cargoLock.lockFile = ./rust/sigil-cli/Cargo.lock;
           SIGIL_LIB_DIR = libDir;
           SIGIL_LIBS = libs;
+        } // pkgs.lib.optionalAttrs (!musl) {
           nativeBuildInputs = [ pkgs.clippy pkgs.rustfmt ];
           preBuild = ''
             (cd rust/sigil-cli && cargo fmt --check)
             (cd rust/sigil-cli && cargo clippy --offline --all-targets -- -D warnings)
           '';
-        };
+        });
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit pname version;
           src = zigSrc;
-          nativeBuildInputs = [ zigPkg ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
+          nativeBuildInputs = [ zigPkg ];
           dontConfigure = true;
           dontFixup = true;
           buildPhase = ''
             ${zigSetup}
             zig build -Doptimize=ReleaseFast --prefix $out
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              # The shipped CLI is a fully static musl executable: no
+              # dynamic loader and no shared library, so the one file runs
+              # on any Linux of its architecture, including a key-ceremony
+              # machine (SCS 2026-11-19). It replaces the native build's
+              # CLI. The archives above stay native, the flavor glibc
+              # consumers link and the C harnesses test. The CLI's link
+              # drops dead code (build.zig, --gc-sections).
+              # tests/test_shipped_cli_self_contained holds it to no
+              # interpreter, no NEEDED entry and no store path.
+              install -Dm755 ${sigilZigMusl}/bin/sigil "$out/bin/sigil"
+            ''}
             # The headers and the pkg-config modules a C consumer links
             # through, the same modules the Rust package installs
             # (scripts/write-pkgconfig). The policy module names the pinned
@@ -177,17 +254,6 @@
             cp include/sigil.h include/sigil_sign.h $out/include/
             bash ${./scripts/write-pkgconfig} zig "$out" ${version} ${self.packages.${system}.mecha-policy-zig} \
               ${pkgs.lib.optionalString (pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64) "-lquadmath"}
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              # The CLI is C and therefore links libc. Zig bakes an FHS
-              # dynamic-linker path (/lib/ld-musl-x86_64.so.1) into the ELF
-              # that does not exist on NixOS, so the binary is unrunnable
-              # until the interpreter is repointed at the stdenv's loader.
-              DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
-              for f in "$out"/bin/*; do
-                [ -f "$f" ] || continue
-                patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
-              done
-            ''}
           '';
           dontInstall = true;
         };
@@ -267,7 +333,7 @@
         # cli/ alone and its headers and archives come only from the
         # sigil-rust package, so it can reach the Rust implementation through
         # the C ABI and no other way.
-        packages.sigil-c-on-rust = pkgs.stdenv.mkDerivation {
+        packages.sigil-c-on-rust = (if pkgs.stdenv.isLinux then pkgs.pkgsStatic.stdenv else pkgs.stdenv).mkDerivation {
           pname = "${pname}-c-on-rust";
           inherit version;
           src = pkgs.lib.fileset.toSource {
@@ -276,13 +342,20 @@
           };
           dontConfigure = true;
           # The link line is the package's sigil-verify-sign pkg-config
-          # module, as for any C consumer.
+          # module, as for any C consumer. On Linux the result is a fully
+          # static executable: nixpkgs' static musl toolchain, linking the
+          # musl build of the Rust archive (sigilRustMusl). No loader, no
+          # shared library. Function and data sections plus --gc-sections
+          # drop every function the CLI cannot reach, the Rust archive's
+          # included.
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildPhase = ''
             runHook preBuild
-            export PKG_CONFIG_PATH=${self.packages.${system}.sigil-rust}/lib/pkgconfig
+            export PKG_CONFIG_PATH=${if pkgs.stdenv.isLinux then sigilRustMusl else self.packages.${system}.sigil-rust}/lib/pkgconfig
             read -r -a flags <<<"$(pkg-config --cflags --libs sigil-verify-sign)"
-            $CC -std=c11 -Wall -Wextra -Werror -O2 -I cli cli/main.c "''${flags[@]}" -o sigil
+            $CC -std=c11 -Wall -Wextra -Werror -O2 -ffunction-sections -fdata-sections \
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux "-static"} -Wl,--gc-sections \
+              -I cli cli/main.c "''${flags[@]}" -o sigil
             runHook postBuild
           '';
           installPhase = ''
@@ -293,14 +366,16 @@
         };
 
         # The Rust CLI on each library: the two Zig archives, which combine
-        # freely (the shipped `zig` pair, one self-contained executable), or
-        # the Rust CLI shape as a shared library, which keeps its own standard
-        # library inside (a Rust program cannot also link a Rust static
-        # library; this pair is test-only).
+        # freely (the shipped `zig` pair, a fully static executable on
+        # Linux), or the Rust CLI shape as a shared library, which keeps its
+        # own standard library inside (a Rust program cannot also link a
+        # Rust static library; this pair is test-only and stays dynamic).
         packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig"
-          "${self.packages.${system}.default}/lib" "static=sigil_sign static=sigil";
+          (if pkgs.stdenv.isLinux then "${sigilZigMusl}/lib"
+           else "${self.packages.${system}.default}/lib")
+          "static=sigil_sign static=sigil" true;
         packages.sigil-rust-cli-on-rust = rustCli "rust-cli-on-rust"
-          "${self.packages.${system}.sigil-rust.shared}/lib" "dylib=sigil_verify_sign";
+          "${self.packages.${system}.sigil-rust.shared}/lib" "dylib=sigil_verify_sign" false;
 
         # The pinned Zig mecha_policy as a product tree (archive and header),
         # for the policy differential. Its own package installs only the
@@ -511,19 +586,20 @@
             SIGIL_MACOS_ARCHIVE_OUT = self.packages.${system}.macos-archive-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pkgs.pkg-config pbCli ]
               # lld: the differential suites link the archives with GNU ld and lld.
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf pkgs.lld ];
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.lld ];
             dontConfigure = true;
             dontFixup = true;
             buildPhase = ''
               ${zigSetup}
-              zig build
-              zig build test-compile
-              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-                DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
-                for f in $(find .zig-cache zig-out -type f -perm -u+x 2>/dev/null); do
-                  patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
-                done
-              ''}
+              # The suites run against the shipped artifacts, linked into
+              # zig-out exactly as ./build links them, not against a second
+              # build made here. (The Zig unit tests are reported from
+              # zig-unit-test-results, so nothing here compiles them.)
+              d=${self.packages.${system}.default}
+              mkdir -p zig-out/bin zig-out/lib zig-out/test-fixtures
+              ln -s "$d/bin/sigil" zig-out/bin/sigil
+              ln -s "$d/lib/libsigil.a" "$d/lib/libsigil_sign.a" zig-out/lib/
+              ln -s "$d/test-fixtures/libsigil_module_probe.a" zig-out/test-fixtures/
               # Four frontend and library pairs each run the CLI and integration
               # suites, so the whole run is several minutes; the limit only
               # catches a hang.
