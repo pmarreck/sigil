@@ -575,6 +575,35 @@ assert_stdout_matches '^\{"verified":false,"code":-1,' \
 	"--json reports failure with a machine-readable code" \
 	"$SIGIL" verify "$WORK/forged.sigil" --pubkey "$PUB" --json
 
+# Only verify has a JSON form. Every other command refuses --json with a
+# usage error, before any other check and before reading a key, rather than
+# printing plain text a script would then try to parse as JSON. Each command
+# gets otherwise valid arguments, so a CLI that ignored --json would succeed
+# (or, for a keyfile handed to hot-bundle open, exit 65) instead of exiting 64.
+json_cases=(
+	"sign|$DOC|--key|$KEY|--passphrase-file|$PW|--out|$WORK/json.sigil"
+	"keygen|--out|$WORK/json.key|--passphrase-file|$PW"
+	"pubkey|--pubkey|$PUB|--format|hex"
+	"paper|--key|$KEY|--passphrase-file|$PW|--label|json|--out|$WORK/json.pdf|--date|2026-11-19"
+	"hot-bundle|open|$KEY|--passphrase-file|$PW"
+)
+for json_case in "${json_cases[@]}"; do
+	IFS='|' read -r -a json_words <<<"$json_case"
+	json_cmd=${json_words[0]}
+	[[ $json_cmd == hot-bundle ]] && json_cmd="hot-bundle open"
+	assert_status 64 "$json_cmd refuses --json (only verify has a JSON form)" \
+		"$SIGIL" "${json_words[@]}" --json
+	assert_stderr_matches 'supported only by verify' "$json_cmd says why it refused --json" \
+		"$SIGIL" "${json_words[@]}" --json
+done
+assert_stdout_empty "a refused --json prints nothing to stdout" \
+	"$SIGIL" pubkey --pubkey "$PUB" --format hex --json
+leftover=""
+for f in json.sigil json.key json.key.pub json.pdf; do
+	[[ -e "$WORK/$f" ]] && leftover="$leftover $f"
+done
+if [[ -z $leftover ]]; then pass "a refused --json writes no file"; else fail "a refused --json writes no file" "$leftover"; fi
+
 # --json exists so something downstream can PARSE it, so the test uses a real
 # parser rather than a regex of our own devising. jq is an oracle nobody here
 # wrote. The error path used to splice sigil_strerror() in unescaped, and one
@@ -903,8 +932,12 @@ for name in "${shard_names[@]}"; do
 		PUB="$WORK/mecha.key.pub"
 		PASS=0
 		FAIL=0
+		# Shards share this shell's globals, so the counts path is fixed
+		# before the shard runs and is read-only: a shard that reused the
+		# name would fail loudly rather than file its counts elsewhere.
+		readonly SHARD_COUNTS="$WORK_ROOT/shard-$name.counts"
 		"shard_$name"
-		echo "$PASS $FAIL" >"$WORK_ROOT/shard-$name.counts"
+		echo "$PASS $FAIL" >"$SHARD_COUNTS"
 	) >"$WORK_ROOT/shard-$name.out" 2>&1 &
 	shard_pids+=("$!")
 done

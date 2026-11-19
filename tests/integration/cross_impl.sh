@@ -191,6 +191,7 @@ INVOCATIONS="/dev/null
 /dev/null pubkey --key k.key --passphrase-file pw --format hex
 /dev/null pubkey --key k.key --passphrase-file wrong
 /dev/null pubkey --pubkey not-a-key.txt
+/dev/null pubkey --pubkey this.pub --format hex --json
 /dev/null hot-bundle
 /dev/null hot-bundle bogus
 /dev/null hot-bundle --help
@@ -199,6 +200,7 @@ INVOCATIONS="/dev/null
 /dev/null hot-bundle open k.hot --passphrase-file wrong
 /dev/null hot-bundle open k.hot --passphrase-file pw --out pem.txt
 /dev/null hot-bundle open - --passphrase-file -
+/dev/null hot-bundle open k.hot --passphrase-file pw --json
 /dev/null paper
 /dev/null paper --key k.key
 /dev/null paper --key k.key --label role

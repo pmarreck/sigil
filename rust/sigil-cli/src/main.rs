@@ -405,7 +405,7 @@ Common options:
       --passphrase-file <path>   read the passphrase instead of prompting
       --hot-bundle-out <path>    keygen: also write the sealed recovery bundle
       --date <YYYY-MM-DD>        paper: the date printed on the page (default today)
-      --json             machine-readable result on stdout
+      --json             verify: machine-readable result on stdout
   -q, --quiet            no status output; rely on the exit code
       --no-color         never emit ANSI color
       --simple           plain ASCII, no color, no symbols
@@ -591,6 +591,18 @@ fn parse<'a>(args: &'a [Vec<u8>], start: usize, ui: &mut Ui) -> Result<Opts<'a>,
 	}
 }
 
+/// `parse` for a command with no JSON form. `--json` changes what stdout
+/// carries and only verify has one, so the others refuse it instead of
+/// printing text a script would then try to parse (cli/main.c refuse_json).
+fn parse_no_json<'a>(args: &'a [Vec<u8>], start: usize, ui: &mut Ui) -> Result<Opts<'a>, i32> {
+	let o = parse(args, start, ui)?;
+	if o.json {
+		die_usage("--json is supported only by verify", None);
+		return Err(EX_USAGE);
+	}
+	Ok(o)
+}
+
 // ── verify ──────────────────────────────────────────────────────────────────
 
 /// Turning a verify result into an exit code (cli/exit_codes.h): anything
@@ -769,7 +781,7 @@ fn cmd_verify(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 // ── sign ────────────────────────────────────────────────────────────────────
 
 fn cmd_sign(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
-	let o = match parse(args, 2, ui) {
+	let o = match parse_no_json(args, 2, ui) {
 		Ok(o) => o,
 		Err(code) => return code,
 	};
@@ -856,7 +868,7 @@ fn cmd_sign(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 // ── keygen ──────────────────────────────────────────────────────────────────
 
 fn cmd_keygen(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
-	let o = match parse(args, 2, ui) {
+	let o = match parse_no_json(args, 2, ui) {
 		Ok(o) => o,
 		Err(code) => return code,
 	};
@@ -1064,7 +1076,7 @@ impl PubkeyFormat {
 }
 
 fn cmd_pubkey(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
-	let o = match parse(args, 2, ui) {
+	let o = match parse_no_json(args, 2, ui) {
 		Ok(o) => o,
 		Err(code) => return code,
 	};
@@ -1201,7 +1213,7 @@ fn cmd_hot_bundle(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
 		die_usage("unknown hot-bundle verb (want: open)", Some(&args[2]));
 		return EX_USAGE;
 	}
-	let o = match parse(args, 3, ui) {
+	let o = match parse_no_json(args, 3, ui) {
 		Ok(o) => o,
 		Err(code) => return code,
 	};
@@ -1321,7 +1333,7 @@ fn today() -> Option<Vec<u8>> {
 /// Printable cold copies of sealed artifacts. Reads sealed bytes only; no
 /// passphrase, nothing decrypted. --date makes the output reproducible.
 fn cmd_paper(args: &[Vec<u8>], ui: &mut Ui) -> i32 {
-	let o = match parse(args, 2, ui) {
+	let o = match parse_no_json(args, 2, ui) {
 		Ok(o) => o,
 		Err(code) => return code,
 	};

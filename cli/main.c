@@ -332,7 +332,7 @@ static int usage(FILE *out) {
 		"      --passphrase-file <path>   read the passphrase instead of prompting\n"
 		"      --hot-bundle-out <path>    keygen: also write the sealed recovery bundle\n"
 		"      --date <YYYY-MM-DD>        paper: the date printed on the page (default today)\n"
-		"      --json             machine-readable result on stdout\n"
+		"      --json             verify: machine-readable result on stdout\n"
 		"  -q, --quiet            no status output; rely on the exit code\n"
 		"      --no-color         never emit ANSI color\n"
 		"      --simple           plain ASCII, no color, no symbols\n"
@@ -452,6 +452,15 @@ static int parse_opts(int argc, char *argv[], int start, Opts *o) {
 	return EX_OK;
 }
 
+/* --json changes what stdout carries. Only verify has a JSON form, so every
+ * other command refuses it instead of printing text a script would then try
+ * to parse. */
+static int refuse_json(const Opts *o) {
+	if (!o->json) return EX_OK;
+	die_usage("--json is supported only by verify", NULL);
+	return EX_USAGE;
+}
+
 /* ── verify ─────────────────────────────────────────────────────────────── */
 
 static int cmd_verify(int argc, char *argv[]) {
@@ -542,6 +551,7 @@ static int cmd_sign(int argc, char *argv[]) {
 	int rc = parse_opts(argc, argv, 2, &o);
 	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
+	if ((rc = refuse_json(&o)) != EX_OK) return rc;
 
 	if (!o.positional) { die_usage("sign needs a payload path (use '-' for stdin)", NULL); return EX_USAGE; }
 	if (!o.key)        { die_usage("sign needs --key <keyfile>", NULL); return EX_USAGE; }
@@ -599,6 +609,7 @@ static int cmd_keygen(int argc, char *argv[]) {
 	int rc = parse_opts(argc, argv, 2, &o);
 	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
+	if ((rc = refuse_json(&o)) != EX_OK) return rc;
 
 	const char *key_path = o.out ? o.out : o.positional;
 	if (!key_path) { die_usage("keygen needs --out <keyfile>", NULL); return EX_USAGE; }
@@ -736,6 +747,7 @@ static int cmd_pubkey(int argc, char *argv[]) {
 	int rc = parse_opts(argc, argv, 2, &o);
 	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
+	if ((rc = refuse_json(&o)) != EX_OK) return rc;
 
 	const char *src = o.key ? o.key : (o.pubkey ? o.pubkey : o.positional);
 	if (!src) { die_usage("pubkey needs --key <keyfile> or --pubkey <path>", NULL); return EX_USAGE; }
@@ -832,6 +844,7 @@ static int cmd_hot_bundle(int argc, char *argv[]) {
 	int rc = parse_opts(argc, argv, 3, &o);
 	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
+	if ((rc = refuse_json(&o)) != EX_OK) return rc;
 
 	if (!o.positional) { die_usage("hot-bundle open needs a bundle path (use '-' for stdin)", NULL); return EX_USAGE; }
 	if (o.out && resolve_out(o.out) != stdout) {
@@ -911,6 +924,7 @@ static int cmd_paper(int argc, char *argv[]) {
 	int rc = parse_opts(argc, argv, 2, &o);
 	if (rc == EX_HELP_REQUESTED) return EX_OK;
 	if (rc != EX_OK) return rc;
+	if ((rc = refuse_json(&o)) != EX_OK) return rc;
 
 	if (!o.key && !o.hot_bundle) { die_usage("paper needs --key <keyfile> and/or --hot-bundle <bundle>", NULL); return EX_USAGE; }
 	if (!o.label) { die_usage("paper needs --label <text> saying what the key is for", NULL); return EX_USAGE; }

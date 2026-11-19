@@ -101,7 +101,7 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 
 ### High, still open
 
-- [ ] `--json` implemented only by `verify`.
+- [x] `--json` implemented only by `verify` (fixed 2026-11-19): the help advertised it as a common option, and every other command silently ignored it and printed plain text with exit 0. The help now labels it "verify:", and sign, keygen, pubkey, paper and hot-bundle open refuse it with exit 64 in both CLIs (test_cli on all four pairs; two cross_impl transcript lines compare the refusal byte for byte). A JSON form for another command needs its output schema designed first.
 
 ### Feature: envelope normalization (Peter, 2026-07-28)
 
