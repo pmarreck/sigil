@@ -64,37 +64,62 @@ printf '%s' 'not-the-passphrase' >"$WORK/wrong"
 printf '%s' '{"customer":"cross implementation","v":"1"}' >"$WORK/payload.json"
 
 # ── Round trips ─────────────────────────────────────────────────────────────
-# make_pair I: pair I generates a key pair, derives its public key, seals the
-# payload and writes a tampered copy.
+# pem_digest BIN BUNDLE: the SHA-256 of the PEM private key BIN opens BUNDLE
+# to, or failure when it does not open to one. The restored PEM is a private
+# key, so it stays in memory; only its digest reaches a file.
+pem_digest() {
+	local pem h
+	pem=$("$1" hot-bundle open "$2" --passphrase-file "$WORK/pw" 2>/dev/null) || return 1
+	[[ $pem == "-----BEGIN PRIVATE KEY-----"* ]] || return 1
+	h=$(sha256sum <<<"$pem") || return 1
+	printf '%s\n' "${h%% *}"
+}
+
+# make_pair I: pair I generates a key pair, then derives its public key, seals
+# the payload and opens its hot bundle (three independent unlocks, run at
+# once), and writes a tampered copy.
 make_pair() {
-	local i="$1" maker="${bins[$1]}" dir="$WORK/made-$1"
+	local i="$1" maker="${bins[$1]}" dir="$WORK/made-$1" p_pub p_sign p_pem ok=1
 	mkdir -p "$dir"
-	if ! "$maker" keygen --out "$dir/k.key" --hot-bundle-out "$dir/k.hot" --passphrase-file "$WORK/pw" -q \
-		|| ! "$maker" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.pub" -q \
-		|| ! "$maker" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.sigil" -q; then
-		echo "the maker could not generate, derive and seal" >"$dir/maker-failed"
+	if ! "$maker" keygen --out "$dir/k.key" --hot-bundle-out "$dir/k.hot" --passphrase-file "$WORK/pw" -q; then
+		echo "the maker could not generate a key pair" >"$dir/maker-failed"
+		return
+	fi
+	"$maker" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.pub" -q &
+	p_pub=$!
+	"$maker" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/maker.sigil" -q &
+	p_sign=$!
+	pem_digest "$maker" "$dir/k.hot" >"$dir/maker.pem.sha256" &
+	p_pem=$!
+	wait "$p_pub" || ok=0
+	wait "$p_sign" || ok=0
+	wait "$p_pem" || ok=0
+	if [[ $ok == 0 ]]; then
+		echo "the maker could not derive, seal and open its hot bundle" >"$dir/maker-failed"
 		return
 	fi
 	sed 's/implementation/implementatioN/' "$dir/maker.sigil" >"$dir/tampered.sigil"
 }
 
 # read_pair I J: pair J reads what pair I made. Writes made-I/verdict-J:
-# "ok", or why not.
+# "ok", or why not. The reader's three unlocks are independent, so they run
+# at once and are judged in order.
 read_pair() {
-	local i="$1" j="$2" maker="${bins[$1]}" reader="${bins[$2]}" dir="$WORK/made-$1" why="" maker_pem reader_pem rc
+	local i="$1" j="$2" reader="${bins[$2]}" dir="$WORK/made-$1" why="" rc p_pub p_sign p_pem
 	[[ -f "$dir/maker-failed" ]] && return
-	# The restored PEM is a private key: keep it in memory, never in a file.
-	maker_pem=$("$maker" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-	if ! { "$reader" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.pub" -q \
-		&& cmp -s "$dir/maker.pub" "$dir/reader-$j.pub"; }; then
+	"$reader" pubkey --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.pub" -q &
+	p_pub=$!
+	"$reader" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.sigil" -q &
+	p_sign=$!
+	pem_digest "$reader" "$dir/k.hot" >"$dir/reader-$j.pem.sha256" &
+	p_pem=$!
+	if ! { wait "$p_pub" && cmp -s "$dir/maker.pub" "$dir/reader-$j.pub"; }; then
 		why="$why public key;"
 	fi
-	if ! { "$reader" sign "$WORK/payload.json" --key "$dir/k.key" --passphrase-file "$WORK/pw" --out "$dir/reader-$j.sigil" -q \
-		&& cmp -s "$dir/maker.sigil" "$dir/reader-$j.sigil"; }; then
+	if ! { wait "$p_sign" && cmp -s "$dir/maker.sigil" "$dir/reader-$j.sigil"; }; then
 		why="$why envelope;"
 	fi
-	reader_pem=$("$reader" hot-bundle open "$dir/k.hot" --passphrase-file "$WORK/pw" 2>/dev/null)
-	if [[ "$maker_pem" != "-----BEGIN PRIVATE KEY-----"* || "$reader_pem" != "$maker_pem" ]]; then
+	if ! { wait "$p_pem" && cmp -s "$dir/maker.pem.sha256" "$dir/reader-$j.pem.sha256"; }; then
 		why="$why PEM;"
 	fi
 	if ! { "$reader" verify "$dir/maker.sigil" --pubkey "$dir/maker.pub" -q >"$dir/reader-$j.out" 2>/dev/null \
@@ -191,19 +216,53 @@ prompted.in keygen --out prompted.key
 /dev/null keygen --out prompted2.key"
 COUNT=$(wc -l <<<"$INVOCATIONS")
 
-# run_table BIN DIR: every invocation in DIR, recording stdout, stderr and the
+# run_one BIN DIR N: invocation N in DIR, recording stdout, stderr and the
 # exit code under DIR/.t/N.
-run_table() {
-	local bin="$1" dir="$2" n line arg
+run_one() {
+	local bin="$1" dir="$2" n="$3" line arg
 	local -a fields=() args=()
+	line=$(sed -n "${n}p" <<<"$INVOCATIONS")
+	read -r -a fields <<<"$line"
+	for arg in "${fields[@]:1}"; do args+=("${arg//%/ }"); done
+	(cd "$dir" && NO_COLOR=1 "$bin" "${args[@]}" <"${fields[0]}" >".t/$n.out" 2>".t/$n.err"; echo "$?" >".t/$n.rc")
+}
+# run_group BIN DIR N...: the invocations N..., in that order.
+run_group() {
+	local bin="$1" dir="$2" n
+	shift 2
+	for n in "$@"; do run_one "$bin" "$dir" "$n"; done
+}
+# run_table BIN DIR: every invocation in DIR. Invocations naming the same
+# --out file form a group run in table order, since a later one sees what an
+# earlier one wrote (the second keygen into new.key must be refused, the
+# second paper into page.pdf meets the first). No invocation reads another's
+# output, so the groups are independent and run at once, at most 16 at a
+# time. Most of the table is production-strength unlocks.
+run_table() {
+	local bin="$1" dir="$2" n k line out group running=0
+	local -a fields=() nums=()
+	local -A members=()
 	mkdir -p "$dir/.t"
 	for ((n = 1; n <= COUNT; n++)); do
 		line=$(sed -n "${n}p" <<<"$INVOCATIONS")
 		read -r -a fields <<<"$line"
-		args=()
-		for arg in "${fields[@]:1}"; do args+=("${arg//%/ }"); done
-		(cd "$dir" && NO_COLOR=1 "$bin" "${args[@]}" <"${fields[0]}" >".t/$n.out" 2>".t/$n.err"; echo "$?" >".t/$n.rc")
+		out=""
+		for ((k = 1; k < ${#fields[@]}; k++)); do
+			[[ ${fields[k]} == --out ]] && out=${fields[k + 1]:-}
+		done
+		group=${out:-"#$n"}
+		members[$group]+="$n "
 	done
+	for group in "${!members[@]}"; do
+		if ((running >= 16)); then
+			wait -n
+			running=$((running - 1))
+		fi
+		read -r -a nums <<<"${members[$group]}"
+		run_group "$bin" "$dir" "${nums[@]}" &
+		running=$((running + 1))
+	done
+	wait
 }
 
 # ── Run ─────────────────────────────────────────────────────────────────────
@@ -229,7 +288,8 @@ wait
 
 for i in "${!bins[@]}"; do
 	if [[ -f "$WORK/made-$i/maker-failed" ]]; then
-		fail "pair $i generates a key pair, derives its public key and seals" "${bins[i]}"
+		maker_why=$(<"$WORK/made-$i/maker-failed")
+		fail "pair $i generates a key pair, derives its public key, seals and opens its hot bundle" "${bins[i]}: $maker_why"
 		continue
 	fi
 	for j in "${!bins[@]}"; do
