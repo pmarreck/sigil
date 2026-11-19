@@ -23,8 +23,21 @@ bash "$PRE" --help > "$WORK/help.txt" 2>&1; rc=$?
 [[ $rc -eq 0 ]] && pass "--help exits 0" || fail "--help exits 0" "rc=$rc"
 grep -q -- '--rehearse' "$WORK/help.txt" && pass "--help documents --rehearse" || fail "--help documents --rehearse"
 
+# The four preflight runs below are independent (each has its own --work
+# directory and output file), so they start at once; each section waits for
+# its own run and judges it, in this order. The two rehearsals dominate.
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/checks" > "$WORK/checks.txt" 2>&1 &
+p_checks=$!
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh" --rehearse > "$WORK/reh.txt" 2>&1 &
+p_reh=$!
+mkdir -p "$WORK/nopath"; printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nopath/zbarimg"; chmod +x "$WORK/nopath/zbarimg"
+PATH="$WORK/nopath:$PATH" bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh2" --rehearse > "$WORK/reh2.txt" 2>&1 &
+p_reh2=$!
+bash "$PRE" --sigil "$SIGIL" --work "$WORK/pw" --rehearse --passphrase secret > "$WORK/pw.txt" 2>&1 &
+p_pw=$!
+
 # Checks-only mode never fails on host residuals it cannot verify; it reports them.
-bash "$PRE" --sigil "$SIGIL" --work "$WORK/checks" > "$WORK/checks.txt" 2>&1; rc=$?
+wait "$p_checks"; rc=$?
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 grep -q -i 'residual' "$WORK/checks.txt" && pass "checks mode names the residual assumptions it cannot verify" || fail "checks mode names the residual assumptions it cannot verify" "rc=$rc; output: $(head -c 1500 "$WORK/checks.txt" | tr '\n' '|')"
 grep -q -i 'swap' "$WORK/checks.txt" && pass "checks mode reports swap state" || fail "checks mode reports swap state"
@@ -33,7 +46,7 @@ grep -q -i 'tmpdir' "$WORK/checks.txt" && pass "checks mode reports TMPDIR's fil
 grep -q 'sigil ' "$WORK/checks.txt" && pass "checks mode reports the sigil build it will use" || fail "checks mode reports the sigil build it will use"
 
 # Rehearsal: TEST keys only, oracles required, nothing left behind.
-bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh" --rehearse > "$WORK/reh.txt" 2>&1; rc=$?
+wait "$p_reh"; rc=$?
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
 if [[ $rc -eq 0 ]]; then pass "rehearsal exits 0 with every oracle on PATH"
 else fail "rehearsal exits 0 with every oracle on PATH" "rc=$rc; $(tail -5 "$WORK/reh.txt" | tr '\n' '|')"; fi
@@ -46,15 +59,14 @@ left=$(wc -l < "$WORK/left.txt"); left=${left//[[:space:]]/}
 [[ "$left" == "0" ]] && pass "rehearsal leaves no key material behind" || fail "rehearsal leaves no key material behind" "$left files remain"
 
 # A missing oracle FAILS the rehearsal rather than skipping it.
-mkdir -p "$WORK/nopath"; printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nopath/zbarimg"; chmod +x "$WORK/nopath/zbarimg"
-PATH="$WORK/nopath:$PATH" bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh2" --rehearse > "$WORK/reh2.txt" 2>&1; rc=$?
+wait "$p_reh2"; rc=$?
 if [[ $rc -ne 0 ]] && grep -q 'FAIL.*zbar' "$WORK/reh2.txt"; then pass "a broken zbar oracle fails the rehearsal and names zbar"
 else fail "a broken zbar oracle fails the rehearsal and names zbar" "rc=$rc"; fi
 grep -q 'REHEARSAL PASSED' "$WORK/reh2.txt" && fail "a failed rehearsal never prints REHEARSAL PASSED" || pass "a failed rehearsal never prints REHEARSAL PASSED"
 
 # --strict promotes host residual warnings to failures only when they are real
 # failures; a passphrase on the command line is always refused.
-bash "$PRE" --sigil "$SIGIL" --work "$WORK/pw" --rehearse --passphrase secret > "$WORK/pw.txt" 2>&1; rc=$?
+wait "$p_pw"; rc=$?
 if [[ $rc -eq 64 ]] && grep -q 'Refusing' "$WORK/pw.txt"; then pass "a passphrase on the command line is refused with exit 64 and says so"
 else fail "a passphrase on the command line is refused with exit 64 and says so" "rc=$rc"; fi
 
