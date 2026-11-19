@@ -1,0 +1,18 @@
+[package]
+name = "sigil-verify-capi"
+description = "Installed as libsigil.a: include/sigil.h, for a C program that only verifies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sigil_verify_capi"
+crate-type = ["staticlib"]
+
+[dependencies]
+sigil-ffi = { path = "../sigil-ffi" }
+
+[lints]
+workspace = true

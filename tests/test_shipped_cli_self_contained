@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# The shipped sigil programs are self-contained: each carries its library
+# inside, so copying the one executable (to a key ceremony machine, for
+# example) is enough, and the signing code never sits in a separate file.
+#
+# The shipped pairs cross languages (docs/RUST_PORT_DESIGN.md, ruling 10):
+# the Rust CLI on the Zig core and the C CLI on the Rust core, each named by
+# its core. Both link their core statically, so neither may need a sigil or
+# mecha shared library at run time.
+#
+# Control: the Rust CLI on the Rust core is a test-only pair that loads the
+# Rust core as a shared library (a Rust program cannot also link a Rust
+# static library). The same predicate must flag it, which proves the check
+# reads real dependency lists rather than passing on empty ones.
+#
+# ELF only (readelf -d); no other platform is built today.
+#
+# Per Mecha conventions: `set -u` only.
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+READELF="${READELF:-readelf}"
+PASS=0
+FAIL=0
+pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+fail() {
+	FAIL=$((FAIL + 1))
+	printf '  FAIL %s\n' "$1" >&2
+	# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+	if [[ $# -gt 1 ]]; then head -20 <<<"$2" | sed 's/^/       /' >&2; fi
+}
+finish() { printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; exit "$FAIL"; }
+
+if ! command -v "$READELF" >/dev/null 2>&1; then
+	fail "readelf is available"
+	finish
+fi
+
+# needed BINARY: the shared libraries BINARY names, one per line; fails when
+# the binary is missing or readelf cannot read it.
+needed() {
+	local out
+	[[ -x "$1" ]] || return 1
+	out=$("$READELF" -d "$1" 2>&1) || return 1
+	awk '/\(NEEDED\)/ { gsub(/^.*\[|\].*$/, ""); print }' <<<"$out"
+}
+
+declare -A shipped=(
+	["Rust CLI on Zig"]="${SIGIL_RUST_ON_ZIG_OUT:-$ROOT/.nix-out/rust-cli-on-zig}/bin/sigil"
+	["C CLI on Rust"]="${SIGIL_C_ON_RUST_OUT:-$ROOT/.nix-out/c-on-rust}/bin/sigil"
+)
+control="${SIGIL_RUST_ON_RUST_OUT:-$ROOT/.nix-out/rust-cli-on-rust}/bin/sigil"
+
+for label in "Rust CLI on Zig" "C CLI on Rust"; do
+	if ! deps=$(needed "${shipped[$label]}"); then
+		fail "$label: readelf reads ${shipped[$label]}"
+		continue
+	fi
+	if [[ -z "$deps" ]]; then
+		fail "$label: the binary names its system libraries (none found)"
+		continue
+	fi
+	ours=$(grep -E '^lib(sigil|mecha)' <<<"$deps")
+	if [[ -z "$ours" ]]; then
+		pass "$label needs no sigil or mecha shared library"
+	else
+		fail "$label needs no sigil or mecha shared library" "$ours"
+	fi
+done
+
+if ! deps=$(needed "$control"); then
+	fail "control: readelf reads $control"
+elif grep -qE '^libsigil' <<<"$deps"; then
+	pass "control: the Rust CLI on Rust (test-only) is flagged for its shared library"
+else
+	fail "control: the Rust CLI on Rust (test-only) is flagged for its shared library" "$deps"
+fi
+
+finish

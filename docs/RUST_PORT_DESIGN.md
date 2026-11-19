@@ -20,6 +20,14 @@ Everything not yet implemented is a proposal and can change before code lands.
    can use either.
 8. Each frontend also runs against the other implementation's library through
    that library's ABI, so the cross pairs both test and dogfood the ABI.
+9. (2026-11-18) Where the Zig layout needs a workaround in Rust, follow Rust's
+   conventions instead. Applied to packaging: one Rust archive per program,
+   not one per header (see "Workspace layout").
+10. (2026-11-18) The shipped programs cross languages: the Rust CLI on the
+   Zig core, and the non-Rust CLI (C, `cli/main.c`, built by the Zig
+   package) on the Rust core. Each proves one direction of the ABI. A
+   product is named by its core's language, not its CLI's, so either can
+   be the default.
 
 ## Why two implementations are a risk, and what holds them together
 
@@ -45,7 +53,12 @@ rather than producing a report:
   `sigil` binaries: C on Zig, C on Rust, Rust on Zig and Rust on Rust.
   `tests/cli/test_cli` and every integration suite run unchanged against all
   four through `SIGIL_BIN`. The cross pairs prove the ABIs are
-  interchangeable; the same-language pairs are what ships. Output must be
+  interchangeable and are what ships (ruling 10): `zig` is the Rust CLI on
+  the Zig core, `rust` the C CLI on the Rust core. Both link their core
+  statically, so the one executable is the whole program, which a key
+  ceremony relies on; `tests/test_shipped_cli_self_contained` fails if
+  either needs a sigil shared library. The same-language pairs are test
+  pairs. Output must be
   byte-identical across the four wherever the suite asserts bytes.
 - **Differential checks.** Shared vectors plus a differential fuzz compare the
   two on verdict, error class and output bytes (see "Differential testing").
@@ -58,18 +71,41 @@ rust/
   sigil/                  verify only: transcript, envelope, verify
   sigil-sign/             keygen, seal, key providers, paper, QR, PDF
   mecha-policy/           decide, install decide, machine hash, hint hash
-  sigil-ffi/              staticlib exporting include/sigil.h
-  sigil-sign-ffi/         staticlib exporting include/sigil_sign.h
-  mecha-policy-ffi/       staticlib exporting mecha_policy.h
+  sigil-ffi/              rlib exporting include/sigil.h
+  sigil-sign-ffi/         rlib exporting include/sigil_sign.h
+  mecha-policy-ffi/       rlib exporting mecha_policy.h
+  sigil-verify-capi/          staticlib: libsigil.a (sigil-ffi)
+  sigil-verify-policy-capi/   staticlib: libsigil_verify_policy.a (+ mecha-policy-ffi)
+  sigil-verify-sign-capi/     staticlib and shared library: libsigil_verify_sign
+                              (+ sigil-sign-ffi)
   sigil-cli/              the Rust CLI, an extern "C" consumer of both headers
 ```
 
+- One Rust archive per program (owner ruling 9). Every Rust staticlib
+  bundles its own copy of the standard library, so the Rust reference says to
+  build a single staticlib for all of a program's Rust code: "Multiple Rust
+  `staticlib` files are likely to conflict." The `-ffi` crates hold the
+  exported functions as ordinary rlibs, and each `-capi` crate bundles the
+  ones a program shape needs: verify only, a licensed application (verify and
+  policy), or the CLI (verify and sign). A C program links exactly one of
+  them and no other Rust static library. A Rust program depends on the crates
+  instead.
+- The Zig archives export only their header's functions and combine freely,
+  so the Zig package keeps one archive per header. Both packages install the
+  same pkg-config modules, `sigil`, `sigil-verify-policy` and
+  `sigil-verify-sign` (`scripts/write-pkgconfig`), so a C consumer asks for
+  its program shape and gets the right link line from either implementation.
+- The Rust CLI is a Rust program that reaches the core only through the C
+  ABI, so it cannot link a Rust static library. It links the CLI shape as a
+  shared library, which keeps its own standard library inside. That shared
+  library is in the Rust package's `shared` output, away from the archives,
+  so `-lsigil_verify_sign` from pkg-config still finds the static archive.
+  Only the test pair (Rust CLI on the Rust core) uses it; the shipped Rust
+  CLI links the Zig archives statically, which combine freely.
 - `sigil` depends on no signing code, mirroring `libsigil.a` against
-  `libsigil_sign.a` today. A symbol scan over the built `sigil-ffi` archive,
-  the Rust counterpart of `tests/test_no_signing_symbols`, enforces it.
-- Each installed Rust archive is prelinked into one object whose only
-  global symbols are its header's functions, so any combination of the
-  archives, and a consumer's own Rust code, can share a binary.
+  `libsigil_sign.a` today. A symbol scan over the Rust consumer archives
+  (`libsigil.a` and `libsigil_verify_policy.a`), the Rust counterpart of
+  `tests/test_no_signing_symbols`, enforces it.
 - The core crates forbid `unsafe`. Only the three `-ffi` crates contain it.
   Every exported function takes pointer plus length where the header does
   and zeroizes secrets on every exit path. The core is written not to panic
@@ -77,8 +113,9 @@ rust/
   `extern "C"` function aborts rather than unwinding into the caller. The
   header has no internal-error code to map a panic to.
 - Rust consumers depend on the `sigil` and `mecha-policy` crates through a
-  Cargo Git dependency pinned to a commit. C, Zig and other consumers link the
-  static archives with the existing headers.
+  Cargo Git dependency pinned to a commit. C and other foreign consumers use
+  the existing headers and link the static archives through their program
+  shape's pkg-config module. Zig consumers keep importing the Zig package.
 - Errors are closed enums with exhaustive matches. The numeric C codes derive
   from those enums in one place, so a new variant cannot be added without
   choosing its code.
@@ -166,15 +203,18 @@ their use of `SIGIL_BIN`, so a new suite joins every pair.
 Getting there exposed a packaging defect: every Rust staticlib carries its own
 copy of the Rust standard library, so two Rust archives could not share a
 binary. That broke the CLI (`libsigil.a` with `libsigil_sign.a`) and would
-have broken every product (`libsigil.a` with `libmecha_policy.a`). The Rust
-package now prelinks each archive and keeps global only the functions its
-header declares (`scripts/prelink-staticlib`), which is the shape the Zig
-archives already have. The differential suites check both properties for both
-implementations: each archive's strong globals are exactly its header's
-functions (`tests/differential/check-exports`, one parser in
-`scripts/c-header-functions` for packaging and tests), and each pair of
-archives links and runs in one binary. Against raw, unprelinked archives both
-checks fail.
+have broken every product (`libsigil.a` with `libmecha_policy.a`). The first
+fix prelinked each Rust archive and kept global only its header's functions,
+the shape the Zig archives have. It worked on Linux with GNU ld and lld but
+was ELF-only post-processing, already needed one repair for lld, and has no
+equivalent for Windows' MSVC linker, which cannot do a partial link. It was
+replaced on 2026-11-18 by one Rust archive per program (owner ruling 9, see
+"Workspace layout"). The differential suites check, for each
+implementation: within sigil's and mecha_policy's names, each archive
+exports exactly its headers' functions (`tests/differential/check-exports`,
+exact for Zig, `--namespace` for Rust, one parser in
+`scripts/c-header-functions`); and each program shape links through its
+pkg-config module with both GNU ld and lld and runs.
 
 Step 3b is implemented: `rust/sigil-cli`, a port of `cli/main.c`, declares
 the fifteen functions of the two headers itself (`src/abi.rs`) and depends on
@@ -253,8 +293,9 @@ the pinned Zig library as the oracle.
 
 ## Build and Nix
 
-- Flake packages: `sigil-zig` and `sigil-rust`, each a complete tree
-  (`bin/sigil`, `lib/`, `include/`, `test-fixtures/`). `packages.default`
+- Flake packages: `sigil-zig` and `sigil-rust`, each with `include/` and
+  `lib/pkgconfig/` modules for the three program shapes; the archives behind
+  them differ (see "Workspace layout"). `packages.default`
   selects by the tracked `CANONICAL_IMPL` file, which starts as `zig`.
 - `./build` builds the canonical implementation; `--all-impls` builds both.
   Outputs are retained out-links consumed in place, per the fleet build
@@ -278,7 +319,10 @@ The step numbers match PLAN.md and the commit history.
 3. `sigil-sign`: seal and keyfile known answers, key providers, paper, QR,
    PDF, with the C CLI on the Rust libraries passing `tests/cli` unchanged.
    3b. `sigil-cli` in Rust, then all four frontend and library pairs passing.
-4. `CANONICAL_IMPL` selection and publication.
+4. `CANONICAL_IMPL` selection and publication. The selection names the
+   core, and each publishes its crossed pair: `zig` the Rust CLI on the
+   Zig core, `rust` the C CLI on the Rust core. Today's published
+   `zig-out/bin/sigil` is still the C CLI on the Zig core.
 
 Consumers can pin after step 1 (verify) and step 2 (policy). Which
 implementation is canonical after step 4 is an owner decision and stays `zig`

@@ -192,6 +192,10 @@ queue "Differential signing (Zig vs Rust)" "bash '$SCRIPT_DIR/tests/differential
 # The Rust CLI may reach an implementation only through the C ABI.
 queue "Rust CLI boundary" "$NIXDEV bash '$SCRIPT_DIR/tests/test_rust_cli_boundary'"
 
+# The shipped pairs (each CLI on the other language's core) carry their core
+# inside, so the one executable is the whole program. Required: no skip.
+queue "Shipped CLIs self-contained" "$NIXDEV bash '$SCRIPT_DIR/tests/test_shipped_cli_self_contained'"
+
 # CLI surface tests (Bash-driven, against the built binary).
 export SIGIL_BIN="${SIGIL_BIN:-$SCRIPT_DIR/zig-out/bin/sigil}"
 # The other frontend and library pairs: the C or Rust CLI on the Zig or Rust

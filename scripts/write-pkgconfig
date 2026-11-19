@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# write-pkgconfig IMPL PREFIX VERSION [POLICY_PREFIX [POLICY_LIBS...]]
+#
+# Writes PREFIX/lib/pkgconfig/{sigil,sigil-verify-policy,sigil-verify-sign}.pc,
+# one module per program shape, so a C program asks for what it does and
+# gets the right link line from either implementation:
+#
+#   sigil                verify only       include/sigil.h
+#   sigil-verify-policy  a licensed app    + mecha_policy.h
+#   sigil-verify-sign    the sigil CLI     + include/sigil_sign.h
+#
+# The archives behind a module differ by implementation. Rust's rule is one
+# Rust static library per program (each bundles its own standard library),
+# so the Rust package has one archive per shape. The Zig archives export
+# only their header's functions and combine freely, so the Zig package keeps
+# one archive per header, and its policy module points at the pinned
+# mecha_policy tree (POLICY_PREFIX, with lib/ and include/) plus any system
+# libraries that archive needs from a stock C toolchain (POLICY_LIBS).
+#
+# This table is the only place the shapes are spelled out.
+#
+# Per Mecha conventions: `set -u` only.
+# shellcheck disable=SC2016  # ${libdir} and ${includedir} are pkg-config variables, written literally
+set -u
+
+usage() {
+	echo "usage: write-pkgconfig zig PREFIX VERSION POLICY_PREFIX [POLICY_LIBS...]" >&2
+	echo "       write-pkgconfig rust PREFIX VERSION" >&2
+	exit 64
+}
+[[ $# -ge 3 ]] || usage
+impl=$1 prefix=$2 version=$3
+shift 3
+
+case $impl in
+zig)
+	[[ $# -ge 1 ]] || usage
+	policy=$1
+	shift
+	verify_libs='-L${libdir} -lsigil'
+	policy_libs="-L\${libdir} -lsigil -L$policy/lib -lmecha_policy${*:+ $*}"
+	policy_cflags="-I\${includedir} -I$policy/include"
+	sign_libs='-L${libdir} -lsigil_sign -lsigil'
+	;;
+rust)
+	[[ $# -eq 0 ]] || usage
+	# What a Rust static library needs from the system on Linux beyond what
+	# the C compiler links by default (rustc --print native-static-libs).
+	native='-lpthread -ldl -lm'
+	verify_libs="-L\${libdir} -lsigil $native"
+	policy_libs="-L\${libdir} -lsigil_verify_policy $native"
+	policy_cflags='-I${includedir}'
+	sign_libs="-L\${libdir} -lsigil_verify_sign $native"
+	;;
+*) usage ;;
+esac
+
+dir="$prefix/lib/pkgconfig"
+mkdir -p "$dir" || exit 1
+
+# module NAME DESCRIPTION CFLAGS LIBS
+module() {
+	cat >"$dir/$1.pc" <<EOF || exit 1
+prefix=$prefix
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: $1
+Description: $2 ($impl implementation)
+Version: $version
+Cflags: $3
+Libs: $4
+EOF
+}
+module sigil 'sigil verification: include/sigil.h' '-I${includedir}' "$verify_libs"
+module sigil-verify-policy 'sigil verification and the mecha_policy license rules: include/sigil.h, mecha_policy.h' \
+	"$policy_cflags" "$policy_libs"
+module sigil-verify-sign 'sigil verification and signing: include/sigil.h, include/sigil_sign.h' \
+	'-I${includedir}' "$sign_libs"

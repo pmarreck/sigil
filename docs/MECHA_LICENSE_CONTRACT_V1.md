@@ -21,6 +21,15 @@ own core and adapters; nobody edits another project's tree.
 - Consumer surface: `sigil_public_key_from_text` + `sigil_verify_envelope`
   via C ABI (`include/sigil.h`, static `libsigil.a`, verification-only —
   signing symbols do not exist in the consumer library).
+  Linking (clarified 2026-11-18): a C or other foreign program links through
+  the sigil package's pkg-config module for what it does: `sigil` (verify),
+  or `sigil-verify-policy` (verify plus mecha_policy). The Zig package
+  answers with `libsigil.a` and `libmecha_policy.a`; the Rust package with
+  one archive, `libsigil_verify_policy.a`, which also has no signing code.
+  Rust's rule is one Rust static library per program, so such a program links
+  exactly one sigil Rust archive and no other Rust static library. Rust
+  products (BeamFlix) depend on the `sigil` and `mecha-policy` crates
+  instead. Zig products keep importing the Zig package.
   `examples/embed_minimal.c` is the reference embedding, including the
   multi-key grant-class rule (§4).
 - Distinct error classes: MalformedEncoding vs BadPublicKey vs BadSignature.

@@ -329,6 +329,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-verify-capi"
+version = "0.1.0"
+dependencies = [
+ "sigil-ffi",
+]
+
+[[package]]
+name = "sigil-verify-policy-capi"
+version = "0.1.0"
+dependencies = [
+ "mecha-policy-ffi",
+ "sigil-ffi",
+]
+
+[[package]]
+name = "sigil-verify-sign-capi"
+version = "0.1.0"
+dependencies = [
+ "sigil-ffi",
+ "sigil-sign-ffi",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

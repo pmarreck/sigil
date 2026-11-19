@@ -127,12 +127,11 @@
         '';
 
         # The Rust CLI (rust/sigil-cli) built on one implementation's
-        # archives. Its source is that crate and the two public headers
+        # libraries. Its source is that crate and the two public headers
         # alone: no core crate exists in the build, so the only way into an
-        # implementation is the C ABI. `libs` supplies lib/libsigil.a and
-        # lib/libsigil_sign.a; `extraLibs` names the system libraries those
-        # archives need beyond the Rust runtime.
-        rustCli = name: libs: extraLibs: pkgs.rustPlatform.buildRustPackage {
+        # implementation is the C ABI. `libDir` holds the libraries and
+        # `libs` names them as cargo link-lib specs (KIND=NAME).
+        rustCli = name: libDir: libs: pkgs.rustPlatform.buildRustPackage {
           pname = "${pname}-${name}";
           inherit version;
           src = pkgs.lib.fileset.toSource {
@@ -149,8 +148,8 @@
           cargoRoot = "rust/sigil-cli";
           buildAndTestSubdir = "rust/sigil-cli";
           cargoLock.lockFile = ./rust/sigil-cli/Cargo.lock;
-          SIGIL_LIB_DIR = "${libs}/lib";
-          SIGIL_LIB_EXTRA = extraLibs;
+          SIGIL_LIB_DIR = libDir;
+          SIGIL_LIBS = libs;
           nativeBuildInputs = [ pkgs.clippy pkgs.rustfmt ];
           preBuild = ''
             (cd rust/sigil-cli && cargo fmt --check)
@@ -168,6 +167,16 @@
           buildPhase = ''
             ${zigSetup}
             zig build -Doptimize=ReleaseFast --prefix $out
+            # The headers and the pkg-config modules a C consumer links
+            # through, the same modules the Rust package installs
+            # (scripts/write-pkgconfig). The policy module names the pinned
+            # mecha_policy, whose archive needs libquadmath from a stock x86_64
+            # Linux toolchain (a known mecha_policy defect, PLAN). Other
+            # platforms are untested.
+            mkdir -p $out/include
+            cp include/sigil.h include/sigil_sign.h $out/include/
+            bash ${./scripts/write-pkgconfig} zig "$out" ${version} ${self.packages.${system}.mecha-policy-zig} \
+              ${pkgs.lib.optionalString (pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64) "-lquadmath"}
             ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
               # The CLI is C and therefore links libc. Zig bakes an FHS
               # dynamic-linker path (/lib/ld-musl-x86_64.so.1) into the ELF
@@ -186,28 +195,32 @@
         packages.sigil-zig = self.packages.${system}.default;
 
         # The Rust implementation, held to the Zig one by tests/differential.
-        # It installs the same tree shape: the C headers and archives named
-        # as Zig names them, so a consumer's link line does not depend on
-        # which implementation it was given. Each archive is prelinked so it
-        # exports exactly its header (scripts/prelink-staticlib): otherwise
-        # every Rust archive carries its own standard library and two of them
-        # cannot share a binary. Cargo's unit tests run in checkPhase.
+        # It installs the same headers as the Zig package, but follows Rust's
+        # rule of one Rust static library per program: every Rust staticlib
+        # bundles its own standard library, so two in one link conflict. So
+        # there is one archive per program shape, each built by a thin crate
+        # (rust/sigil-*-capi): libsigil.a (verify), libsigil_verify_policy.a
+        # (a licensed application) and libsigil_verify_sign.a (the CLI).
+        # Both packages install the same pkg-config modules
+        # (scripts/write-pkgconfig), so a consumer's link line does not depend
+        # on which implementation it was given. The `shared` output holds the
+        # CLI shape as a shared library, for the Rust CLI: a Rust program
+        # linking a Rust static library would carry two standard libraries.
+        # Cargo's unit tests run in checkPhase.
         packages.sigil-rust = pkgs.rustPlatform.buildRustPackage {
           pname = "${pname}-rust";
           inherit version;
+          outputs = [ "out" "shared" ];
           # Only what the workspace reads: its crates (the CLI is built on
-          # its own), the two headers it exports, the prelink script and the
-          # header parser it calls, and the fixtures its tests compare
-          # against. An edit elsewhere in the repository, another script
-          # included, no longer rebuilds the Rust packages.
+          # its own), the two headers it exports, and the fixtures its tests
+          # compare against. An edit elsewhere in the repository no longer
+          # rebuilds the Rust packages.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               (pkgs.lib.fileset.difference ./rust ./rust/sigil-cli)
               ./include/sigil.h
               ./include/sigil_sign.h
-              ./scripts/prelink-staticlib
-              ./scripts/c-header-functions
               ./examples/verify_edge_vectors
               ./examples/sign_vectors
             ];
@@ -228,15 +241,23 @@
             mkdir -p $out/lib $out/include
             cp include/sigil.h include/sigil_sign.h $out/include/
             cp ${mecha-policy}/include/mecha_policy.h $out/include/mecha_policy.h
-            # crate archive -> installed archive, header it must export exactly
-            for spec in sigil_ffi:libsigil.a:sigil.h \
-                        sigil_sign_ffi:libsigil_sign.a:sigil_sign.h \
-                        mecha_policy_ffi:libmecha_policy.a:mecha_policy.h; do
-              IFS=: read -r crate installed header <<<"$spec"
-              archive=$(find . -path "*/release/lib$crate.a" | head -1)
-              [ -n "$archive" ] || { echo "no lib$crate.a was built" >&2; exit 1; }
-              bash scripts/prelink-staticlib "$archive" "$out/include/$header" "$out/lib/$installed"
+            # built (crate library name) -> installed
+            built() {
+              local f
+              f=$(find . -path "*/release/$1" | head -1)
+              [ -n "$f" ] || { echo "no $1 was built" >&2; exit 1; }
+              echo "$f"
+            }
+            for spec in sigil_verify_capi:libsigil \
+                        sigil_verify_policy_capi:libsigil_verify_policy \
+                        sigil_verify_sign_capi:libsigil_verify_sign; do
+              IFS=: read -r crate installed <<<"$spec"
+              cp "$(built "lib$crate.a")" "$out/lib/$installed.a"
             done
+            mkdir -p $shared/lib
+            cp "$(built libsigil_verify_sign_capi${pkgs.stdenv.hostPlatform.extensions.sharedLibrary})" \
+              "$shared/lib/libsigil_verify_sign${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}"
+            bash ${./scripts/write-pkgconfig} rust "$out" ${version}
             runHook postInstall
           '';
         };
@@ -254,11 +275,14 @@
             fileset = ./cli;
           };
           dontConfigure = true;
+          # The link line is the package's sigil-verify-sign pkg-config
+          # module, as for any C consumer.
+          nativeBuildInputs = [ pkgs.pkg-config ];
           buildPhase = ''
             runHook preBuild
-            rust=${self.packages.${system}.sigil-rust}
-            $CC -std=c11 -Wall -Wextra -Werror -O2 -I "$rust/include" -I cli cli/main.c \
-              "$rust/lib/libsigil.a" "$rust/lib/libsigil_sign.a" -lpthread -ldl -lm -o sigil
+            export PKG_CONFIG_PATH=${self.packages.${system}.sigil-rust}/lib/pkgconfig
+            read -r -a flags <<<"$(pkg-config --cflags --libs sigil-verify-sign)"
+            $CC -std=c11 -Wall -Wextra -Werror -O2 -I cli cli/main.c "''${flags[@]}" -o sigil
             runHook postBuild
           '';
           installPhase = ''
@@ -268,10 +292,15 @@
           '';
         };
 
-        # The Rust CLI on each library. Neither needs a system library beyond
-        # what the Rust runtime links.
-        packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig" self.packages.${system}.default "";
-        packages.sigil-rust-cli-on-rust = rustCli "rust-cli-on-rust" self.packages.${system}.sigil-rust "";
+        # The Rust CLI on each library: the two Zig archives, which combine
+        # freely (the shipped `zig` pair, one self-contained executable), or
+        # the Rust CLI shape as a shared library, which keeps its own standard
+        # library inside (a Rust program cannot also link a Rust static
+        # library; this pair is test-only).
+        packages.sigil-rust-cli-on-zig = rustCli "rust-cli-on-zig"
+          "${self.packages.${system}.default}/lib" "static=sigil_sign static=sigil";
+        packages.sigil-rust-cli-on-rust = rustCli "rust-cli-on-rust"
+          "${self.packages.${system}.sigil-rust.shared}/lib" "dylib=sigil_verify_sign";
 
         # The pinned Zig mecha_policy as a product tree (archive and header),
         # for the policy differential. Its own package installs only the
@@ -418,12 +447,14 @@
             # The Rust implementation is handed to the suite by path, already
             # built: a sandboxed check cannot run a nested nix build.
             SIGIL_RUST_OUT = self.packages.${system}.sigil-rust;
+            # The shipped Zig package, for its pkg-config modules.
+            SIGIL_ZIG_PACKAGE_OUT = self.packages.${system}.default;
             SIGIL_C_ON_RUST_OUT = self.packages.${system}.sigil-c-on-rust;
             SIGIL_RUST_ON_ZIG_OUT = self.packages.${system}.sigil-rust-cli-on-zig;
             SIGIL_RUST_ON_RUST_OUT = self.packages.${system}.sigil-rust-cli-on-rust;
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
-            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pbCli ]
+            nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pkgs.pkg-config pbCli ]
               # lld: the differential suites link the archives with GNU ld and lld.
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf pkgs.lld ];
             dontConfigure = true;
@@ -506,8 +537,10 @@
             pkgs.rustfmt
             pkgs.hyperfine
             pkgs.jq
-            # The differential suites link the archives with GNU ld and lld.
+            # The differential suites link the archives with GNU ld and lld,
+            # products through each package's pkg-config modules.
             pkgs.lld
+            pkgs.pkg-config
             # Linters for the masked-return-value class (tests/test_lint).
             # Zig rejects unused return values at compile time; C and Bash
             # make the same check opt-in, so these are that opt-in. The gate

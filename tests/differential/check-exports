@@ -1,29 +1,62 @@
 #!/usr/bin/env bash
-# check-exports ARCHIVE HEADER: the archive's strong global definitions are
-# exactly the functions HEADER declares. Prints the difference and exits 1
-# otherwise, so an implementation can neither miss a declared function nor
-# leak an extra global that would collide with another archive in the same
-# binary.
+# check-exports [--namespace] ARCHIVE HEADER...: compare the archive's strong
+# global definitions with the functions the headers declare. Prints the
+# difference and exits 1 when they disagree, so an implementation can neither
+# miss a declared function nor export an undeclared one.
 #
-# Excluded: weak definitions, which yield to any strong one at link time, and
-# names in the reserved "__" namespace, where compiler runtimes live. The
-# declared list comes from scripts/c-header-functions, the same parser the
-# Rust packaging uses.
+# Default (the Zig archives): the strong globals are exactly the declared
+# functions, so the archive combines with any other in one binary.
+#
+# --namespace (the Rust archives): only globals in the headers' own name
+# prefixes are compared (the text up to the first underscore of each declared
+# function: `sigil_`, `mecha_`). A Rust static library also exports its
+# bundled standard library, which is why a program links exactly one; within
+# sigil's own names it must still export exactly the headers.
+#
+# Excluded either way: weak definitions, which yield to any strong one at
+# link time, and names in the reserved "__" namespace, where compiler
+# runtimes live. The declared list comes from scripts/c-header-functions.
 #
 # Per Mecha conventions: `set -u` only.
 set -u
 
-if [[ $# -ne 2 || ! -f "$1" || ! -f "$2" ]]; then
-	echo "usage: check-exports ARCHIVE HEADER" >&2
+namespace=0
+if [[ ${1:-} == --namespace ]]; then
+	namespace=1
+	shift
+fi
+if [[ $# -lt 2 || ! -f "$1" ]]; then
+	echo "usage: check-exports [--namespace] ARCHIVE HEADER..." >&2
 	exit 64
 fi
+archive=$1
+shift
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/check-exports-XXXXXX")" || exit 1
 trap 'rm -rf -- "$work"' EXIT
 
-bash "$REPO_ROOT/scripts/c-header-functions" "$2" >"$work/declared" || exit 1
-nm -g --defined-only "$1" >"$work/nm" 2>"$work/nm-err" || { cat "$work/nm-err" >&2; exit 1; }
+: >"$work/declared"
+for header in "$@"; do
+	if [[ ! -f "$header" ]]; then
+		echo "check-exports: no header $header" >&2
+		exit 64
+	fi
+	bash "$REPO_ROOT/scripts/c-header-functions" "$header" >>"$work/declared" || exit 1
+done
+sort -u -o "$work/declared" "$work/declared"
+if [[ ! -s "$work/declared" ]]; then
+	echo "check-exports: the headers declare no functions" >&2
+	exit 1
+fi
+nm -g --defined-only "$archive" >"$work/nm" 2>"$work/nm-err" || { cat "$work/nm-err" >&2; exit 1; }
 awk 'NF == 3 && $2 ~ /^[TDBR]$/ && $3 !~ /^__/ { print $3 }' "$work/nm" >"$work/exported"
+if [[ $namespace == 1 ]]; then
+	sed 's/_.*/_/' "$work/declared" >"$work/prefixes"
+	sort -u -o "$work/prefixes" "$work/prefixes"
+	awk 'NR == FNR { p[$0] = 1; next } { for (k in p) if (index($0, k) == 1) { print; next } }' \
+		"$work/prefixes" "$work/exported" >"$work/scoped"
+	mv "$work/scoped" "$work/exported"
+fi
 sort -u -o "$work/exported" "$work/exported"
 if ! diff "$work/declared" "$work/exported" >"$work/diff"; then
 	echo "< declared only, > exported only:"

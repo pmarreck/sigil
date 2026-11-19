@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Differential test for the signing library (include/sigil_sign.h): the Zig
-# and Rust libsigil_sign.a must answer identically, and both must match the
+# and Rust implementations must answer identically, and both must match the
 # oracles that neither implementation's current code produced: the committed
 # license envelopes and public keys, and OpenSSL's Ed25519 for the fixture
 # seeds.
 #
-# One C driver (sign_driver.c) is linked against each archive with a stock C
-# compiler. A missing implementation is a failure, never a skip. Every key
+# One C driver (sign_driver.c) is linked with a stock C compiler against each
+# implementation's signing archive: the Zig libsigil_sign.a, and the Rust
+# libsigil_verify_sign.a, the one Rust archive the CLI links (Rust's rule is
+# one Rust static library per program). A missing implementation is a
+# failure, never a skip. Every key
 # used here is TEST-ONLY with a public passphrase; the cheap fixtures use tiny
 # KDF parameters so the suite stays fast.
 #
@@ -17,6 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ZIG_OUT="${SIGIL_ZIG_OUT:-$REPO_ROOT/zig-out}"
 RUST_OUT="${SIGIL_RUST_OUT:-$REPO_ROOT/.nix-out/rust-release}"
+# The Zig sigil package, whose pkg-config modules a product links through.
+SIGIL_ZIG_PACKAGE_OUT="${SIGIL_ZIG_PACKAGE_OUT:-$REPO_ROOT/.nix-out/release}"
 CC="${CC:-cc}"
 FUZZ_CASES="${SIGIL_DIFF_FUZZ_CASES:-1500}"
 SV="$REPO_ROOT/examples/sign_vectors"
@@ -37,10 +42,10 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/sigil-sign-differential-XXXXXX")" || exit 1
 trap 'rm -rf -- "$work"' EXIT
 
 # ── Build one driver per implementation ─────────────────────────────────────
+declare -A archive=([zig]="$ZIG_OUT/lib/libsigil_sign.a" [rust]="$RUST_OUT/lib/libsigil_verify_sign.a")
 for impl in zig rust; do
-	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	if [[ ! -f "$out/lib/libsigil_sign.a" ]]; then
-		fail "$impl implementation provides lib/libsigil_sign.a" "missing: $out/lib/libsigil_sign.a"
+	if [[ ! -f "${archive[$impl]}" ]]; then
+		fail "$impl implementation provides ${archive[$impl]##*/}" "missing: ${archive[$impl]}"
 		finish
 	fi
 done
@@ -51,9 +56,8 @@ done
 # The two compiles are independent, so they run at once.
 declare -A build_pid=()
 for impl in zig rust; do
-	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
 	"$CC" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" "$SCRIPT_DIR/sign_driver.c" \
-		"$out/lib/libsigil_sign.a" -lpthread -ldl -lm -o "$work/driver-$impl" >"$work/build-$impl.log" 2>&1 &
+		"${archive[$impl]}" -lpthread -ldl -lm -o "$work/driver-$impl" >"$work/build-$impl.log" 2>&1 &
 	build_pid[$impl]=$!
 done
 for impl in zig rust; do
@@ -73,9 +77,11 @@ else
 fi
 
 # ── Export inventory, parsed from the header ────────────────────────────────
-# One parser (scripts/c-header-functions) serves the Rust packaging and every
-# suite. Each archive must define exactly the declared functions: none
-# missing, and no extra global that could collide in a shared binary.
+# One parser (scripts/c-header-functions) serves every suite. The Zig archive
+# must define exactly the declared functions, so it combines with libsigil.a.
+# The Rust archive also carries sigil.h and its bundled standard library, so
+# within sigil's names it must export exactly the two headers
+# (check-exports --namespace).
 if ! bash "$REPO_ROOT/scripts/c-header-functions" "$HEADER" >"$work/declared"; then
 	fail "parse the declared functions from $HEADER"
 	finish
@@ -86,14 +92,16 @@ if [[ $declared_count -lt 7 ]]; then
 	fail "parse the declared functions from $HEADER" "only $declared_count found"
 	finish
 fi
-for impl in zig rust; do
-	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
-	if inventory=$(bash "$SCRIPT_DIR/check-exports" "$out/lib/libsigil_sign.a" "$HEADER"); then
-		pass "$impl archive exports exactly the $declared_count declared functions"
-	else
-		fail "$impl archive exports exactly the declared functions" "$inventory"
-	fi
-done
+if inventory=$(bash "$SCRIPT_DIR/check-exports" "${archive[zig]}" "$HEADER"); then
+	pass "zig archive exports exactly the $declared_count declared functions"
+else
+	fail "zig archive exports exactly the declared functions" "$inventory"
+fi
+if inventory=$(bash "$SCRIPT_DIR/check-exports" --namespace "${archive[rust]}" "$REPO_ROOT/include/sigil.h" "$HEADER"); then
+	pass "rust archive's sigil_ globals are exactly the $inventory functions of sigil.h and sigil_sign.h"
+else
+	fail "rust archive's sigil_ globals are exactly the functions of sigil.h and sigil_sign.h" "$inventory"
+fi
 uncalled=""
 for fn in $declared; do
 	grep -qE "\\b${fn}[[:space:]]*\\(" "$SCRIPT_DIR/sign_driver.c" || uncalled="$uncalled $fn"
@@ -104,39 +112,42 @@ else
 	fail "the driver calls every declared function" "never called:$uncalled"
 fi
 
-# ── One implementation's archives share a binary ────────────────────────────
-# The CLI links libsigil.a and libsigil_sign.a together. The probe calls into
-# both, because a static link pulls only the members it needs: an archive
-# nothing references could never collide.
-cat >"$work/coexist.c" <<'EOF'
+# ── A signing program links through pkg-config ──────────────────────────────
+# The CLI verifies and signs in one binary. Each package's sigil-verify-sign
+# pkg-config module gives the link line: two archives for Zig, one for Rust.
+# The probe calls into both headers, because a static link pulls only the
+# members it needs. Both GNU ld and lld, which differ in what they accept
+# from Rust's unwind tables and COMDAT groups. The four links are
+# independent, so they run at once; results are judged in a fixed order.
+cat >"$work/product.c" <<'EOF'
 #include <stdio.h>
 #include "sigil.h"
 #include "sigil_sign.h"
 int main(void) { return printf("%s %s\n", sigil_version(), sigil_sign_strerror(0)) < 0; }
 EOF
-# Both GNU ld and lld: lld refuses an archive whose unwind tables point into
-# a COMDAT group it discarded as a duplicate of another archive's, which GNU
-# ld tolerates (scripts/prelink-staticlib renames those groups).
-# The four links are independent, so they run at once; results are judged
-# in a fixed order.
-declare -A coexist_pid=()
+declare -A product_pid=()
+declare -A package=([zig]="$SIGIL_ZIG_PACKAGE_OUT" [rust]="$RUST_OUT")
 for impl in zig rust; do
-	if [[ "$impl" == zig ]]; then out="$ZIG_OUT"; else out="$RUST_OUT"; fi
+	if ! flags=$(PKG_CONFIG_PATH="${package[$impl]}/lib/pkgconfig" pkg-config --cflags --libs sigil-verify-sign 2>&1); then
+		fail "$impl package provides the sigil-verify-sign pkg-config module" "$flags"
+		continue
+	fi
+	read -r -a flags <<<"$flags"
 	for ld in bfd lld; do
-		{ "$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror -I "$REPO_ROOT/include" \
-			"$work/coexist.c" "$out/lib/libsigil.a" "$out/lib/libsigil_sign.a" -lpthread -ldl -lm \
-			-o "$work/coexist-$impl-$ld" && "$work/coexist-$impl-$ld" >/dev/null; } \
-			>"$work/coexist-$impl-$ld.log" 2>&1 &
-		coexist_pid[$impl-$ld]=$!
+		{ "$CC" -fuse-ld="$ld" -std=c11 -Wall -Wextra -Werror "$work/product.c" "${flags[@]}" \
+			-o "$work/product-$impl-$ld" && "$work/product-$impl-$ld" >/dev/null; } \
+			>"$work/product-$impl-$ld.log" 2>&1 &
+		product_pid[$impl-$ld]=$!
 	done
 done
 for impl in zig rust; do
+	[[ -n "${product_pid[$impl-bfd]:-}" ]] || continue
 	for ld in bfd lld; do
-		if wait "${coexist_pid[$impl-$ld]}"; then
-			pass "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run"
+		if wait "${product_pid[$impl-$ld]}"; then
+			pass "$impl sigil-verify-sign links a program calling both headers with $ld, which runs"
 		else
-			fail "$impl libsigil.a and libsigil_sign.a link into one binary with $ld and run" \
-				"$(<"$work/coexist-$impl-$ld.log")"
+			fail "$impl sigil-verify-sign links a program calling both headers with $ld, which runs" \
+				"$(<"$work/product-$impl-$ld.log")"
 		fi
 	done
 done

@@ -1,0 +1,19 @@
+[package]
+name = "sigil-verify-policy-capi"
+description = "Installed as libsigil_verify_policy.a: include/sigil.h and mecha_policy.h, for a licensed application."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sigil_verify_policy_capi"
+crate-type = ["staticlib"]
+
+[dependencies]
+sigil-ffi = { path = "../sigil-ffi" }
+mecha-policy-ffi = { path = "../mecha-policy-ffi" }
+
+[lints]
+workspace = true

@@ -34,8 +34,8 @@ grep -q 'sigil ' "$WORK/checks.txt" && pass "checks mode reports the sigil build
 
 # Rehearsal: TEST keys only, oracles required, nothing left behind.
 bash "$PRE" --sigil "$SIGIL" --work "$WORK/reh" --rehearse > "$WORK/reh.txt" 2>&1; rc=$?
-if [[ $rc -eq 0 ]]; then pass "rehearsal exits 0 with every oracle on PATH"
 # shellcheck disable=SC2312  # diagnostic-only substitution; verdict already set
+if [[ $rc -eq 0 ]]; then pass "rehearsal exits 0 with every oracle on PATH"
 else fail "rehearsal exits 0 with every oracle on PATH" "rc=$rc; $(tail -5 "$WORK/reh.txt" | tr '\n' '|')"; fi
 grep -q 'REHEARSAL PASSED' "$WORK/reh.txt" && pass "rehearsal prints REHEARSAL PASSED" || fail "rehearsal prints REHEARSAL PASSED"
 grep -q -i 'openssl' "$WORK/reh.txt" && pass "rehearsal cites the openssl identity oracle" || fail "rehearsal cites the openssl identity oracle"

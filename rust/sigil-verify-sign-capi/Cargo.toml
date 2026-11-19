@@ -1,0 +1,19 @@
+[package]
+name = "sigil-verify-sign-capi"
+description = "Installed as libsigil_verify_sign.a and .so: include/sigil.h and sigil_sign.h, for the sigil CLI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sigil_verify_sign_capi"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+sigil-ffi = { path = "../sigil-ffi" }
+sigil-sign-ffi = { path = "../sigil-sign-ffi" }
+
+[lints]
+workspace = true

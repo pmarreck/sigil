@@ -9,7 +9,7 @@ publish.workspace = true
 
 [lib]
 name = "mecha_policy_ffi"
-crate-type = ["staticlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 mecha-policy = { path = "../mecha-policy" }

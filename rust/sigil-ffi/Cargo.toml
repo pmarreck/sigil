@@ -9,7 +9,7 @@ publish.workspace = true
 
 [lib]
 name = "sigil_ffi"
-crate-type = ["staticlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 sigil = { path = "../sigil" }

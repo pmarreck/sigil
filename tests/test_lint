@@ -17,7 +17,7 @@
 # zero instances in the Zig core and all of them in C and Bash. C and Bash make
 # the same checks opt-in — so this file is that opt-in, enforced.
 #
-# shellcheck ships SC2312 DISABLED by default under
+# ShellCheck ships SC2312 DISABLED by default under
 # `-o check-extra-masked-returns`. It was findable all along.
 #
 # Per Mecha conventions: `set -u` only. `set -e` would abort on the non-zero
@@ -49,6 +49,11 @@ require_tool() {
 	return 1
 }
 
+# parse_aborted FINDINGS: shellcheck stopped parsing, so it inspected only the
+# text before the error. SC1072 and SC1073 are its "fix this and try again"
+# markers; the run still exits 1, exactly like a file with ordinary findings.
+parse_aborted() { grep -qE '\[SC107[23]\]' <<<"$1"; }
+
 # ── Bash: SC2312 masked return values ───────────────────────────────────────
 if require_tool shellcheck; then
 	shell_scripts=()
@@ -60,6 +65,7 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/tests/test_lint" \
 		"$REPO_ROOT/tests/test_rust_cli_boundary" \
 		"$REPO_ROOT/tests/test_no_signing_symbols_rust" \
+		"$REPO_ROOT/tests/test_shipped_cli_self_contained" \
 		"$REPO_ROOT/tests/cli/test_cli" \
 		"$REPO_ROOT/tests/differential/run" \
 		"$REPO_ROOT/tests/differential/policy" \
@@ -67,7 +73,7 @@ if require_tool shellcheck; then
 		"$REPO_ROOT/tests/differential/check-exports" \
 		"$REPO_ROOT/scripts/c-header-functions" \
 		"$REPO_ROOT/scripts/contract-products" \
-		"$REPO_ROOT/scripts/prelink-staticlib" \
+		"$REPO_ROOT/scripts/write-pkgconfig" \
 		"$REPO_ROOT/tests/integration/ceremony_preflight.sh" \
 		"$REPO_ROOT/tests/integration/cross_impl.sh" \
 		"$REPO_ROOT/ceremony-preflight"
@@ -79,9 +85,15 @@ if require_tool shellcheck; then
 		rel="${script#"$REPO_ROOT"/}"
 		findings=$(shellcheck -o check-extra-masked-returns -f gcc "$script" 2>/dev/null)
 		sc_rc=$?
-		# shellcheck itself failing to run is distinct from finding nothing.
+		# ShellCheck itself failing to run is distinct from finding nothing.
 		if [[ $sc_rc -gt 1 ]]; then
 			fail "shellcheck runs on $rel" "  shellcheck exited $sc_rc — the gate did not actually inspect this file"
+			continue
+		fi
+		# So is a parse abort, which exits 1 like an ordinary finding.
+		if parse_aborted "$findings"; then
+			# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+			fail "shellcheck parses $rel" "$(sed 's/^/       /' <<<"$findings")"
 			continue
 		fi
 		masked=$(grep -c 'SC2312' <<<"$findings")
@@ -89,6 +101,7 @@ if require_tool shellcheck; then
 		if [[ "$masked" -eq 0 ]]; then
 			pass "no masked return values in $rel"
 		else
+			# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
 			fail "no masked return values in $rel" \
 				"$(grep 'SC2312' <<<"$findings" | sed 's/^/       /')"
 		fi
@@ -109,6 +122,20 @@ PROBE
 	else
 		fail "the gate still fires on a known violation (specificity corpus)" \
 			"       SC2312 did not trigger on a deliberately masked pipeline — the gate is defanged"
+	fi
+	# A file that stops the parser must not pass as clean. A comment that
+	# opens with the tool's lowercase name reads as a malformed directive.
+	cat > "$probe" <<'PROBE'
+#!/usr/bin/env bash
+set -u
+# shellcheck finds masked returns
+./build 2>&1 | tail -3 || { echo "FATAL"; exit 1; }
+PROBE
+	probe_findings=$(shellcheck -o check-extra-masked-returns -f gcc "$probe" 2>/dev/null)
+	if parse_aborted "$probe_findings"; then
+		pass "the gate detects a parse abort (specificity corpus)"
+	else
+		fail "the gate detects a parse abort (specificity corpus)" "$probe_findings"
 	fi
 	rm -f "$probe"
 fi
@@ -153,6 +180,7 @@ if require_tool clang-tidy; then
 		if [[ "$warnings" -eq 0 ]]; then
 			pass "no ignored return values in $rel"
 		else
+			# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
 			fail "no ignored return values in $rel" \
 				"$(grep 'warning:' <<<"$out" | sed 's/^/       /' | head -20)"
 		fi
