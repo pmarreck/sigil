@@ -78,7 +78,7 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 - [ ] Build-layout step 4: PATH cutover from `zig-out/bin` to `bin/<PF>/`, coordinated with the dotfiles owner, with recorded command resolutions rechecked, including sigil on the ceremony host.
 
 - [ ] Evaluate whether Sigil belongs in UNIX MAIL REDUX's S/MIME certificate lifecycle at all; default to keeping the standards-specific work in the mail project unless a concrete shared custody abstraction pays for the coupling. If Sigil participates, limit it to operator policy, purpose-separated key custody, or an offline issuance ceremony, and delegate CMS, X.509, ASN.1/DER, and MIME canonicalization to an established independent implementation. Never reuse the custom `sigil.transcript.v1` envelope or any license/update key for mail. Curiosity poke: the existing provider signs Sigil's domain-separated transcript; standards-compliant CMS signatures require a distinct protocol path and key, plus interoperability tests against Apple Mail and an external verifier.
-- [ ] Write INTENT.md with the gather-project-intentions skill (PROJECT_OVERVIEW.md is retired fleet-wide; none exists here).
+- [ ] SCS confirms or corrects INTENT.md (drafted 2026-11-19 from README, docs/DESIGN.md, the contract and PLAN decisions with the gather-project-intentions skill; it adds no decisions and lists the open purpose-level questions).
 - [ ] Hand Mecha Validate and Mecha Rotshield an integration note: link `libsigil.a` only, embed the key via `sigil pubkey --format c|zig`, and implement the confirmation policy from docs/DESIGN.md (monotonic clock high-water mark; fail open on network error, closed only on an explicit revoked response; grace period rather than a midnight lockout).
 - [ ] The confirmation endpoint itself + a short-dated attestation envelope. Server-side, so a separate piece of work — but the format is already settled (it is just another sigil envelope).
 - [ ] Benchmark gate (`./bm`) once verification is on a hot path anywhere.
@@ -105,10 +105,10 @@ Background and settled decisions: docs/plan_context/decisions_and_background.md.
 
 ### Feature: envelope normalization (Peter, 2026-07-28)
 
-- [ ] Stage 1 (pre-parse): strip `\t\n\r` and space from the whole envelope. JSON-safe and value-safe. Fixes hard-wrapping.
-- [ ] Stage 2 (post-parse, per value): strip any code point outside the 256-symbol alphabet from `data` and `sig`. Fixes `>` prefixes.
-- [ ] Default on, with a stderr warning when normalization changed something.
-- [ ] Constraint to enforce: stage 1 is only safe while every envelope field is printable-binary or a fixed token. Reject unknown fields.
+- [x] Stage 1, and on by default (found done 2026-11-19): src/envelope.zig `normalize` strips every ASCII byte outside the envelope allowlist before parsing (whitespace, folds, `>` reply prefixes, backslashes), in both implementations; tests/integration/envelope_variants.sh pins it on every pair.
+- [ ] Stage 2, narrowed (needs SCS before work): stage 1 already covers its stated `>` case. What remains is stripping non-ASCII noise (a non-breaking space or smart quote from a mail client) from `data` and `sig`, which today makes decoding fail. It widens envelope malleability, so it waits for an explicit yes.
+- [ ] The stderr warning when normalization changed something: not implemented. It needs the library to report that it normalized (an ABI addition in both implementations and both headers), since a CLI may not reimplement normalization; design before work.
+- [x] Superseded: "reject unknown fields". Unknown fields are deliberately tolerated (a future `datatype` label) and ignored, so stripping inside them cannot affect verification; documented in docs/DESIGN.md "Envelope bytes are not an identifier".
 
 ### Deferred / ideas
 
