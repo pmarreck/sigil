@@ -51,9 +51,18 @@ report_suite() {
 	local name="$1" prefix="$2" output rc took
 	echo ""
 	echo "━━━ $name ━━━"
-	output=$(<"$prefix.out")
-	rc=$(<"$prefix.rc")
-	took=$(<"$prefix.time")
+	output=""; rc=""; took=""
+	[[ -f "$prefix.out" ]] && output=$(<"$prefix.out")
+	[[ -f "$prefix.rc" ]] && rc=$(<"$prefix.rc")
+	[[ -f "$prefix.time" ]] && took=$(<"$prefix.time")
+	# A suite that recorded no exit status (its shell died, or a command
+	# exited from inside exec_suite) failed: an empty status would otherwise
+	# compare as 0 below and pass on whatever its output happened to count.
+	if [[ ! $rc =~ ^[0-9]+$ ]]; then
+		output="$output"$'\n'"  FAIL the suite recorded no exit status"
+		rc=255
+	fi
+	[[ -n $took ]] || took=0
 	TIMINGS+=("$took	$name")
 	local pass fail
 	# Recognize multiple summary formats:
@@ -165,9 +174,14 @@ QUEUE_NAMES=()
 QUEUE_CMDS=()
 queue() { QUEUE_NAMES+=("$1"); QUEUE_CMDS+=("$2"); }
 
-# Zig unit tests — `--summary all` makes Zig emit "N/N tests passed"
-# which report_suite's grep can pick up.
-queue "Zig Unit Tests" "$NIXDEV zig build test --summary all 2>&1"
+# Zig unit tests: the zig-unit-test-results package runs them in the Nix
+# sandbox once per change to the Zig sources, and ./build links its record.
+# This reports that run: its log (`--summary all` emits "N/N tests passed",
+# which report_suite picks up) and its exit status. A missing record fails.
+ZIG_UNIT_OUT="${SIGIL_ZIG_UNIT_TESTS_OUT:-$SCRIPT_DIR/.nix-out/zig-unit-tests}"
+# exec_suite evals the command in its own shell, so it must not `exit`: the
+# recorded status is returned through a subshell instead.
+queue "Zig Unit Tests" "if test -f '$ZIG_UNIT_OUT/rc' -a -f '$ZIG_UNIT_OUT/log'; then cat '$ZIG_UNIT_OUT/log'; (exit \"\$(cat '$ZIG_UNIT_OUT/rc')\"); else echo 'no recorded Zig unit test run at $ZIG_UNIT_OUT (./build makes it)'; false; fi"
 
 # Architecture invariant: the shipping verifier contains no signing code.
 if [[ -f "$SCRIPT_DIR/tests/test_no_signing_symbols" ]]; then

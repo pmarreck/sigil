@@ -320,6 +320,44 @@
         # tests/integration/zig_consumer.sh reports every target on its own;
         # the conformance program is installed for that suite to run and
         # inspect. The steps run concurrently.
+        # The Zig unit tests, run once per change to the Zig package's own
+        # sources (build.zig.zon `.paths`) rather than on every ./test, and
+        # inside the sandbox rather than in the dev shell. The run's exit
+        # status and log are recorded as data instead of failing this build,
+        # so ./test reports them as its "Zig Unit Tests" suite, failure
+        # included. On Linux the libc-linked test binaries carry an FHS
+        # loader path, so they are compiled first, repointed at the stdenv
+        # loader, then run from the cache.
+        packages.zig-unit-test-results = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-zig-unit-test-results";
+          inherit version;
+          src = zigSrc;
+          nativeBuildInputs = [ zigPkg ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
+          dontConfigure = true;
+          dontFixup = true;
+          dontInstall = true;
+          buildPhase = ''
+            ${zigSetup}
+            mkdir -p $out
+            run_tests() {
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                zig build test-compile || return
+                DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
+                for f in $(find .zig-cache zig-out -type f -perm -u+x 2>/dev/null); do
+                  patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
+                done
+              ''}
+              timeout 600 zig build test --summary all
+            }
+            if run_tests >"$out/log" 2>&1; then
+              echo 0 >"$out/rc"
+            else
+              echo $? >"$out/rc"
+            fi
+          '';
+        };
+
         packages.zig-consumer-results = pkgs.stdenv.mkDerivation {
           pname = "${pname}-zig-consumer-results";
           inherit version;
@@ -378,34 +416,16 @@
         checks = {
           build = self.packages.${system}.default;
 
-          test = pkgs.stdenv.mkDerivation {
-            pname = "${pname}-test";
-            inherit version;
-            src = ./.;
-            nativeBuildInputs = [ zigPkg ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf ];
-            dontConfigure = true;
-            dontFixup = true;
-            buildPhase = ''
-              ${zigSetup}
-              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-                # Same baked-in FHS dynamic linker as the CLI, except a test
-                # binary cannot be patched after the fact by the install step —
-                # it has to run. Compile first, repoint, then run against the
-                # cached (now runnable) artifacts.
-                zig build test-compile
-                DL="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
-                for f in $(find .zig-cache zig-out -type f -perm -u+x 2>/dev/null); do
-                  patchelf --set-interpreter "$DL" "$f" 2>/dev/null || true
-                done
-              ''}
-              timeout 600 zig build test || { echo "Tests failed"; exit 1; }
-            '';
-            installPhase = ''
-              mkdir -p $out
-              echo "tests passed" > $out/result
-            '';
-          };
+          # The Zig unit tests, judged from the recorded run (see
+          # zig-unit-test-results) so flake check fails on a failing test
+          # without running the tests a second time.
+          test = pkgs.runCommandLocal "${pname}-test-${version}" { } ''
+            r=${self.packages.${system}.zig-unit-test-results}
+            cat "$r/log"
+            [ "$(cat "$r/rc")" = 0 ] || { echo "Zig unit tests failed (exit $(cat "$r/rc"))"; exit 1; }
+            mkdir -p $out
+            echo "tests passed" > $out/result
+          '';
 
           # The architecture invariant that keeps "a product cannot sign" true:
           # nm reads the shipped artifact rather than our intentions about it.
@@ -454,6 +474,7 @@
             SIGIL_RUST_ON_RUST_OUT = self.packages.${system}.sigil-rust-cli-on-rust;
             MECHA_POLICY_ZIG_OUT = self.packages.${system}.mecha-policy-zig;
             SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
+            SIGIL_ZIG_UNIT_TESTS_OUT = self.packages.${system}.zig-unit-test-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pkgs.pkg-config pbCli ]
               # lld: the differential suites link the archives with GNU ld and lld.
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.patchelf pkgs.lld ];
