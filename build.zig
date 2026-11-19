@@ -57,7 +57,13 @@ pub fn build(b: *std.Build) void {
 	// function the program never calls.
 	lib.link_function_sections = true;
 	lib.link_data_sections = true;
-	installStaticLib(b, lib, target);
+	// `zig build verify-lib` installs this library and its header alone: the
+	// supported way for a product to build sigil's verifier for its own
+	// target (flake legacyPackages.<system>.verifyLibraryFor), with no
+	// signing library or CLI in its build graph.
+	const verify_lib_step = b.step("verify-lib", "Install only the verification library and its header");
+	verify_lib_step.dependOn(&b.addInstallHeaderFile(b.path("include/sigil.h"), "sigil.h").step);
+	installStaticLib(b, lib, target, &.{ b.getInstallStep(), verify_lib_step });
 
 	// -- Signing library, kept SEPARATE from libsigil.a. The products link the
 	//    verifier only, so a shipped binary does not contain the code to mint a
@@ -78,7 +84,7 @@ pub fn build(b: *std.Build) void {
 	});
 	sign_lib.link_function_sections = true;
 	sign_lib.link_data_sections = true;
-	installStaticLib(b, sign_lib, target);
+	installStaticLib(b, sign_lib, target, &.{b.getInstallStep()});
 
 	// -- Module probe: a TEST FIXTURE, not a deliverable. `b.addModule` emits no
 	//    binary, so the custody control could not see the sanctioned sibling-Zig
@@ -196,10 +202,11 @@ pub fn build(b: *std.Build) void {
 /// archive with `zig ar p` (which reads them whatever their stored mode), and
 /// re-archive them with `zig ar --format=darwin` in deterministic mode:
 /// 8-byte aligned, readable members, zeroed timestamps, identical code.
-/// Elsewhere, install the artifact as-is.
-fn installStaticLib(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
+/// Elsewhere, install the artifact as-is. Each of `steps` installs it.
+fn installStaticLib(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, steps: []const *std.Build.Step) void {
 	if (!target.result.os.tag.isDarwin()) {
-		b.installArtifact(lib);
+		const install = b.addInstallArtifact(lib, .{});
+		for (steps) |step| step.dependOn(&install.step);
 		return;
 	}
 	// Register the artifact without installing it, so a downstream Zig build can
@@ -214,5 +221,6 @@ fn installStaticLib(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Bui
 	const ar = b.addSystemCommand(&.{ b.graph.zig_exe, "ar", "qcsD", "--format=darwin" });
 	const archive = ar.addOutputFileArg(archive_name);
 	ar.addFileArg(obj);
-	b.getInstallStep().dependOn(&b.addInstallLibFile(archive, archive_name).step);
+	const install = b.addInstallLibFile(archive, archive_name);
+	for (steps) |step| step.dependOn(&install.step);
 }

@@ -109,6 +109,21 @@ On Linux the `sigil` CLI is a fully static executable (musl, no dynamic
 loader, no shared library), so the one file runs on any Linux of the same
 architecture, including an offline machine with nothing else installed.
 
+### Building the verifier for your product's target
+
+A product that links the verifier from Nix asks the flake for its own target:
+
+```nix
+sigil.legacyPackages.${system}.verifyLibraryFor "aarch64-macos.14.0"
+```
+
+That builds `lib/libsigil.a` (`lib/sigil.lib` on Windows) and
+`include/sigil.h`, and nothing else: no signing code, no CLI. It uses
+sigil's pinned Zig and `-Dcpu=baseline`, and gives macOS archives
+Apple-linkable members. It runs `zig build verify-lib`, and
+`tests/integration/verify_lib.sh` checks it for every product target. A Zig
+product can instead depend on the `sigil` module through `build.zig.zon`.
+
 ## Key custody
 
 The secret key is stored passphrase-encrypted (Argon2id → XChaCha20-Poly1305).

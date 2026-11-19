@@ -150,6 +150,41 @@
         };
 
 
+        # sigil's verification library alone, built for a Zig target: the
+        # supported way for a product to link the verifier on its own
+        # target, instead of overriding packages.default. `zig build
+        # verify-lib` installs lib/libsigil.a and include/sigil.h, with no
+        # signing library or CLI in the build graph. -Dcpu=baseline keeps the
+        # build machine's CPU features out. For macOS targets the archive
+        # gets Apple-consumable members (build.zig installStaticLib). Exposed
+        # as legacyPackages.<system>.verifyLibraryFor TARGET, and built for
+        # every target in verifyLibTargets by verify-lib-results, which
+        # tests/integration/verify_lib.sh judges.
+        verifyLibCommand = target: prefix:
+          "zig build verify-lib -Dtarget=${target} -Dcpu=baseline -Doptimize=ReleaseFast --prefix ${prefix}";
+        verifyLibraryFor = target: pkgs.stdenv.mkDerivation {
+          pname = "${pname}-verify-${target}";
+          inherit version;
+          src = zigSrc;
+          nativeBuildInputs = [ zigPkg ];
+          dontConfigure = true;
+          dontFixup = true;
+          dontInstall = true;
+          buildPhase = ''
+            ${zigSetup}
+            ${verifyLibCommand target "$out"}
+          '';
+        };
+        # The products' targets (validate_gui: macOS arm64, Windows x86_64
+        # and arm64, Linux x86_64 glibc) plus Linux musl.
+        verifyLibTargets = [
+          "x86_64-linux-gnu"
+          "x86_64-linux-musl"
+          "aarch64-macos.14.0"
+          "x86_64-windows-gnu"
+          "aarch64-windows-gnu"
+        ];
+
         # nixpkgs' musl cross package set for this machine's architecture
         # (Linux only). It links dynamically against musl (crt-static off),
         # so it can build the Rust CLI-shape shared library and run cargo's
@@ -471,6 +506,42 @@
           '';
         };
 
+        # verifyLibraryFor's build for every target in verifyLibTargets, run
+        # concurrently and recorded as data ($out/T.rc, T.log, T/), with the
+        # target list in $out/targets, so tests/integration/verify_lib.sh
+        # reports each target on its own. The command is verifyLibraryFor's.
+        packages.verify-lib-results = pkgs.stdenv.mkDerivation {
+          pname = "${pname}-verify-lib-results";
+          inherit version;
+          src = zigSrc;
+          nativeBuildInputs = [ zigPkg ];
+          dontConfigure = true;
+          dontFixup = true;
+          dontInstall = true;
+          buildPhase = ''
+            ${zigSetup}
+            mkdir -p $out
+            target() {
+              if ${verifyLibCommand "$1" "\"$out/$1\""} --cache-dir "$TMPDIR/cache-$1" \
+                  >"$out/$1.log" 2>&1; then
+                echo 0 >"$out/$1.rc"
+              else
+                echo $? >"$out/$1.rc"
+              fi
+            }
+            pids=()
+            for t in ${pkgs.lib.escapeShellArgs verifyLibTargets}; do
+              echo "$t" >>"$out/targets"
+              target "$t" &
+              pids+=("$!")
+            done
+            for p in "''${pids[@]}"; do wait "$p"; done
+          '';
+        };
+
+        # The library for any Zig target (see verifyLibraryFor above).
+        legacyPackages.verifyLibraryFor = verifyLibraryFor;
+
         packages.zig-consumer-results = pkgs.stdenv.mkDerivation {
           pname = "${pname}-zig-consumer-results";
           inherit version;
@@ -589,6 +660,7 @@
             SIGIL_ZIG_CONSUMER_OUT = self.packages.${system}.zig-consumer-results;
             SIGIL_ZIG_UNIT_TESTS_OUT = self.packages.${system}.zig-unit-test-results;
             SIGIL_MACOS_ARCHIVE_OUT = self.packages.${system}.macos-archive-results;
+            SIGIL_VERIFY_LIB_OUT = self.packages.${system}.verify-lib-results;
             nativeBuildInputs = [ zigPkg pkgs.bash pkgs.jq pkgs.shellcheck pkgs.clang-tools pkgs.openssl pkgs.zbar pkgs.poppler-utils pkgs.qpdf pkgs.xxd pkgs.fd pkgs.cargo pkgs.pkg-config pbCli ]
               # lld: the differential suites link the archives with GNU ld and lld.
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.lld ];
