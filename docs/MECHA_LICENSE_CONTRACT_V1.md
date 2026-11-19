@@ -707,6 +707,15 @@ carrying files. "Go online" then means "any machine, once".
   and unchanged at its later commits. Checked 2026-10-01: no byte value
   encodes to a quote, backslash, DEL or control character, and all 256
   round-trip.
+- Envelope hashes (clarified 2026-11-19): one signed license has many valid
+  envelope byte strings, since verification tolerates transport noise,
+  field order and unknown fields (docs/DESIGN.md, "Envelope bytes are not
+  an identifier"). `license_sha256` therefore names the exact bytes the
+  issuer minted, and only those. The app holds them (its certificate binds
+  them). A service takes the hash from its own minting record or a
+  verified certificate and never treats the hash of customer-submitted
+  bytes as a new license; it identifies a grant by its verified payload or
+  its minting record.
 - Rebind by file: the customer clicks the email one-time link first (a
   pending rebind recorded server-side), then uploads; the upload stays one
   stateless request.

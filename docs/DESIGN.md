@@ -21,6 +21,33 @@ holds. JSON is pure transport.
 Verify path: parse JSON → take `data` string → printable-binary decode → build
 the signing transcript → verify Ed25519 over it → only then parse the payload.
 
+### Envelope bytes are not an identifier (checked 2026-11-19)
+
+The same tolerance means one signed payload has many envelopes. Both
+implementations accept each of these with the exact signed payload, though
+every file hashes differently:
+
+- ASCII bytes outside the envelope's allowlist inserted anywhere: spaces,
+  tabs, line folds (even inside a multi-byte glyph), `>` reply prefixes,
+  stray backslashes. Normalization strips them before decoding.
+- The fields in another order.
+- Unknown extra fields (tolerated so a `datatype` label can be added later).
+
+Both refuse a duplicated field (two parsers could pick different values)
+and a lead byte aliased to another glyph's (not valid UTF-8) as malformed.
+A `\uXXXX` escape fails the signature instead: the backslash is stripped as
+noise, and the escape's remaining characters are alphabet text that decodes
+into extra payload bytes. None of this is a forgery: every accepted variant
+carries the issuer's signature over the same bytes.
+
+So the hash of an envelope file names those bytes, not the license. The
+contract's `license_sha256` is safe because it is the hash of the exact
+bytes the issuer minted: an installation certificate binds it, and an app
+refuses a license whose bytes do not hash to its certificate's value. A
+service that counts, deduplicates or revokes by envelope hash must take the
+hash from its own minting record or a verified certificate, and must not
+treat the hash of a file a customer submits as a new license.
+
 ## The signing transcript — decided 2026-08-11 (Peter)
 
 Peter asked for the signing method to be identified in the certificate for
