@@ -68,7 +68,9 @@ rather than producing a report:
   does) is unaffected. Each link drops dead
   code (function and data sections with --gc-sections; Rust's fat LTO).
   macOS cannot be fully static (libSystem is always dynamic). The
-  same-language pairs are test pairs; the Rust CLI on Rust stays dynamic.
+  same-language pairs are test pairs; the Rust CLI on Rust loads the Rust
+  core as a shared library, dynamically linked against musl. sigil's Zig
+  unit tests and Rust cargo tests run on musl too (one libc per project).
   Output must be
   byte-identical across the four wherever the suite asserts bytes.
 - **Differential checks.** Shared vectors plus a differential fuzz compare the
