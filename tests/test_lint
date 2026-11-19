@@ -55,36 +55,79 @@ require_tool() {
 parse_aborted() { grep -qE '\[SC107[23]\]' <<<"$1"; }
 
 # ── Bash: SC2312 masked return values ───────────────────────────────────────
-if require_tool shellcheck; then
-	shell_scripts=()
-	for candidate in \
-		"$REPO_ROOT/test" \
-		"$REPO_ROOT/build" \
-		"$REPO_ROOT/tests/test_no_signing_symbols" \
-		"$REPO_ROOT/tests/test_harness_guards" \
-		"$REPO_ROOT/tests/test_lint" \
-		"$REPO_ROOT/tests/test_rust_cli_boundary" \
-		"$REPO_ROOT/tests/test_no_signing_symbols_rust" \
-		"$REPO_ROOT/tests/test_shipped_cli_self_contained" \
-		"$REPO_ROOT/tests/cli/test_cli" \
-		"$REPO_ROOT/tests/differential/run" \
-		"$REPO_ROOT/tests/differential/policy" \
-		"$REPO_ROOT/tests/differential/sign" \
-		"$REPO_ROOT/tests/differential/check-exports" \
-		"$REPO_ROOT/scripts/c-header-functions" \
-		"$REPO_ROOT/scripts/contract-products" \
-		"$REPO_ROOT/scripts/write-pkgconfig" \
-		"$REPO_ROOT/tests/integration/ceremony_preflight.sh" \
-		"$REPO_ROOT/tests/integration/cross_impl.sh" \
-		"$REPO_ROOT/ceremony-preflight"
-	do
-		[[ -f "$candidate" ]] && shell_scripts+=("$candidate")
-	done
+# discover_shell_scripts ROOT: every shell script under ROOT, one path per
+# line, found rather than listed, so a new or renamed script cannot slip out
+# of the gate. A script has a bash or sh shebang or a .sh name. The pruned
+# directories are the ignored build, cache and mail trees (.gitignore).
+discover_shell_scripts() {
+	find "$1" \( -name .git -o -name .zig-cache -o -name zig-cache -o -name zig-out \
+		-o -name zig-pkg -o -name .nix-out -o -name .direnv -o -name inbox \
+		-o -name .codescan -o -name .serena -o -name .mutate.lock -o -name target \) -prune \
+		-o -type f -exec awk 'FNR == 1 {
+			if ($0 ~ /^#!.*(bash|\/sh)([ \t]|$)/ || FILENAME ~ /\.sh$/) print FILENAME
+			nextfile
+		}' {} +
+}
 
-	for script in "${shell_scripts[@]}"; do
+if require_tool shellcheck; then
+	# Scripts that still mask return values, each with its exact count of
+	# findings. They predate discovery (the hand list it replaced left them
+	# out). A count that moves, an entry naming no discovered script, or a
+	# listed script that is clean fails the gate, so this list only shrinks.
+	declare -A pending=(
+		[examples/hint_vectors/generate]=23
+		[examples/license_vectors/generate]=2
+		[examples/license_vectors_v2/generate]=77
+		[examples/renewal_vectors/generate]=12
+		[mutate]=1
+		[tests/integration/hint_vectors.sh]=2
+		[tests/integration/install_cert_vectors.sh]=20
+		[tests/integration/license_vectors.sh]=9
+		[tests/integration/license_vectors_v2.sh]=14
+		[tests/integration/macos_archive.sh]=2
+		[tests/integration/renewal_vectors.sh]=30
+		[tests/integration/restore_check_payload.sh]=3
+		[tests/integration/update_vectors.sh]=2
+		[tests/integration/zig_consumer.sh]=14
+		[tests/test_c_conformance]=3
+	)
+	declare -A seen=()
+
+	found="$(mktemp "${TMPDIR:-/tmp}/sigil-lint-scripts-XXXXXX")"
+	if ! discover_shell_scripts "$REPO_ROOT" >"$found"; then
+		fail "the shell scripts are discovered" "       find or awk failed under $REPO_ROOT"
+	fi
+	sort -o "$found" "$found"
+	mapfile -t shell_scripts <"$found"
+	rm -f "$found"
+	if [[ ${#shell_scripts[@]} -lt 20 ]]; then
+		fail "the shell scripts are discovered" "       only ${#shell_scripts[@]} found under $REPO_ROOT"
+	fi
+
+	# ShellCheck runs on up to 8 scripts at once (each peaks near 90 MB),
+	# because ./test waits for this suite before its other suites start.
+	# Each run records its output and exit status; the verdicts below are
+	# judged in path order.
+	scdir="$(mktemp -d "${TMPDIR:-/tmp}/sigil-lint-sc-XXXXXX")"
+	running=0
+	for i in "${!shell_scripts[@]}"; do
+		if (( running >= 8 )); then
+			wait -n
+			running=$((running - 1))
+		fi
+		{
+			shellcheck -o check-extra-masked-returns -f gcc "${shell_scripts[i]}" >"$scdir/$i.out" 2>/dev/null
+			echo "$?" >"$scdir/$i.rc"
+		} &
+		running=$((running + 1))
+	done
+	wait
+
+	for i in "${!shell_scripts[@]}"; do
+		script=${shell_scripts[i]}
 		rel="${script#"$REPO_ROOT"/}"
-		findings=$(shellcheck -o check-extra-masked-returns -f gcc "$script" 2>/dev/null)
-		sc_rc=$?
+		findings=$(<"$scdir/$i.out")
+		sc_rc=$(<"$scdir/$i.rc")
 		# ShellCheck itself failing to run is distinct from finding nothing.
 		if [[ $sc_rc -gt 1 ]]; then
 			fail "shellcheck runs on $rel" "  shellcheck exited $sc_rc — the gate did not actually inspect this file"
@@ -98,7 +141,18 @@ if require_tool shellcheck; then
 		fi
 		masked=$(grep -c 'SC2312' <<<"$findings")
 		[[ -z "$findings" ]] && masked=0
-		if [[ "$masked" -eq 0 ]]; then
+		if [[ -v "pending[$rel]" ]]; then
+			seen[$rel]=1
+			if [[ "$masked" -eq "${pending[$rel]}" ]]; then
+				pass "pending cleanup: $rel still has exactly its $masked known masked return values"
+			elif [[ "$masked" -lt "${pending[$rel]}" ]]; then
+				fail "pending cleanup: $rel is down to $masked masked return values; set its pending count to $masked, or remove it at 0"
+			else
+				# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
+				fail "no new masked return values in $rel (pending ${pending[$rel]}, now $masked)" \
+					"$(grep 'SC2312' <<<"$findings" | sed 's/^/       /')"
+			fi
+		elif [[ "$masked" -eq 0 ]]; then
 			pass "no masked return values in $rel"
 		else
 			# shellcheck disable=SC2312  # diagnostic-only: the verdict is already recorded
@@ -106,6 +160,30 @@ if require_tool shellcheck; then
 				"$(grep 'SC2312' <<<"$findings" | sed 's/^/       /')"
 		fi
 	done
+	for rel in "${!pending[@]}"; do
+		[[ -v "seen[$rel]" ]] || fail "pending cleanup entry $rel names a discovered shell script"
+	done
+
+	# Meta-control for discovery: a scratch tree with a shebang script, a .sh
+	# file, a non-script, and a script inside a pruned build directory must
+	# yield exactly the first two.
+	dtree="$(mktemp -d "${TMPDIR:-/tmp}/sigil-lint-discover-XXXXXX")"
+	mkdir -p "$dtree/bin" "$dtree/zig-out"
+	printf '#!/usr/bin/env bash\ntrue\n' >"$dtree/bin/tool"
+	printf 'true\n' >"$dtree/bin/lib.sh"
+	printf 'not a script\n' >"$dtree/notes"
+	printf '#!/bin/sh\ntrue\n' >"$dtree/zig-out/built"
+	if dfound=$(discover_shell_scripts "$dtree"); then
+		dfound=$(sort <<<"$dfound")
+	else
+		dfound="(discovery failed)"
+	fi
+	if [[ "$dfound" == "$dtree/bin/lib.sh"$'\n'"$dtree/bin/tool" ]]; then
+		pass "discovery finds shebang and .sh scripts, skipping pruned build trees (specificity corpus)"
+	else
+		fail "discovery finds shebang and .sh scripts, skipping pruned build trees (specificity corpus)" "$dfound"
+	fi
+	rm -rf -- "$dtree" "$scdir"
 
 	# Meta-control: prove the gate can still fire. A lint gate that has been
 	# quietly defanged (wrong flag, wrong file list, tool stubbed) looks
